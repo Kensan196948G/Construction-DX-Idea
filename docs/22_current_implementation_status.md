@@ -125,3 +125,4 @@ npm run dev
 - 一般利用者と管理者ロールでE2E確認を行う。
 - GitHub ProjectのP0 Issueをレビュー結果に応じてDoneへ更新する。
 - PR #7のCodeRabbitレビュー完了後、指摘があれば追加修正する。
+- 未完了の `#6 Production deployment settings and real environment validation` を、`mirai-dx-platform.com` サブドメイン導入前提の実環境手順に合わせてクローズする。

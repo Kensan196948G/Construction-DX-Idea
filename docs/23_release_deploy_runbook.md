@@ -6,6 +6,10 @@
 
 ## 2. 本番環境値
 
+運用FQDN:
+
+- `https://dxidea.mirai-dx-platform.com`
+
 | 区分 | 変数 | 必須 | 備考 |
 |---|---|---:|---|
 | Frontend | `VITE_API_BASE_URL` | 必須 | Cloudflare Worker APIのOrigin |
@@ -60,6 +64,14 @@ wrangler secret put SLACK_WEBHOOK_URL
 wrangler deploy worker/index.ts
 ```
 
+Worker を `https://dxidea.mirai-dx-platform.com` で公開する場合:
+
+1. `mirai-dx-platform.com` のゾーンに対し `wrangler.toml` の `routes` を有効化し、`dxidea.mirai-dx-platform.com` を Worker のエントリに設定する。
+2. `APP_BASE_URL` を `https://dxidea.mirai-dx-platform.com` に設定する。
+3. `ALLOWED_ORIGINS` を `https://dxidea.mirai-dx-platform.com` のみ許可する。
+4. Accessアプリケーションの対象URLを同一オリジンへ向ける。
+5. `npm run worker:deploy:dry-run` と `wrangler deploy worker/index.ts` を実行し、401/200を確認する。
+
 Cron Triggersは `wrangler.toml` の `*/10 * * * *` を利用し、Slack通知Outboxのfailed行を再送する。
 
 ## 7. Frontend
@@ -71,6 +83,16 @@ VITE_USE_MOCK_API=false VITE_API_BASE_URL=https://<worker-origin> npm run build
 ```
 
 配信先はCloudflare Pagesまたは既存の静的ホスティングを利用する。WebUI OriginはWorkerの `ALLOWED_ORIGINS` とCloudflare Accessの許可対象に含める。
+
+Cloudflare Pagesを使う場合:
+
+```bash
+npm run build:frontend
+export CLOUDFLARE_PAGES_PROJECT=construction-dx-idea
+npm run frontend:deploy
+```
+
+`CLOUDFLARE_PAGES_PROJECT` はCloudflare Pagesプロジェクト名を指定する。
 
 ## 8. スモークテスト
 
@@ -87,6 +109,7 @@ VITE_USE_MOCK_API=false VITE_API_BASE_URL=https://<worker-origin> npm run build
 | 9 | 月次予算 | 上限到達時に `AI_BUDGET_EXCEEDED` |
 | 10 | Slack | sent/skipped/failedがUIへ反映 |
 | 11 | Slack再送 | failed OutboxがCron後に再試行される |
+| 12 | 本番公開先 | `https://dxidea.mirai-dx-platform.com` が閲覧でき、Access未認証時に保護される |
 
 ## 9. ロールバック
 

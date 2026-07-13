@@ -24,6 +24,7 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
+| 🌐 Release | 進行中 | 本番公開先を `https://dxidea.mirai-dx-platform.com` 前提に整備中。wrangler設定、`.env.example`、Release Runbook更新済み |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -56,6 +57,8 @@ npm run dev
 | `npm run verify` | lint、test、通常build、本番API build、security scanを一括実行 |
 | `npm run worker:deploy:dry-run` | Cloudflare Workerのデプロイ直前dry-run |
 | `npm run predeploy:check` | 本番環境値のplaceholder、モックAPI、Access設定漏れを検査 |
+| `npm run release:prepare` | 本番向けprepare（ビルド+predeploy+dry-run） |
+| `npm run release:deploy` | 本番デプロイ（Worker + Frontend） |
 
 ---
 
