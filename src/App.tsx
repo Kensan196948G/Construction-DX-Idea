@@ -36,13 +36,15 @@ function bindIntegratedAiKeyControls(frame: HTMLIFrameElement | null) {
   const input = doc.getElementById("admin-api-key-input") as HTMLInputElement | null;
   const testButton = doc.getElementById("admin-api-key-test-button") as HTMLButtonElement | null;
   const clearButton = doc.getElementById("admin-api-key-clear-button") as HTMLButtonElement | null;
+  const saveButton = doc.getElementById("admin-settings-save-button") as HTMLButtonElement | null;
   const status = doc.getElementById("admin-api-key-status") as HTMLElement | null;
-  if (!input || !testButton || !clearButton || !status || testButton.dataset.bridgeBound === "true") {
+  if (!input || !testButton || !clearButton || !saveButton || !status || testButton.dataset.bridgeBound === "true") {
     return;
   }
 
   testButton.dataset.bridgeBound = "true";
   clearButton.dataset.bridgeBound = "true";
+  saveButton.dataset.bridgeBound = "true";
 
   testButton.addEventListener("click", () => {
     void testConnectionWithEnteredKey(doc, input, testButton, status);
@@ -50,6 +52,9 @@ function bindIntegratedAiKeyControls(frame: HTMLIFrameElement | null) {
   clearButton.addEventListener("click", () => {
     input.value = "";
     showStatus(status, "", "neutral");
+  });
+  saveButton.addEventListener("click", () => {
+    void saveAiSettings(doc, saveButton, status);
   });
 }
 
@@ -89,6 +94,47 @@ async function testConnectionWithEnteredKey(
     button.style.opacity = "1";
     button.style.cursor = "pointer";
   }
+}
+
+async function saveAiSettings(doc: Document, button: HTMLButtonElement, status: HTMLElement) {
+  const model = doc.querySelector<HTMLSelectElement>("select")?.value ?? "claude-sonnet-4.5";
+  const monthlyLimit = readMonthlyLimit(doc);
+  const enabledLabel = Array.from(doc.querySelectorAll("div")).find((element) =>
+    element.textContent?.includes("AIによる整理・壁打ち"),
+  );
+
+  button.disabled = true;
+  button.style.opacity = "0.62";
+  button.style.cursor = "wait";
+  showStatus(status, "AI利用設定を保存中です。APIキー本体は保存しません。", "neutral");
+
+  try {
+    const settings = await api.updateAiSettings({
+      model,
+      enabled: enabledLabel?.textContent?.includes("有効") ?? true,
+      dailyLimit: 10,
+      monthlyBudget: monthlyLimit,
+    });
+    showStatus(
+      status,
+      `設定保存完了: ${settings.model} / 月間上限 ${settings.monthlyBudget} 回`,
+      "success",
+    );
+  } catch (error) {
+    showStatus(status, toErrorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+    button.style.opacity = "1";
+    button.style.cursor = "pointer";
+  }
+}
+
+function readMonthlyLimit(doc: Document) {
+  const input = Array.from(doc.querySelectorAll<HTMLInputElement>("input")).find((candidate) =>
+    candidate.previousElementSibling?.textContent?.includes("月間利用上限"),
+  );
+  const value = Number(input?.value);
+  return Number.isFinite(value) && value >= 0 ? value : 500;
 }
 
 function showStatus(status: HTMLElement, message: string, tone: "success" | "error" | "neutral") {
