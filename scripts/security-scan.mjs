@@ -19,7 +19,10 @@ const secretPatterns = [
   { name: "AWS access key", pattern: /AKIA[0-9A-Z]{16}/ },
   { name: "Private key", pattern: /-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----/ },
   { name: "JWT", pattern: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
-  { name: "Generic API key assignment", pattern: /\b[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)\s*=\s*['"]?[^'"\s#]{16,}/i },
+  {
+    name: "Generic API key assignment",
+    pattern: /\b[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)\s*=\s*['"]?(?!\/)[^'"\s#]{16,}/i,
+  },
 ];
 
 const findings = [];
