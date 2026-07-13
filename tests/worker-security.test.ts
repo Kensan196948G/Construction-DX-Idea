@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { workerSecurityTestHooks } from "../worker/index";
+import worker, { workerSecurityTestHooks } from "../worker/index";
 
 const env = {
   DATABASE_URL: "",
@@ -16,6 +16,8 @@ const env = {
   ADMIN_EMAILS: "manager@example.jp",
   SYSTEM_ADMIN_EMAILS: "it-admin@example.jp",
   ALLOW_LOCAL_AUTH_BYPASS: "false",
+  AI_INPUT_COST_PER_1K_TOKENS: "0.003",
+  AI_OUTPUT_COST_PER_1K_TOKENS: "0.015",
 };
 
 describe("worker security helpers", () => {
@@ -41,5 +43,32 @@ describe("worker security helpers", () => {
       "admin",
       "system_admin",
     ]);
+  });
+
+  it("keeps health public but protects API data endpoints", async () => {
+    const runtime = worker as {
+      fetch(
+        request: Request,
+        runtimeEnv: typeof env,
+        ctx: { waitUntil(promise: Promise<unknown>): void; passThroughOnException(): void; props: unknown },
+      ): Promise<Response>;
+    };
+    const ctx = {
+      waitUntil: () => undefined,
+      passThroughOnException: () => undefined,
+      props: {},
+    };
+    const health = await runtime.fetch(new Request("https://api.example.jp/api/health"), env, ctx);
+    assert.equal(health.status, 200);
+
+    const metrics = await runtime.fetch(new Request("https://api.example.jp/api/metrics"), env, ctx);
+    const body = (await metrics.json()) as { code?: string; request_id?: string };
+    assert.equal(metrics.status, 401);
+    assert.equal(body.code, "UNAUTHENTICATED");
+    assert.equal(typeof body.request_id, "string");
+  });
+
+  it("estimates AI cost from configured token rates", () => {
+    assert.equal(workerSecurityTestHooks.estimateAiCost(env, 4000, 4000), 0.018);
   });
 });

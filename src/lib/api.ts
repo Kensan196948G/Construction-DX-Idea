@@ -9,11 +9,12 @@ import type {
   IdeaStage,
   IssueInput,
   PrivacyFinding,
+  SaveIdeaResult,
   StructuredIdea,
   UserProfile,
 } from "./shared";
 
-const explicitMock = import.meta.env.VITE_USE_MOCK_API === "true";
+const explicitMock = !import.meta.env.PROD && import.meta.env.VITE_USE_MOCK_API === "true";
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 const useMock =
   explicitMock ||
@@ -21,6 +22,16 @@ const useMock =
 const API_TIMEOUT_MS = 15_000;
 
 export const isMockApi = useMock;
+
+export class ApiClientError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public requestId?: string,
+  ) {
+    super(message);
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -38,6 +49,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const { headers, ...requestInit } = init ?? {};
     const response = await fetch(`${apiBaseUrl}${path}`, {
       ...requestInit,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...headers,
@@ -47,7 +59,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(error.message ?? "API request failed");
+      throw new ApiClientError(error.message ?? "API request failed", error.code, error.request_id);
     }
 
     return response.json() as Promise<T>;
@@ -84,7 +96,7 @@ export const api = useMock
           body: JSON.stringify({ input, answers }),
         }),
       saveIdea: (structured: StructuredIdea, stage: IdeaStage) =>
-        request<Idea>(stage === "draft" ? "/api/ideas/drafts" : "/api/ideas", {
+        request<SaveIdeaResult>(stage === "draft" ? "/api/ideas/drafts" : "/api/ideas", {
           method: "POST",
           body: JSON.stringify({ structured }),
         }),

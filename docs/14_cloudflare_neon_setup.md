@@ -44,6 +44,8 @@ Workersの責務:
 | `CF_ACCESS_CERTS_URL` | Cloudflare AccessのJWK取得URL |
 | `CF_ACCESS_AUD` | Cloudflare AccessアプリケーションのAudience Tag |
 | `CF_ACCESS_ISSUER` | Cloudflare Accessチームドメイン由来のissuer URL |
+| `AI_INPUT_COST_PER_1K_TOKENS` | 概算費用算出用の入力単価 |
+| `AI_OUTPUT_COST_PER_1K_TOKENS` | 概算費用算出用の出力単価 |
 
 ## 4. Secret登録
 
@@ -61,13 +63,19 @@ MVPでは手動登録を推奨する。
 
 作成するDB:
 
+`migrations/001_initial_schema.sql` を適用する。主な作成対象は次のとおり。
+
 - ideas
 - idea_ai_sessions
 - idea_decisions
 - idea_stage_histories
+- idea_comments
 - ai_settings
 - audit_logs
 - usage_limits
+- ai_usage_counters
+- ai_monthly_usage_counters
+- notification_outbox
 
 ## 6. 接続確認
 
@@ -80,3 +88,4 @@ MVPでは手動登録を推奨する。
 7. Access JWTなしのAPI呼び出しが拒否される。
 8. 不正なAccess JWT、期限切れJWT、issuer不一致JWT、audience不一致JWTが拒否される。
 9. 未許可OriginからのCORSが許可されない。
+10. `npm run predeploy:check` が本番環境値で成功する。

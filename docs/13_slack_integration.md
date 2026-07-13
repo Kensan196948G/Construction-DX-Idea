@@ -52,3 +52,5 @@ Slack上の議論で決まった内容は、自動的な正本とはしない。
 Slack通知に失敗しても、アイデア登録自体は成功とする。通知イベントは `notification_outbox` に保存し、成功時は `sent`、Webhook未設定時は `skipped`、失敗時は `failed` として記録する。
 
 再送処理は `failed` かつ `next_attempt_at` を過ぎたイベントを対象にする。同じイベントを二重投稿しないよう、`idempotency_key` で冪等性を確保する。
+
+MVP実装ではCloudflare Cron Triggersが10分間隔で `notification_outbox` のfailed行を最大10件ずつ再送する。Webhook呼び出しはタイムアウトを設定し、正式登録処理を長時間ブロックしない。

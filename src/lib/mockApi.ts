@@ -9,6 +9,7 @@ import type {
   IdeaStage,
   IssueInput,
   PrivacyFinding,
+  SaveIdeaResult,
   StructuredIdea,
   UserProfile,
 } from "./shared";
@@ -153,7 +154,7 @@ export const mockApi = {
     };
   },
 
-  async saveIdea(structured: StructuredIdea, stage: IdeaStage): Promise<Idea> {
+  async saveIdea(structured: StructuredIdea, stage: IdeaStage): Promise<SaveIdeaResult> {
     const idea: Idea = {
       ...structured,
       id: `IDEA-${String(ideas.length + 1).padStart(3, "0")}`,
@@ -164,7 +165,7 @@ export const mockApi = {
       aiUsageCount: 1,
     };
     ideas = [idea, ...ideas];
-    return idea;
+    return { ...idea, notificationStatus: stage === "submitted" ? "sent" : undefined };
   },
 
   async updateStage(id: string, stage: IdeaStage): Promise<Idea> {

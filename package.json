@@ -13,6 +13,7 @@
     "test:watch": "tsx --test --watch tests/*.test.ts",
     "lint": "eslint .",
     "security:scan": "node scripts/security-scan.mjs",
+    "predeploy:check": "node scripts/predeploy-check.mjs",
     "verify": "npm run lint && npm run test && npm run build && npm run build:production-api && npm run security:scan",
     "worker:dev": "wrangler dev worker/index.ts",
     "worker:deploy:dry-run": "wrangler deploy worker/index.ts --dry-run"

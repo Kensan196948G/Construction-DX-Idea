@@ -52,4 +52,25 @@ describe("privacy inspection", () => {
       "[社員番号] / [IPアドレス] / [案件番号] / 契約金額 [金額]",
     );
   });
+
+  it("detects labeled names, construction names, customer names, and credentials", () => {
+    const findings = inspectIssueInput({
+      workType: "工事名: 令和8年度中央橋補修工事 顧客名: 〇〇市",
+      affectedRole: "担当者: 山田太郎",
+      currentWorkflow: "トークン: dummycredential をExcelに残している",
+      desiredState: "安全に共有したい",
+      usedData: "",
+      relatedSystems: "",
+      confidentiality: "none",
+    });
+
+    assert.equal(findings.some((finding) => finding.type === "construction_name"), true);
+    assert.equal(findings.some((finding) => finding.type === "customer_name"), true);
+    assert.equal(findings.some((finding) => finding.type === "person_name"), true);
+    assert.equal(findings.some((finding) => finding.type === "credential"), true);
+    assert.equal(
+      maskSensitiveText("担当者: 山田太郎 / 顧客名: 〇〇市 / 工事名: 中央橋補修工事 / トークン: dummycredential"),
+      "[個人名] / [顧客名] / [工事名]/ [認証情報]",
+    );
+  });
 });

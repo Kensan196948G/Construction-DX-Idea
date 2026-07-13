@@ -28,6 +28,8 @@
 - Cloudflare Workers API
 - Claude API呼び出し処理
 - AI無効化、日次上限、文字数上限
+- 月次概算予算上限
+- AI無効・障害時の手動登録導線
 - AI接続設定の取得・更新
 - Claude API接続テスト
 - システム管理者向けAI設定UI
@@ -39,6 +41,7 @@
 - 利用制限テーブル
 - Slack新規登録通知
 - Slack通知失敗時の登録成功維持
+- Slack通知OutboxとCron再送
 - 監査ログとAI利用履歴
 - Secret混入検査
 - GitHub Actions CI
@@ -87,7 +90,7 @@ npm install
 npm run dev
 ```
 
-初期状態では `VITE_USE_MOCK_API=true` 相当で動作する。実APIへ接続する場合は、Cloudflare WorkerのURLを `VITE_API_BASE_URL` に設定する。
+ローカル開発では `VITE_USE_MOCK_API=true` でモックAPIを利用できる。本番ビルドでは `VITE_USE_MOCK_API=false` と `VITE_API_BASE_URL` を必ず設定し、`npm run predeploy:check` を通す。
 
 ## 7. 本番直前に必要な作業
 
@@ -98,6 +101,8 @@ npm run dev
 - `ALLOWED_ORIGINS`、`ADMIN_EMAILS`、`SYSTEM_ADMIN_EMAILS` を本番値へ変更する。
 - `CF_ACCESS_CERTS_URL`、`CF_ACCESS_AUD`、`CF_ACCESS_ISSUER` をCloudflare Accessの値へ変更する。
 - `ALLOW_LOCAL_AUTH_BYPASS=false` を確認する。
+- `VITE_USE_MOCK_API=false` と `VITE_API_BASE_URL` を本番値へ設定する。
+- `npm run predeploy:check` を本番環境値で実行する。
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。
 - 一般利用者と管理者ロールでE2E確認を行う。

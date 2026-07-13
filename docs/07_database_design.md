@@ -105,6 +105,17 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | created_at | timestamptz | 作成日時 |
 | updated_at | timestamptz | 更新日時 |
 
+### ai_monthly_usage_counters
+
+| カラム | 型 | 内容 |
+|---|---|---|
+| subject_type | text | user/global |
+| subject_id | text | 利用者メールまたは `*` |
+| usage_month | date | 月初日 |
+| used_cost_estimate | numeric | 当月の概算利用額 |
+| budget | numeric | 適用した月次予算 |
+| updated_at | timestamptz | 更新日時 |
+
 ## 3. リレーション
 
 ```mermaid
@@ -126,3 +137,4 @@ erDiagram
 - audit_logs(actor, created_at)
 - audit_logs(resource_type, resource_id)
 - notification_outbox(status, next_attempt_at)
+- ai_monthly_usage_counters(subject_type, subject_id, usage_month)

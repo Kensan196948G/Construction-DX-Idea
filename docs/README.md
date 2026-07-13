@@ -28,6 +28,7 @@
 | 20 | [受入基準一覧](20_acceptance_criteria.md) | MVP完了条件と検収観点 |
 | 21 | [自律CTO実行プロセス](21_autonomous_cto_execution.md) | 実装バックログ、リリース判定、GitHub Projects更新、レビュー・監視ループ |
 | 22 | [現在の実装・検証ステータス](22_current_implementation_status.md) | 実装済み範囲、検証結果、起動手順、残ゲート |
+| 23 | [リリース・デプロイRunbook](23_release_deploy_runbook.md) | 本番直前チェック、環境値、デプロイ、スモークテスト、ロールバック |
 
 ## 文書の優先順位
 

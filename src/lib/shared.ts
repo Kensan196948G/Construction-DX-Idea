@@ -69,6 +69,12 @@ export const ideaSchema = structuredIdeaSchema.extend({
 
 export type Idea = z.infer<typeof ideaSchema>;
 
+export type NotificationStatus = "sent" | "skipped" | "failed";
+
+export type SaveIdeaResult = Idea & {
+  notificationStatus?: NotificationStatus;
+};
+
 export type PrivacyFinding = {
   type:
     | "email"
@@ -76,6 +82,10 @@ export type PrivacyFinding = {
     | "ip_address"
     | "project_number"
     | "money"
+    | "person_name"
+    | "customer_name"
+    | "construction_name"
+    | "credential"
     | "confidentiality_flag";
   label: string;
   severity: "warning" | "blocker";

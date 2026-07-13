@@ -37,6 +37,8 @@ type Env = {
   CF_ACCESS_CERTS_URL?: string;
   CF_ACCESS_AUD?: string;
   CF_ACCESS_ISSUER?: string;
+  AI_INPUT_COST_PER_1K_TOKENS?: string;
+  AI_OUTPUT_COST_PER_1K_TOKENS?: string;
 };
 
 type AppContext = Context<{ Bindings: Env }>;
@@ -56,6 +58,7 @@ type JwksResponse = {
 
 const app = new Hono<{ Bindings: Env }>();
 const jwksCache = new Map<string, { expiresAt: number; keys: AccessJwk[] }>();
+const SLACK_TIMEOUT_MS = 5000;
 
 app.use("*", secureHeaders());
 app.use(
@@ -75,6 +78,11 @@ app.get("/api/health", (c) =>
     time: new Date().toISOString(),
   }),
 );
+
+app.use("/api/*", async (c, next) => {
+  await getUser(c.req.raw, c.env);
+  await next();
+});
 
 app.get("/api/me", (c) => {
   return getUser(c.req.raw, c.env).then((user) =>
@@ -133,9 +141,11 @@ app.post(
     const reservation = await reserveAiUsage(c.env, user, input);
     try {
       const questions = await generateQuestions(c.env, input);
-      await auditAi(c.env, user, "questions", input, questions);
+      const cost = await auditAi(c.env, user, "questions", input, questions);
+      await finalizeAiUsage(c.env, reservation, cost);
       return c.json(questions);
     } catch (error) {
+      await auditAiFailure(c.env, user, "questions", input, error);
       await releaseAiUsage(c.env, reservation);
       throw error;
     }
@@ -155,9 +165,11 @@ app.post(
       if (findings.length > 0) {
         throw new ApiError("AI_PRIVACY_FINDING", "AI応答に機密情報候補が含まれています。", 422);
       }
-      await auditAi(c.env, user, "structure", input, structured);
+      const cost = await auditAi(c.env, user, "structure", input, structured);
+      await finalizeAiUsage(c.env, reservation, cost);
       return c.json(structured);
     } catch (error) {
+      await auditAiFailure(c.env, user, "structure", input, error);
       await releaseAiUsage(c.env, reservation);
       throw error;
     }
@@ -290,11 +302,16 @@ app.post(
 );
 
 app.onError((error, c) => {
+  const requestId = c.req.header("CF-Ray") ?? crypto.randomUUID();
+  c.header("X-Request-Id", requestId);
   if (error instanceof ApiError) {
-    return c.json({ ok: false, code: error.code, message: error.message }, error.status);
+    return c.json({ ok: false, code: error.code, message: error.message, request_id: requestId }, error.status);
   }
   console.error("Unhandled error", sanitizeLog(error));
-  return c.json({ ok: false, code: "INTERNAL_ERROR", message: "システムエラーが発生しました。" }, 500);
+  return c.json(
+    { ok: false, code: "INTERNAL_ERROR", message: "システムエラーが発生しました。", request_id: requestId },
+    500,
+  );
 });
 
 async function insertIdea(
@@ -485,8 +502,20 @@ function splitCsv(value?: string): string[] {
     .filter(Boolean);
 }
 
+type UsageLimit = {
+  subjectType: "user" | "global";
+  subjectId: string;
+  dailyLimit: number;
+  monthlyBudget: number;
+};
+
 type AiReservation = {
-  reservations: Array<{ subjectType: "user" | "global"; subjectId: string }>;
+  dailyReservations: Array<{ subjectType: "user" | "global"; subjectId: string }>;
+  monthlyReservations: Array<{
+    subjectType: "user" | "global";
+    subjectId: string;
+    estimatedCost: number;
+  }>;
 };
 
 async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promise<AiReservation> {
@@ -507,10 +536,15 @@ async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promis
   }
 
   const db = getDb(env);
-  const limits = await getEffectiveUsageLimits(env, user, aiSettings.dailyLimit);
-  const reservations: AiReservation["reservations"] = [];
+  const limits = await getEffectiveUsageLimits(env, user, aiSettings.dailyLimit, aiSettings.monthlyBudget);
+  const estimatedCost = estimateAiCost(env, text.length, 6400);
+  const dailyReservations: AiReservation["dailyReservations"] = [];
+  const monthlyReservations: AiReservation["monthlyReservations"] = [];
   try {
     for (const limit of limits) {
+      if (limit.dailyLimit <= 0) {
+        throw new ApiError("AI_BUDGET_EXCEEDED", "日次AI利用上限に達しました。", 429);
+      }
       const rows = await db`
         insert into ai_usage_counters (subject_type, subject_id, usage_date, used_count, limit_count)
         values (${limit.subjectType}, ${limit.subjectId}, current_date, 1, ${limit.dailyLimit})
@@ -525,19 +559,45 @@ async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promis
       if (!rows[0]) {
         throw new ApiError("AI_BUDGET_EXCEEDED", "日次AI利用上限に達しました。", 429);
       }
-      reservations.push({ subjectType: limit.subjectType, subjectId: limit.subjectId });
+      dailyReservations.push({ subjectType: limit.subjectType, subjectId: limit.subjectId });
+      if (limit.monthlyBudget > 0 && estimatedCost > 0) {
+        const monthlyRows = await db`
+          insert into ai_monthly_usage_counters (
+            subject_type, subject_id, usage_month, used_cost_estimate, budget
+          )
+          values (
+            ${limit.subjectType}, ${limit.subjectId}, date_trunc('month', current_date)::date,
+            ${estimatedCost}, ${limit.monthlyBudget}
+          )
+          on conflict (subject_type, subject_id, usage_month)
+          do update
+            set used_cost_estimate = ai_monthly_usage_counters.used_cost_estimate + ${estimatedCost},
+                budget = ${limit.monthlyBudget},
+                updated_at = now()
+            where ai_monthly_usage_counters.used_cost_estimate + ${estimatedCost} <= ${limit.monthlyBudget}
+          returning used_cost_estimate
+        `;
+        if (!monthlyRows[0]) {
+          throw new ApiError("AI_BUDGET_EXCEEDED", "月次AI利用予算に達しました。", 429);
+        }
+        monthlyReservations.push({
+          subjectType: limit.subjectType,
+          subjectId: limit.subjectId,
+          estimatedCost,
+        });
+      }
     }
   } catch (error) {
-    await releaseAiUsage(env, { reservations });
+    await releaseAiUsage(env, { dailyReservations, monthlyReservations });
     throw error;
   }
-  return { reservations };
+  return { dailyReservations, monthlyReservations };
 }
 
 async function releaseAiUsage(env: Env, reservation: AiReservation) {
-  if (reservation.reservations.length === 0) return;
+  if (reservation.dailyReservations.length === 0 && reservation.monthlyReservations.length === 0) return;
   const db = getDb(env);
-  for (const item of reservation.reservations) {
+  for (const item of reservation.dailyReservations) {
     await db`
       update ai_usage_counters
       set used_count = greatest(used_count - 1, 0),
@@ -547,16 +607,44 @@ async function releaseAiUsage(env: Env, reservation: AiReservation) {
         and usage_date = current_date
     `;
   }
+  for (const item of reservation.monthlyReservations) {
+    await db`
+      update ai_monthly_usage_counters
+      set used_cost_estimate = greatest(used_cost_estimate - ${item.estimatedCost}, 0),
+          updated_at = now()
+      where subject_type = ${item.subjectType}
+        and subject_id = ${item.subjectId}
+        and usage_month = date_trunc('month', current_date)::date
+    `;
+  }
+}
+
+async function finalizeAiUsage(env: Env, reservation: AiReservation, actualCost: number) {
+  if (reservation.monthlyReservations.length === 0) return;
+  const db = getDb(env);
+  for (const item of reservation.monthlyReservations) {
+    const adjustment = actualCost - item.estimatedCost;
+    if (Math.abs(adjustment) < 0.000001) continue;
+    await db`
+      update ai_monthly_usage_counters
+      set used_cost_estimate = greatest(used_cost_estimate + ${adjustment}, 0),
+          updated_at = now()
+      where subject_type = ${item.subjectType}
+        and subject_id = ${item.subjectId}
+        and usage_month = date_trunc('month', current_date)::date
+    `;
+  }
 }
 
 async function getEffectiveUsageLimits(
   env: Env,
   user: string,
   fallbackDailyLimit: number,
-): Promise<Array<{ subjectType: "user" | "global"; subjectId: string; dailyLimit: number }>> {
+  fallbackMonthlyBudget: number,
+): Promise<UsageLimit[]> {
   const db = getDb(env);
   const rows = await db`
-    select subject_type, subject_id, daily_ai_limit
+    select subject_type, subject_id, daily_ai_limit, monthly_budget
     from usage_limits
     where enabled = true
       and (
@@ -568,12 +656,29 @@ async function getEffectiveUsageLimits(
   const userLimit = rows.find((row) => row.subject_type === "user");
   return [
     ...(globalLimit
-      ? [{ subjectType: "global" as const, subjectId: "*", dailyLimit: Number(globalLimit.daily_ai_limit) }]
-      : []),
+      ? [
+          {
+            subjectType: "global" as const,
+            subjectId: "*",
+            dailyLimit: Number(globalLimit.daily_ai_limit),
+            monthlyBudget: Number(globalLimit.monthly_budget ?? 0),
+          },
+        ]
+      : fallbackMonthlyBudget > 0
+        ? [
+            {
+              subjectType: "global" as const,
+              subjectId: "*",
+              dailyLimit: Number(fallbackDailyLimit),
+              monthlyBudget: Number(fallbackMonthlyBudget),
+            },
+          ]
+        : []),
     {
       subjectType: "user" as const,
       subjectId: user,
       dailyLimit: Number(userLimit?.daily_ai_limit ?? fallbackDailyLimit),
+      monthlyBudget: Number(userLimit?.monthly_budget ?? 0),
     },
   ];
 }
@@ -587,26 +692,20 @@ async function generateQuestions(env: Env, input: IssueInput): Promise<AiQuestio
     JSON.stringify(maskIssue(input)),
   ].join("\n");
   const result = await callClaude(env, prompt, aiSettings.model);
-  return parseJson<AiQuestion[]>(result, [
-    {
-      id: "q-frequency",
-      question: "この作業は月に何回ありますか。",
-      purpose: "効果見込みを確認するため",
-      answerType: "number",
-    },
-    {
-      id: "q-time",
-      question: "1回あたり何分程度かかりますか。",
-      purpose: "削減可能な時間を確認するため",
-      answerType: "number",
-    },
-    {
-      id: "q-share",
-      question: "作業結果を誰と共有していますか。",
-      purpose: "関係者と通知範囲を確認するため",
-      answerType: "text",
-    },
-  ]);
+  const parsed = parseJson<unknown>(result);
+  const questionsSchema = z.array(
+    z.object({
+      id: z.string(),
+      question: z.string(),
+      purpose: z.string(),
+      answerType: z.enum(["text", "number", "choice"]),
+    }),
+  );
+  const questions = questionsSchema.safeParse(parsed);
+  if (!questions.success) {
+    throw new ApiError("AI_RESPONSE_INVALID", "AI応答の形式が不正です。", 502);
+  }
+  return questions.data;
 }
 
 async function structureIdea(
@@ -622,7 +721,11 @@ async function structureIdea(
     JSON.stringify({ input: maskIssue(input), answers: maskSensitiveText(JSON.stringify(answers)) }),
   ].join("\n");
   const result = await callClaude(env, prompt, aiSettings.model);
-  return structuredIdeaSchema.parse(parseJson<StructuredIdea>(result, fallbackStructured(input)));
+  const structured = structuredIdeaSchema.safeParse(parseJson<unknown>(result));
+  if (!structured.success) {
+    throw new ApiError("AI_RESPONSE_INVALID", "AI応答の形式が不正です。", 502);
+  }
+  return structured.data;
 }
 
 async function callClaude(env: Env, prompt: string, model: string): Promise<string> {
@@ -718,32 +821,13 @@ async function getAiSettings(env: Env): Promise<AiSettings> {
   return mapAiSettingsRow(rows[0], env);
 }
 
-function parseJson<T>(text: string, fallback: T): T {
+function parseJson<T>(text: string): T {
   try {
     const clean = text.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
     return JSON.parse(clean) as T;
   } catch {
-    return fallback;
+    throw new ApiError("AI_RESPONSE_INVALID", "AI応答をJSONとして解釈できませんでした。", 502);
   }
-}
-
-function fallbackStructured(input: IssueInput): StructuredIdea {
-  return {
-    title: `${input.workType.slice(0, 28)}の改善`,
-    currentIssue: input.workType,
-    targetBusiness: input.workType,
-    targetUsers: input.affectedRole || "現場管理者",
-    currentWorkflow: input.currentWorkflow,
-    improvementIdea: input.desiredState,
-    expectedEffects: "作業時間削減、確認漏れ低減、共有の迅速化。",
-    requiredData: [input.usedData || "作業データ"],
-    relatedSystems: [input.relatedSystems || "未確認"],
-    implementationOptions: ["Web入力", "一覧管理", "Slack通知"],
-    securityNotes: ["AI送信前の機密情報確認が必要"],
-    openQuestions: ["対象範囲", "既存運用との整合"],
-    mvpCandidate: "1現場または1部署で限定検証する。",
-    mvpDoneDefinition: "利用者が登録から検討まで一連の操作を完了できること。",
-  };
 }
 
 function maskIssue(input: IssueInput): IssueInput {
@@ -761,19 +845,57 @@ function maskIssue(input: IssueInput): IssueInput {
 async function auditAi(env: Env, user: string, processType: string, input: unknown, output: unknown) {
   const inputText = JSON.stringify(maskSensitiveText(JSON.stringify(input)));
   const outputText = JSON.stringify(maskSensitiveText(JSON.stringify(output)));
+  const usageCostEstimate = estimateAiCost(env, inputText.length, outputText.length);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(inputText));
   const inputHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   const db = getDb(env);
   await db`
     insert into idea_ai_sessions (
       executed_by, process_type, model, input_chars, output_chars,
-      result, prompt_version, input_hash
+      result, usage_cost_estimate, prompt_version, input_hash
     )
     values (
       ${user}, ${processType}, ${env.AI_MODEL}, ${inputText.length},
-      ${outputText.length}, 'success', ${`${processType}_v1`}, ${inputHash}
+      ${outputText.length}, 'success', ${usageCostEstimate}, ${`${processType}_v1`}, ${inputHash}
     )
   `;
+  return usageCostEstimate;
+}
+
+async function auditAiFailure(
+  env: Env,
+  user: string,
+  processType: string,
+  input: unknown,
+  error: unknown,
+) {
+  try {
+    const inputText = JSON.stringify(maskSensitiveText(JSON.stringify(input)));
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(inputText));
+    const inputHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const db = getDb(env);
+    await db`
+      insert into idea_ai_sessions (
+        executed_by, process_type, model, input_chars, output_chars,
+        result, usage_cost_estimate, prompt_version, input_hash
+      )
+      values (
+        ${user}, ${processType}, ${env.AI_MODEL}, ${inputText.length},
+        0, ${error instanceof ApiError ? error.code : "failure"}, 0, ${`${processType}_v1`}, ${inputHash}
+      )
+    `;
+  } catch (auditError) {
+    console.error("AI failure audit failed", sanitizeLog(auditError));
+  }
+}
+
+function estimateAiCost(env: Env, inputChars: number, outputChars: number): number {
+  const inputTokens = Math.ceil(inputChars / 4);
+  const outputTokens = Math.ceil(outputChars / 4);
+  const inputRate = Number(env.AI_INPUT_COST_PER_1K_TOKENS || 0.003);
+  const outputRate = Number(env.AI_OUTPUT_COST_PER_1K_TOKENS || 0.015);
+  const cost = (inputTokens / 1000) * inputRate + (outputTokens / 1000) * outputRate;
+  return Number(cost.toFixed(6));
 }
 
 async function audit(
@@ -819,11 +941,7 @@ async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
   }
 
   try {
-    const response = await fetch(env.SLACK_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: maskedText }),
-    });
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, maskedText);
     const status = response.ok ? "sent" : "failed";
     await updateNotificationOutbox(env, outboxId, status, response.ok ? undefined : `Slack HTTP ${response.status}`);
     return status;
@@ -831,6 +949,54 @@ async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
     console.error("Slack notification failed", sanitizeLog(error));
     await updateNotificationOutbox(env, outboxId, "failed", String(sanitizeLog(error)));
     return "failed";
+  }
+}
+
+async function retrySlackNotifications(env: Env) {
+  if (!env.SLACK_WEBHOOK_URL) return;
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select id, payload
+      from notification_outbox
+      where status = 'failed'
+        and (next_attempt_at is null or next_attempt_at <= now())
+      order by updated_at asc
+      limit 10
+    `;
+    for (const row of rows) {
+      const payload = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
+      const text = maskSensitiveText(String((payload as { text?: unknown }).text ?? ""));
+      if (!text) continue;
+      try {
+        const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, text);
+        await updateNotificationOutbox(
+          env,
+          String(row.id),
+          response.ok ? "sent" : "failed",
+          response.ok ? undefined : `Slack HTTP ${response.status}`,
+        );
+      } catch (error) {
+        await updateNotificationOutbox(env, String(row.id), "failed", String(sanitizeLog(error)));
+      }
+    }
+  } catch (error) {
+    console.error("Slack retry failed", sanitizeLog(error));
+  }
+}
+
+async function postSlackWebhook(url: string, text: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SLACK_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: maskSensitiveText(text) }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -964,8 +1130,20 @@ class ApiError extends Error {
 }
 
 export const workerSecurityTestHooks = {
+  estimateAiCost,
   inferRoles,
   resolveCorsOrigin,
 };
 
-export default app;
+type MinimalExecutionContext = {
+  passThroughOnException(): void;
+  props: unknown;
+  waitUntil(promise: Promise<unknown>): void;
+};
+
+export default {
+  fetch: (request: Request, env: Env, ctx: MinimalExecutionContext) => app.fetch(request, env, ctx),
+  scheduled: (_controller: unknown, env: Env, ctx: MinimalExecutionContext) => {
+    ctx.waitUntil(retrySlackNotifications(env));
+  },
+};

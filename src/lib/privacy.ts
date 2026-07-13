@@ -36,6 +36,30 @@ const detectors: Array<{
     severity: "blocker",
     pattern: /(?:契約金額|請負金額|予算|金額).{0,12}(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:円|万円|億円)/g,
   },
+  {
+    type: "person_name",
+    label: "個人名候補",
+    severity: "warning",
+    pattern: /(?:氏名|名前|担当者|発注者担当|受注者担当)[：:\s]+[^\s,、。]{2,24}/g,
+  },
+  {
+    type: "customer_name",
+    label: "顧客名・発注者名候補",
+    severity: "warning",
+    pattern: /(?:顧客名|発注者名|取引先|お客様)[：:\s]+[^\s,、。]{2,40}/g,
+  },
+  {
+    type: "construction_name",
+    label: "工事名候補",
+    severity: "warning",
+    pattern: /(?:工事名|案件名|現場名)[：:\s]+[^/\n,、。]{2,80}/g,
+  },
+  {
+    type: "credential",
+    label: "認証情報候補",
+    severity: "blocker",
+    pattern: /(?:password|passwd|pwd|token|secret|api[-_ ]?key|パスワード|トークン|シークレット)[：:=\s]+[^\s]{8,}/gi,
+  },
 ];
 
 export function inspectIssueInput(input: IssueInput): PrivacyFinding[] {
@@ -72,7 +96,14 @@ export function maskSensitiveText(text: string): string {
     .replace(/(?:社員番号|employee|emp)[-_\s:]?[A-Z0-9]{4,12}\b/gi, "[社員番号]")
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[IPアドレス]")
     .replace(/\b(?:PJ|工事|案件)[-_]?[0-9A-Z]{4,16}\b/gi, "[案件番号]")
-    .replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:円|万円|億円)/g, "[金額]");
+    .replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:円|万円|億円)/g, "[金額]")
+    .replace(/(?:氏名|名前|担当者|発注者担当|受注者担当)[：:\s]+[^\s,、。]{2,24}/g, "[個人名]")
+    .replace(/(?:顧客名|発注者名|取引先|お客様)[：:\s]+[^\s,、。]{2,40}/g, "[顧客名]")
+    .replace(/(?:工事名|案件名|現場名)[：:\s]+[^/\n,、。]{2,80}/g, "[工事名]")
+    .replace(
+      /(?:password|passwd|pwd|token|secret|api[-_ ]?key|パスワード|トークン|シークレット)[：:=\s]+[^\s]{8,}/gi,
+      "[認証情報]",
+    );
 }
 
 export function inspectStructuredIdea(idea: StructuredIdea): PrivacyFinding[] {

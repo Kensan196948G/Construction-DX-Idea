@@ -17,8 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "./lib/api";
-import { isMockApi } from "./lib/api";
+import { ApiClientError, api, isMockApi } from "./lib/api";
 import {
   type AiQuestion,
   type AiSettings,
@@ -62,12 +61,9 @@ export function App() {
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   const refresh = useCallback(async () => {
-    const [nextUser, nextMetrics, nextIdeas, nextSettings] = await Promise.all([
-      api.getMe(),
-      api.getMetrics(),
-      api.listIdeas(),
-      api.getAiSettings(),
-    ]);
+    const nextUser = await api.getMe();
+    const [nextMetrics, nextIdeas] = await Promise.all([api.getMetrics(), api.listIdeas()]);
+    const nextSettings = nextUser.roles.includes("system_admin") ? await api.getAiSettings() : null;
     setCurrentUser(nextUser);
     setMetrics(nextMetrics);
     setIdeas(nextIdeas);
@@ -112,6 +108,7 @@ export function App() {
       setStep("questions");
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
+      setQuestions([]);
     } finally {
       setIsBusy(false);
     }
@@ -132,6 +129,13 @@ export function App() {
     }
   }
 
+  function buildManualStructure() {
+    setStructured(createManualStructuredIdea(input, answers));
+    setStep("structure");
+    setMessage("AIを使わず、入力内容から確認用の下書きを作成しました。");
+    setErrorMessage("");
+  }
+
   async function saveStructured(stage: IdeaStage) {
     if (!structured) return;
     setIsBusy(true);
@@ -141,7 +145,7 @@ export function App() {
       await refresh();
       setSelectedId(saved.id);
       setStep("complete");
-      setMessage(stage === "draft" ? "下書きとして保存しました。" : "正式登録し、Slack通知対象にしました。");
+      setMessage(stage === "draft" ? "下書きとして保存しました。" : registrationMessage(saved.notificationStatus));
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
     } finally {
@@ -193,9 +197,9 @@ export function App() {
           <div className="sidePanelTitle">
             <Bot size={16} /> AI接続
           </div>
-          <strong>{settings?.enabled ? "有効" : "MVP安全モード"}</strong>
-          <span>{settings?.model ?? "claude-sonnet-4-5"}</span>
-          <span>日次上限 {settings?.dailyLimit ?? 10} 回</span>
+          <strong>{settings ? (settings.enabled ? "有効" : "MVP安全モード") : "管理者設定"}</strong>
+          <span>{settings?.model ?? "管理者のみ表示"}</span>
+          <span>{settings ? `日次上限 ${settings.dailyLimit} 回` : "手動登録は常時利用可"}</span>
         </div>
       </aside>
 
@@ -344,6 +348,13 @@ export function App() {
                 >
                   <Bot size={18} /> AI壁打ちへ
                 </button>
+                <button
+                  className="secondaryButton"
+                  disabled={isBusy || findings.some((finding) => finding.severity === "blocker")}
+                  onClick={buildManualStructure}
+                >
+                  AIを使わず確認へ
+                </button>
               </div>
             </div>
           )}
@@ -375,6 +386,9 @@ export function App() {
                 </button>
                 <button className="primaryButton" disabled={isBusy} onClick={buildStructure}>
                   <Sparkles size={18} /> 構造化する
+                </button>
+                <button className="secondaryButton" disabled={isBusy} onClick={buildManualStructure}>
+                  AIを使わず確認へ
                 </button>
               </div>
             </div>
@@ -779,6 +793,36 @@ function AiSettingsPanel({
   );
 }
 
+function createManualStructuredIdea(input: IssueInput, answers: Record<string, string>): StructuredIdea {
+  const answerText = Object.values(answers).filter(Boolean).join("\n");
+  return {
+    title: `${input.workType.slice(0, 36) || "現場業務"}の改善`,
+    currentIssue: input.workType,
+    targetBusiness: input.workType,
+    targetUsers: input.affectedRole || "未確認",
+    currentWorkflow: input.currentWorkflow,
+    improvementIdea: input.desiredState,
+    expectedEffects: "利用者確認により効果仮説を追記する。",
+    requiredData: [input.usedData || "未確認"],
+    relatedSystems: [input.relatedSystems || "未確認"],
+    implementationOptions: ["手動整理", "WebUI登録", "関係者レビュー"],
+    securityNotes: ["AIを使わず作成。正式登録前に機密情報の有無を確認する。"],
+    openQuestions: answerText ? [answerText] : ["頻度、作業時間、関係者、既存データを確認する。"],
+    mvpCandidate: "対象業務を限定して手順整理から開始する。",
+    mvpDoneDefinition: "利用者が現行手順、改善案、検証範囲を確認できること。",
+  };
+}
+
+function registrationMessage(status?: "sent" | "skipped" | "failed"): string {
+  if (status === "sent") return "正式登録し、Slack通知を送信しました。";
+  if (status === "failed") return "正式登録しました。Slack通知は失敗したため再送対象に記録しました。";
+  if (status === "skipped") return "正式登録しました。Slack通知先は未設定です。";
+  return "正式登録しました。";
+}
+
 function toErrorMessage(error: unknown): string {
+  if (error instanceof ApiClientError && error.requestId) {
+    return `${error.message}（request_id: ${error.requestId}）`;
+  }
   return error instanceof Error ? error.message : "処理に失敗しました。";
 }

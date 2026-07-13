@@ -93,8 +93,8 @@ create table if not exists ai_settings (
   key_last4 text,
   status text not null default 'not_configured',
   enabled boolean not null default false,
-  daily_limit integer not null default 10,
-  monthly_budget numeric(12, 2) not null default 0,
+  daily_limit integer not null default 10 check (daily_limit >= 0),
+  monthly_budget numeric(12, 2) not null default 0 check (monthly_budget >= 0),
   last_checked_at timestamptz,
   updated_by text,
   updated_at timestamptz not null default now()
@@ -115,8 +115,8 @@ create table if not exists usage_limits (
   id uuid primary key default gen_random_uuid(),
   subject_type text not null check (subject_type in ('user', 'global')),
   subject_id text not null,
-  daily_ai_limit integer not null default 10,
-  monthly_budget numeric(12, 2) not null default 0,
+  daily_ai_limit integer not null default 10 check (daily_ai_limit >= 0),
+  monthly_budget numeric(12, 2) not null default 0 check (monthly_budget >= 0),
   enabled boolean not null default true,
   updated_by text,
   updated_at timestamptz not null default now(),
@@ -127,10 +127,20 @@ create table if not exists ai_usage_counters (
   subject_type text not null check (subject_type in ('user', 'global')),
   subject_id text not null,
   usage_date date not null default current_date,
-  used_count integer not null default 0,
-  limit_count integer not null,
+  used_count integer not null default 0 check (used_count >= 0),
+  limit_count integer not null check (limit_count >= 0),
   updated_at timestamptz not null default now(),
   primary key (subject_type, subject_id, usage_date)
+);
+
+create table if not exists ai_monthly_usage_counters (
+  subject_type text not null check (subject_type in ('user', 'global')),
+  subject_id text not null,
+  usage_month date not null,
+  used_cost_estimate numeric(12, 6) not null default 0 check (used_cost_estimate >= 0),
+  budget numeric(12, 2) not null check (budget >= 0),
+  updated_at timestamptz not null default now(),
+  primary key (subject_type, subject_id, usage_month)
 );
 
 create table if not exists notification_outbox (
@@ -154,6 +164,8 @@ create index if not exists idx_ideas_created_by on ideas(created_by);
 create index if not exists idx_ideas_updated_at on ideas(updated_at desc);
 create index if not exists idx_ai_sessions_idea on idea_ai_sessions(idea_id);
 create index if not exists idx_ai_sessions_user_created on idea_ai_sessions(executed_by, created_at desc);
+create index if not exists idx_ai_sessions_created on idea_ai_sessions(created_at desc);
+create index if not exists idx_ai_monthly_usage_subject_month on ai_monthly_usage_counters(subject_type, subject_id, usage_month);
 create index if not exists idx_decisions_idea on idea_decisions(idea_id);
 create index if not exists idx_stage_histories_idea on idea_stage_histories(idea_id);
 create index if not exists idx_comments_idea on idea_comments(idea_id);

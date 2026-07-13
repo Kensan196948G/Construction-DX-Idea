@@ -3,6 +3,9 @@ main = "worker/index.ts"
 compatibility_date = "2026-07-13"
 compatibility_flags = ["nodejs_compat"]
 
+[triggers]
+crons = ["*/10 * * * *"]
+
 [vars]
 AI_PROVIDER = "claude"
 AI_MODEL = "claude-sonnet-4-5"
@@ -17,6 +20,8 @@ ALLOW_LOCAL_AUTH_BYPASS = "false"
 CF_ACCESS_CERTS_URL = ""
 CF_ACCESS_AUD = ""
 CF_ACCESS_ISSUER = ""
+AI_INPUT_COST_PER_1K_TOKENS = "0.003"
+AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 
 # Required secrets:
 # wrangler secret put DATABASE_URL

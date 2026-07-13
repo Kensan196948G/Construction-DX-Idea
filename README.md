@@ -18,12 +18,12 @@
 
 | 領域 | 状態 | 実装内容 |
 |---|---|---|
-| 🖥️ WebUI | 実装済み | React/Viteによるダッシュボード、困りごと入力、入力検査、AI壁打ち、構造化確認、一覧・詳細、ステージ変更 |
-| ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Accessユーザー識別、AI利用制御、監査ログ、Slack通知 |
+| 🖥️ WebUI | 実装済み | React/Viteによるダッシュボード、困りごと入力、入力検査、AI壁打ち、手動登録、構造化確認、一覧・詳細、ステージ変更 |
+| ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Access JWT検証、AI利用制御、監査ログ、Slack通知・再送 |
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
-| 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト |
+| 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -55,6 +55,7 @@ npm run dev
 | `npm run security:scan` | Secret混入の簡易検査 |
 | `npm run verify` | lint、test、通常build、本番API build、security scanを一括実行 |
 | `npm run worker:deploy:dry-run` | Cloudflare Workerのデプロイ直前dry-run |
+| `npm run predeploy:check` | 本番環境値のplaceholder、モックAPI、Access設定漏れを検査 |
 
 ---
 
@@ -228,8 +229,8 @@ flowchart TD
 | 🤖 | AI壁打ち | 不足情報を最大3問ずつ質問 |
 | 🧱 | 構造化 | 課題、対象業務、改善案、MVP案へ整理 |
 | ✅ | 人間確認 | AI結果を修正・再検討・登録 |
-| 📣 | Slack通知 | 新規登録、承認依頼、週次共有 |
-| 📊 | 進捗管理 | 企画、MVP、検証、本番化を追跡 |
+| 📣 | Slack通知 | MVPでは新規登録通知と失敗時Outbox再送。承認依頼・週次共有はPhase 2 |
+| 📊 | 進捗管理 | MVPではステージ管理。詳細な効果測定・承認ワークフローはPhase 2 |
 | 🔐 | 機密管理 | APIキーをCloudflare Secretで管理 |
 | 🧾 | 監査ログ | AI利用、承認、設定変更を記録 |
 | ⚙️ | AI設定管理 | モデル、有効/無効、利用上限、接続テストを管理 |
@@ -251,6 +252,7 @@ flowchart TD
 - [`docs/11_test_strategy.md`](docs/11_test_strategy.md)
 - [`docs/21_autonomous_cto_execution.md`](docs/21_autonomous_cto_execution.md)
 - [`docs/22_current_implementation_status.md`](docs/22_current_implementation_status.md)
+- [`docs/23_release_deploy_runbook.md`](docs/23_release_deploy_runbook.md)
 
 ## ✅ 結論
 

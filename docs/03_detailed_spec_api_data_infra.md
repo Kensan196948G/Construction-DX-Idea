@@ -27,22 +27,25 @@ flowchart TD
 
 ## 4. 主要API
 
-| メソッド | パス | 用途 |
-|---|---|---|
-| GET | `/api/me` | ログインユーザー情報 |
-| POST | `/api/ideas/drafts` | 下書き保存 |
-| POST | `/api/ideas` | 正式登録 |
-| GET | `/api/ideas` | 一覧取得 |
-| GET | `/api/ideas/:id` | 詳細取得 |
-| PATCH | `/api/ideas/:id` | 編集 |
-| POST | `/api/ideas/:id/stage` | ステージ変更 |
-| POST | `/api/ai/questions` | AI追加質問 |
-| POST | `/api/ai/structure` | AI構造化 |
-| GET | `/api/admin/ai-settings` | AI設定取得 |
-| PATCH | `/api/admin/ai-settings` | AI設定更新 |
-| POST | `/api/admin/ai-settings/test` | AI接続テスト |
-| GET | `/api/admin/audit-logs` | 監査ログ |
-| GET | `/api/admin/usage` | AI利用量 |
+| メソッド | パス | 用途 | 状態 |
+|---|---|---|---|
+| GET | `/api/health` | 死活監視 | MVP実装済み、認証不要 |
+| GET | `/api/me` | ログインユーザー情報 | MVP実装済み |
+| GET | `/api/metrics` | ダッシュボード指標 | MVP実装済み |
+| POST | `/api/privacy/inspect` | 入力検査 | MVP実装済み |
+| POST | `/api/ideas/drafts` | 下書き保存 | MVP実装済み |
+| POST | `/api/ideas` | 正式登録 | MVP実装済み |
+| GET | `/api/ideas` | 一覧取得 | MVP実装済み |
+| POST | `/api/ideas/:id/stage` | ステージ変更 | MVP実装済み |
+| POST | `/api/ai/questions` | AI追加質問 | MVP実装済み |
+| POST | `/api/ai/structure` | AI構造化 | MVP実装済み |
+| GET | `/api/admin/ai-settings` | AI設定取得 | MVP実装済み |
+| PATCH | `/api/admin/ai-settings` | AI設定更新 | MVP実装済み |
+| POST | `/api/admin/ai-settings/test` | AI接続テスト | MVP実装済み |
+| GET | `/api/ideas/:id` | 詳細取得 | Phase 2 |
+| PATCH | `/api/ideas/:id` | 編集 | Phase 2 |
+| GET | `/api/admin/audit-logs` | 監査ログ閲覧 | Phase 2 |
+| GET | `/api/admin/usage` | AI利用量閲覧 | Phase 2 |
 
 ## 5. データ保存方針
 
@@ -99,6 +102,7 @@ flowchart TD
 | AI_TIMEOUT | タイムアウト |
 | AI_DISABLED | AI機能が無効 |
 | AI_BUDGET_EXCEEDED | 利用上限到達 |
+| AI_RESPONSE_INVALID | AI応答JSONまたはスキーマが不正 |
 | SYSTEM_CONFIG_ERROR | システム設定エラー |
 
 ## 9. Slack通知
@@ -107,7 +111,7 @@ flowchart TD
 
 通知は `notification_outbox` にイベントID、対象リソース、冪等キー、送信状態、試行回数、次回再送予定、最終エラーを保存してから送信する。Slack Webhookへの送信に失敗してもアイデア登録は成功扱いとし、Outboxを `failed` または `pending` に残して再送対象にする。
 
-冪等キーは `event_type:resource_type:resource_id:version` の形式を基本とし、同一イベントの二重投稿を防ぐ。再送処理は成功時に `sent`、失敗時に試行回数と次回再送予定を更新する。
+冪等キーは `event_type:resource_type:resource_id:version` の形式を基本とし、同一イベントの二重投稿を防ぐ。再送処理はCloudflare Cron Triggersから起動し、成功時に `sent`、失敗時に試行回数と次回再送予定を更新する。Slack Webhook呼び出しにはタイムアウトを設定し、登録処理を長時間ブロックしない。
 
 Slackの議論内容は自動で正本にしない。最終的な決定はConstruction-DX-Ideaへ意思決定記録として反映する。
 

@@ -6,6 +6,7 @@
 - 認証はCloudflare Accessを前提とする。
 - レスポンスはJSON形式とする。
 - エラー時は `code`, `message`, `request_id` を返す。
+- `/api/health` 以外の `/api/*` はCloudflare Access JWTが必要。
 
 ## 2. 共通レスポンス例
 
@@ -37,6 +38,8 @@
 ### POST `/api/ideas`
 
 正式登録する。成功時はSlack通知を非同期または後続処理で実行する。
+
+レスポンスには `notificationStatus` として `sent`、`skipped`、`failed` のいずれかを含める。
 
 ### POST `/api/ai/questions`
 
