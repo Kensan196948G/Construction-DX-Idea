@@ -34,6 +34,7 @@ textarea {
 }
 
 .standaloneDesignShell {
+  position: relative;
   width: 100vw;
   height: 100vh;
   margin: 0;
@@ -48,4 +49,169 @@ textarea {
   height: 100%;
   border: 0;
   background: #141c29;
+}
+
+.aiKeyPanel {
+  position: fixed;
+  top: 78px;
+  right: 24px;
+  z-index: 10;
+  width: min(390px, calc(100vw - 48px));
+  padding: 16px;
+  color: #1a2433;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  box-shadow: 0 18px 42px rgb(16 24 40 / 0.18);
+}
+
+.aiKeyPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.aiKeyPanelHeader span {
+  display: block;
+  margin-bottom: 2px;
+  color: #8a97a8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.aiKeyPanelHeader h2 {
+  margin: 0;
+  color: #1a2433;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.aiKeyPanelHeader strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  color: #1f8255;
+  background: #e4f3ec;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aiKeyForm {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.aiKeyForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #5a6678;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.aiKeyForm input,
+.aiKeyForm select {
+  width: 100%;
+  padding: 8px 11px;
+  color: #1a2433;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  outline: none;
+  font-size: 13px;
+}
+
+.aiKeyForm input:focus,
+.aiKeyForm select:focus {
+  border-color: #e08a2b;
+  box-shadow: 0 0 0 3px rgb(224 138 43 / 0.16);
+}
+
+.aiKeyForm p {
+  margin: 0;
+  color: #8a97a8;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.aiKeyActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.aiKeyPrimary,
+.aiKeySecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.aiKeyPrimary {
+  color: #fff;
+  background: #e08a2b;
+  border: 1px solid #e08a2b;
+}
+
+.aiKeySecondary {
+  color: #5a6678;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+}
+
+.aiKeyPrimary:disabled,
+.aiKeySecondary:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.aiKeyStatus {
+  margin-top: 11px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.aiKeyStatus.neutral {
+  color: #5a6678;
+  background: #f2f4f8;
+  border: 1px solid #e3e8ef;
+}
+
+.aiKeyStatus.success {
+  color: #1f8255;
+  background: #e4f3ec;
+  border: 1px solid #cbe8da;
+}
+
+.aiKeyStatus.error {
+  color: #c5392f;
+  background: #fce9e7;
+  border: 1px solid #f4c7c2;
+}
+
+@media (max-width: 760px) {
+  .aiKeyPanel {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+  }
 }
