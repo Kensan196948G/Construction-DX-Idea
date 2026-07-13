@@ -528,4 +528,9 @@ class ApiError extends Error {
   }
 }
 
+export const workerSecurityTestHooks = {
+  inferRoles,
+  resolveCorsOrigin,
+};
+
 export default app;

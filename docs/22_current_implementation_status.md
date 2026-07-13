@@ -51,7 +51,7 @@ npm run worker:deploy:dry-run
 | 検証 | 結果 |
 |---|---|
 | ESLint | 成功 |
-| Node test | 成功 |
+| Node test | 成功。入力検査、マスキング、CORS許可Origin、明示ロール判定を確認 |
 | TypeScript build | 成功 |
 | Vite production build | 成功 |
 | Secret scan | 成功 |
@@ -93,3 +93,4 @@ npm run dev
 - Slack通知テストを実行する。
 - 一般利用者と管理者ロールでE2E確認を行う。
 - GitHub ProjectのP0 Issueをレビュー結果に応じてDoneへ更新する。
+- PR #7のCodeRabbitレビュー完了後、指摘があれば追加修正する。

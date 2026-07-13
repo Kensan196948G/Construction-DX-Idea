@@ -23,7 +23,7 @@
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
-| 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run` |
+| 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
