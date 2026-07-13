@@ -78,7 +78,7 @@ npm run worker:deploy:dry-run
 | 検証 | 結果 |
 |---|---|
 | ESLint | 成功 |
-| Node test | 成功。入力検査、マスキング、standaloneブリッジ、共有schema、CORS許可Origin、明示ロール判定、ログ秘匿を確認 |
+| Node test | 成功。入力検査、マスキング、standaloneブリッジ、共有schema、CORS許可Origin、明示ロール判定、ログ秘匿、Cloudflare Access JWTの正常系・主要異常系を確認 |
 | TypeScript build | 成功 |
 | Vite production build | 成功 |
 | Production API build | 成功。`VITE_USE_MOCK_API=false` でビルド確認 |

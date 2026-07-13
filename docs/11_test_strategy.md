@@ -34,6 +34,8 @@ MVPが業務要件、セキュリティ要件、AI利用制御を満たしてい
 | T-013 | standaloneブリッジ | 困りごとの本文、回答、構造化下書き、APIステージを正しく変換する |
 | T-014 | 共有schema | 未知フィールド、過長文字列、巨大配列を拒否する |
 | T-015 | ログ秘匿 | Anthropicキー、Slack Webhook、DB URL、Bearer token、汎用secretをマスクする |
+| T-016 | Access JWT正常系 | Cloudflare Access JWKS で署名検証し、email・issuer・audience を通過させる |
+| T-017 | Access JWT異常系 | exp切れ、nbf未来、issuer不一致、audience不一致、未知kidを拒否する |
 
 ## 4. 受入テストシナリオ
 

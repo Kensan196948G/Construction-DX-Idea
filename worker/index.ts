@@ -1178,6 +1178,7 @@ export const workerSecurityTestHooks = {
   inferRoles,
   resolveCorsOrigin,
   sanitizeLog,
+  verifyAccessJwt,
 };
 
 type MinimalExecutionContext = {
