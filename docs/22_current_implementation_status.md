@@ -2,13 +2,13 @@
 
 ## 1. 現在の状態
 
-2026-07-13時点で、MVPのリリース直前検証に向けたフロントエンド、バックエンド、インフラ定義、セキュリティ検査、CI、ドキュメントを実装済み。
+2026-07-13時点で、MVPのリリース直前検証に向けたバックエンド、インフラ定義、セキュリティ検査、CI、ドキュメントを実装済み。WebUIは提供された `Construction DX Idea (standalone).html` を正本として表示し、AI利用設定の接続テスト・設定保存をWorker APIへブリッジ済み。困りごと登録、一覧、詳細、ステージ管理などの業務フローは、デザインを維持したまま実APIへ接続する段階である。
 
 ## 2. 実装済みファイル
 
 | 領域 | 主なファイル |
 |---|---|
-| WebUI | `src/App.tsx`, `src/styles/app.css`, `src/lib/api.ts`, `src/lib/mockApi.ts` |
+| WebUI | `Construction DX Idea (standalone).html`, `src/App.tsx`, `src/styles/app.css`, `src/lib/api.ts`, `src/lib/mockApi.ts` |
 | 共通型・検査 | `src/lib/shared.ts`, `src/lib/privacy.ts` |
 | Worker API | `worker/index.ts` |
 | DB | `migrations/001_initial_schema.sql` |
@@ -17,14 +17,11 @@
 
 ## 3. 実装済み機能
 
-- ダッシュボード指標表示
-- 困りごと入力ウィザード
-- 入力検査・機密情報候補検出
-- AI追加質問フロー
-- AI構造化結果の確認・修正
-- 下書き保存、正式登録のUI
-- アイデア一覧・詳細表示
-- ステージ変更UI
+- 提供standaloneデザインの全画面表示
+- AI利用設定カード内のClaude APIキー接続テスト
+- AI利用設定カード内のモデル・月間上限の設定保存
+- standaloneデザイン内のダッシュボード、困りごと入力、AI壁打ち、構造化確認、一覧、詳細、ステージ管理の画面表示
+- 入力検査・機密情報候補検出ロジック
 - Cloudflare Workers API
 - Claude API呼び出し処理
 - AI無効化、日次上限、文字数上限
@@ -45,6 +42,16 @@
 - 監査ログとAI利用履歴
 - Secret混入検査
 - GitHub Actions CI
+
+## 3.1 WebUI機能ブリッジ状況
+
+| 領域 | 状態 | 備考 |
+|---|---|---|
+| AI利用設定 | API接続済み | APIキー接続テスト、設定保存をWorker APIへ接続。APIキー本体は保存しない |
+| 困りごと入力 | デモ表示 | `POST /api/privacy/inspect`、`POST /api/ai/questions`、`POST /api/ideas` への接続が次タスク |
+| AI壁打ち・構造化 | デモ表示 | 既存Worker APIは実装済み。UIイベント接続が次タスク |
+| 一覧・詳細 | デモ表示 | `GET /api/ideas` の実データ表示が次タスク |
+| ステージ管理 | デモ表示 | `POST /api/ideas/:id/stage` の接続が次タスク |
 
 ## 4. 検証結果
 
@@ -67,7 +74,7 @@ npm run worker:deploy:dry-run
 | Production API build | 成功。`VITE_USE_MOCK_API=false` でビルド確認 |
 | Secret scan | 成功 |
 | Wrangler deploy dry-run | 成功 |
-| npm audit | 0 vulnerabilities |
+| npm audit | 成功。0 vulnerabilities |
 
 ## 5. GitHub Projects
 
@@ -106,5 +113,6 @@ npm run dev
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。
 - 一般利用者と管理者ロールでE2E確認を行う。
+- standaloneデザインの困りごと登録、一覧、詳細、ステージ管理を実APIへブリッジする。
 - GitHub ProjectのP0 Issueをレビュー結果に応じてDoneへ更新する。
 - PR #7のCodeRabbitレビュー完了後、指摘があれば追加修正する。

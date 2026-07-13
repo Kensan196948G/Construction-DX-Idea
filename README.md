@@ -18,7 +18,7 @@
 
 | 領域 | 状態 | 実装内容 |
 |---|---|---|
-| 🖥️ WebUI | 実装済み | React/Viteによるダッシュボード、困りごと入力、入力検査、AI壁打ち、手動登録、構造化確認、一覧・詳細、ステージ変更 |
+| 🖥️ WebUI | デザイン適用済み / 機能ブリッジ中 | `Construction DX Idea (standalone).html` を正本として100%表示。AI設定のAPIキー接続テスト、設定保存はAPI接続済み。困りごと登録などの業務フローは次のAPIブリッジ対象 |
 | ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Access JWT検証、AI利用制御、監査ログ、Slack通知・再送 |
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
@@ -233,7 +233,28 @@ flowchart TD
 | 📊 | 進捗管理 | MVPではステージ管理。詳細な効果測定・承認ワークフローはPhase 2 |
 | 🔐 | 機密管理 | APIキーをCloudflare Secretで管理 |
 | 🧾 | 監査ログ | AI利用、承認、設定変更を記録 |
-| ⚙️ | AI設定管理 | モデル、有効/無効、利用上限、接続テストを管理 |
+| ⚙️ | AI設定管理 | モデル、有効/無効、利用上限、APIキー接続テスト、設定保存を管理 |
+
+## 🧪 現在のWebUI実装メモ
+
+```mermaid
+flowchart LR
+    A["Standalone Design HTML"] --> B["Vite / React Shell"]
+    B --> C["全画面表示"]
+    C --> D["AI利用設定カード"]
+    D --> E["APIキー接続テスト"]
+    D --> F["設定保存"]
+    E --> G["Worker API"]
+    F --> G
+```
+
+| 画面領域 | 現在の状態 | 次の実装判断 |
+|---|---|---|
+| 🎨 全体UI | 提供されたstandaloneデザインを正本として表示 | デザイン差分が出ないよう維持 |
+| ⚙️ AI利用設定 | APIキー入力、接続テスト、設定保存をAPIへ接続 | Secret本体保存はMVP方針どおりCloudflare手動登録 |
+| 📝 困りごと登録 | standalone内のデモ状態 | Worker APIへの保存・AI質問・構造化ブリッジを追加 |
+| 📋 一覧・詳細 | standalone内のデモ状態 | Neon実データ表示へ接続 |
+| 🗂️ ステージ管理 | standalone内のデモ状態 | `/api/ideas/:id/stage` へ接続 |
 
 ## 📌 MVPの終点
 
