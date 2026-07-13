@@ -126,3 +126,21 @@ npm run frontend:deploy
 - `npm run predeploy:check` が本番環境値で成功している。
 - 実Claude API、Neon、Slack、Cloudflare Accessでスモークテストが完了している。
 - CodeRabbit、Codex review、security reviewの未対応P0/P1がない。
+
+## 11. 最近の実行結果（2026-07-13）
+
+| チェック | 実行結果 | 備考 |
+|---|---|---|
+| PR反映状況 | ✅ 完了 | PR #8 が `main` にマージ済み（Merge commit: `ab327b5`） |
+| CI | ✅ 完了 | 最新 run `29227437875` は success |
+| `npm run verify` | ✅ 完了 | lint / test / build / security scan すべて通過 |
+| `npm run worker:deploy:dry-run` | ✅ 完了 | 環境変数一覧が想定値で読み込み可 |
+| `npm audit --audit-level=high` | ✅ 完了 | 高リスク脆弱性なし |
+| `npm run predeploy:check` | ⚠️ 未完了 | Production値未設定のため失敗（次項目を確認） |
+
+次は以下を実環境値で実行し、Release Gate を打ち上げる。
+
+1. `APP_BASE_URL`、`ALLOWED_ORIGINS`、`ADMIN_EMAILS`、`SYSTEM_ADMIN_EMAILS`  
+2. `CF_ACCESS_CERTS_URL`、`CF_ACCESS_AUD`、`CF_ACCESS_ISSUER`  
+3. `DATABASE_URL`、`VITE_API_BASE_URL`、`ALLOW_LOCAL_AUTH_BYPASS=false`、`VITE_USE_MOCK_API=false`  
+4. `npm run predeploy:check` を再実行

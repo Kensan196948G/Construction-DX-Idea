@@ -24,7 +24,7 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
-| 🌐 Release | 進行中 | 本番公開先を `https://dxidea.mirai-dx-platform.com` 前提に整備中。wrangler設定、`.env.example`、Release Runbook更新済み |
+| 🌐 Release | 最終ゲート待ち | PR #8は `main` にマージ済み（`ab327b5`）。`npm run verify` / `npm run worker:deploy:dry-run` は通過。`predeploy:check` は本番値未設定で未完了。 |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid

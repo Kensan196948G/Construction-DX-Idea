@@ -4,6 +4,13 @@
 
 2026-07-13時点で、MVPのリリース直前検証に向けたバックエンド、インフラ定義、セキュリティ検査、CI、ドキュメントを実装済み。WebUIは提供された `Construction DX Idea (standalone).html` を正本として表示し、困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、一覧表示、ステージ変更、AI利用設定をWorker APIへブリッジ済み。本番前にはCloudflare Access、Neon、Claude API、Slackを実環境値でE2E確認する。
 
+2026-07-13（最新）:
+
+- `main` に PR #8 がマージされ、リモート `origin/main` と同一 (`ab327b5`)。
+- `npm run verify`、`npm run worker:deploy:dry-run`、`npm audit --audit-level=high` は通過。
+- `npm run predeploy:check` は本番環境値未設定のため失敗（`APP_BASE_URL` など8項目が未設定）。
+- GitHub Projects `users/Kensan196948G/projects/42` は P0 Issue#2-5 を Done、Issue#6 を In Progress に更新済み。
+
 ## 2. 実装済みファイル
 
 | 領域 | 主なファイル |
