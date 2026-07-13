@@ -23,6 +23,11 @@ CF_ACCESS_ISSUER = ""
 AI_INPUT_COST_PER_1K_TOKENS = "0.003"
 AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 
+# Production sample (set actual route only in production account)
+# routes = [
+#   { pattern = "https://dxidea.mirai-dx-platform.com/*", zone_name = "mirai-dx-platform.com" }
+# ]
+
 # Required secrets:
 # wrangler secret put DATABASE_URL
 # wrangler secret put ANTHROPIC_API_KEY

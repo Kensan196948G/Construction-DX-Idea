@@ -18,6 +18,7 @@
 - 管理者グループ
 - セッション有効期限
 - Worker APIへ `CF-Access-Authenticated-User-Email` が渡ること
+- 既定公開ドメイン: `https://dxidea.mirai-dx-platform.com`
 
 ## 3. Cloudflare Workers
 
@@ -90,3 +91,4 @@ MVPでは手動登録を推奨する。
 9. 未許可OriginからのCORSが許可されない。
 10. `npm run predeploy:check` が本番環境値で成功する。
 11. AI設定の `connected` 表示は接続テスト成功後だけになる。
+12. `https://dxidea.mirai-dx-platform.com` でAccess保護された画面とAPI応答を確認する。
