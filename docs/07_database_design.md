@@ -98,7 +98,7 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | resource_id | uuid | 対象ID |
 | idempotency_key | text | 二重送信防止キー |
 | payload | jsonb | マスキング済み通知内容 |
-| status | text | pending/sent/failed/skipped |
+| status | text | pending/processing/sent/failed/skipped |
 | attempts | integer | 送信試行回数 |
 | next_attempt_at | timestamptz | 次回再送予定 |
 | last_error | text | 機密情報を含まない最終エラー |

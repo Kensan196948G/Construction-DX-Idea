@@ -712,8 +712,8 @@ function AiSettingsPanel({
       const nextSettings = await api.updateAiSettings({
         model,
         enabled,
-        dailyLimit,
-        monthlyBudget,
+        dailyLimit: Math.max(0, Number(dailyLimit) || 0),
+        monthlyBudget: Math.max(0, Number(monthlyBudget) || 0),
       });
       onSaved(nextSettings);
     } catch (error) {
@@ -728,11 +728,11 @@ function AiSettingsPanel({
     onError("");
     try {
       const result = await api.testAiSettings(apiKey || undefined, model);
-      setApiKey("");
       setTestMessage(result.message);
     } catch (error) {
       onError(toErrorMessage(error));
     } finally {
+      setApiKey("");
       setPanelBusy(false);
     }
   }
@@ -754,7 +754,7 @@ function AiSettingsPanel({
             type="number"
             min={0}
             value={dailyLimit}
-            onChange={(event) => setDailyLimit(Number(event.target.value))}
+            onChange={(event) => setDailyLimit(Math.max(0, Number(event.target.value) || 0))}
           />
         </label>
         <label>
@@ -763,7 +763,7 @@ function AiSettingsPanel({
             type="number"
             min={0}
             value={monthlyBudget}
-            onChange={(event) => setMonthlyBudget(Number(event.target.value))}
+            onChange={(event) => setMonthlyBudget(Math.max(0, Number(event.target.value) || 0))}
           />
         </label>
         <label className="checkboxLabel">

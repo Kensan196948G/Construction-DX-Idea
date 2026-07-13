@@ -65,6 +65,17 @@ const seedIdeas: Idea[] = [
 ];
 
 let ideas = [...seedIdeas];
+let mockSettings: AiSettings = {
+  provider: "claude",
+  model: "claude-sonnet-4-5",
+  enabled: false,
+  status: "disabled",
+  dailyLimit: 10,
+  monthlyBudget: 30000,
+  keyLast4: undefined,
+  lastCheckedAt: undefined,
+  updatedBy: "system",
+};
 
 export const mockApi = {
   async getMe(): Promise<UserProfile> {
@@ -179,21 +190,11 @@ export const mockApi = {
   },
 
   async getAiSettings(): Promise<AiSettings> {
-    return {
-      provider: "claude",
-      model: "claude-sonnet-4-5",
-      enabled: false,
-      status: "disabled",
-      dailyLimit: 10,
-      monthlyBudget: 30000,
-      keyLast4: undefined,
-      lastCheckedAt: undefined,
-      updatedBy: "system",
-    };
+    return mockSettings;
   },
 
   async updateAiSettings(settings: AiSettingsPatch): Promise<AiSettings> {
-    return {
+    mockSettings = {
       provider: "claude",
       model: settings.model,
       enabled: settings.enabled,
@@ -204,6 +205,7 @@ export const mockApi = {
       lastCheckedAt: now(),
       updatedBy: "local.dev@example.com",
     };
+    return mockSettings;
   },
 
   async testAiSettings(): Promise<AiConnectionTestResult> {

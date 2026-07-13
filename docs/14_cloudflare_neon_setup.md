@@ -89,3 +89,4 @@ MVPでは手動登録を推奨する。
 8. 不正なAccess JWT、期限切れJWT、issuer不一致JWT、audience不一致JWTが拒否される。
 9. 未許可OriginからのCORSが許可されない。
 10. `npm run predeploy:check` が本番環境値で成功する。
+11. AI設定の `connected` 表示は接続テスト成功後だけになる。

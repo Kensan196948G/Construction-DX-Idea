@@ -151,7 +151,7 @@ create table if not exists notification_outbox (
   idempotency_key text not null unique,
   payload jsonb not null default '{}',
   status text not null default 'pending'
-    check (status in ('pending', 'sent', 'failed', 'skipped')),
+    check (status in ('pending', 'processing', 'sent', 'failed', 'skipped')),
   attempts integer not null default 0,
   next_attempt_at timestamptz,
   last_error text,

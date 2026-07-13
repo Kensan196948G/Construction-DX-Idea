@@ -53,4 +53,4 @@ Slack通知に失敗しても、アイデア登録自体は成功とする。通
 
 再送処理は `failed` かつ `next_attempt_at` を過ぎたイベントを対象にする。同じイベントを二重投稿しないよう、`idempotency_key` で冪等性を確保する。
 
-MVP実装ではCloudflare Cron Triggersが10分間隔で `notification_outbox` のfailed行を最大10件ずつ再送する。Webhook呼び出しはタイムアウトを設定し、正式登録処理を長時間ブロックしない。
+MVP実装ではCloudflare Cron Triggersが10分間隔で `notification_outbox` のfailed行を最大10件ずつ `processing` に原子的claimして再送する。Webhook呼び出しはタイムアウトを設定し、正式登録処理を長時間ブロックしない。Outboxを永続化できなかった場合はSlackへ送信せず、登録結果は通知skippedとして扱う。

@@ -146,7 +146,6 @@ app.post(
       return c.json(questions);
     } catch (error) {
       await auditAiFailure(c.env, user, "questions", input, error);
-      await releaseAiUsage(c.env, reservation);
       throw error;
     }
   },
@@ -163,6 +162,13 @@ app.post(
       const structured = await structureIdea(c.env, input, answers);
       const findings = inspectStructuredIdea(structured);
       if (findings.length > 0) {
+        await audit(c.env, user, "ai.quality.blocked", "ai_session", "structure", {
+          findingTypes: [...new Set(findings.map((finding) => finding.type))],
+          findingCount: findings.length,
+          outcome: "blocked",
+          model: c.env.AI_MODEL,
+          checkedAt: new Date().toISOString(),
+        });
         throw new ApiError("AI_PRIVACY_FINDING", "AI応答に機密情報候補が含まれています。", 422);
       }
       const cost = await auditAi(c.env, user, "structure", input, structured);
@@ -170,7 +176,6 @@ app.post(
       return c.json(structured);
     } catch (error) {
       await auditAiFailure(c.env, user, "structure", input, error);
-      await releaseAiUsage(c.env, reservation);
       throw error;
     }
   },
@@ -259,7 +264,14 @@ app.patch(
     requireSystemAdmin(user, c.env);
     const patch = c.req.valid("json");
     const db = getDb(c.env);
-    const status = patch.enabled && c.env.ANTHROPIC_API_KEY ? "connected" : "disabled";
+    const connection = patch.enabled ? await testClaudeConnection(c.env, undefined, patch.model) : undefined;
+    const status = !patch.enabled
+      ? "disabled"
+      : !c.env.ANTHROPIC_API_KEY
+        ? "not_configured"
+        : connection?.ok
+          ? "connected"
+          : "error";
     const keyLast4 = c.env.ANTHROPIC_API_KEY ? c.env.ANTHROPIC_API_KEY.slice(-4) : undefined;
     const rows = await db`
       insert into ai_settings (
@@ -936,8 +948,9 @@ async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
     return "skipped";
   }
 
-  if (outboxId === "already-sent") {
-    return "sent";
+  if (outboxId === "already-sent") return "sent";
+  if (outboxId === "not-claimed" || !outboxId) {
+    return "skipped";
   }
 
   try {
@@ -957,12 +970,23 @@ async function retrySlackNotifications(env: Env) {
   try {
     const db = getDb(env);
     const rows = await db`
-      select id, payload
-      from notification_outbox
-      where status = 'failed'
-        and (next_attempt_at is null or next_attempt_at <= now())
-      order by updated_at asc
-      limit 10
+      with claimed as (
+        update notification_outbox
+        set status = 'processing',
+            updated_at = now()
+        where id in (
+          select id
+          from notification_outbox
+          where status = 'failed'
+            and (next_attempt_at is null or next_attempt_at <= now())
+          order by updated_at asc
+          limit 10
+          for update skip locked
+        )
+        returning id, payload
+      )
+      select *
+      from claimed
     `;
     for (const row of rows) {
       const payload = typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload;
@@ -1009,7 +1033,7 @@ async function createNotificationOutbox(
     idempotencyKey: string;
     payload: Record<string, unknown>;
   },
-): Promise<string | "already-sent" | undefined> {
+): Promise<string | "already-sent" | "not-claimed" | undefined> {
   try {
     const db = getDb(env);
     const rows = await db`
@@ -1018,14 +1042,25 @@ async function createNotificationOutbox(
       )
       values (
         ${event.eventType}, ${event.resourceType}, ${event.resourceId},
-        ${event.idempotencyKey}, ${JSON.stringify(event.payload)}::jsonb, 'pending'
+        ${event.idempotencyKey}, ${JSON.stringify(event.payload)}::jsonb, 'processing'
       )
       on conflict (idempotency_key) do update
-      set payload = excluded.payload,
+      set status = 'processing',
+          payload = excluded.payload,
           updated_at = now()
+      where notification_outbox.status in ('pending', 'failed')
+        and (notification_outbox.next_attempt_at is null or notification_outbox.next_attempt_at <= now())
       returning id, status
     `;
-    if (rows[0]?.status === "sent") return "already-sent";
+    if (!rows[0]) {
+      const existing = await db`
+        select status
+        from notification_outbox
+        where idempotency_key = ${event.idempotencyKey}
+        limit 1
+      `;
+      return existing[0]?.status === "sent" ? "already-sent" : "not-claimed";
+    }
     return String(rows[0]?.id);
   } catch (error) {
     console.error("Slack outbox write failed", sanitizeLog(error));
@@ -1035,11 +1070,11 @@ async function createNotificationOutbox(
 
 async function updateNotificationOutbox(
   env: Env,
-  id: string | "already-sent" | undefined,
+  id: string | "already-sent" | "not-claimed" | undefined,
   status: "sent" | "failed" | "skipped",
   lastError?: string,
 ) {
-  if (!id || id === "already-sent") return;
+  if (!id || id === "already-sent" || id === "not-claimed") return;
   try {
     const db = getDb(env);
     await db`
