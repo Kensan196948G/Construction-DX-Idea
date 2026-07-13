@@ -10,6 +10,10 @@ AI_ENABLED = "false"
 DAILY_AI_LIMIT = "10"
 MAX_INPUT_CHARS = "2000"
 APP_BASE_URL = "https://example.invalid"
+ALLOWED_ORIGINS = "https://example.invalid"
+ADMIN_EMAILS = ""
+SYSTEM_ADMIN_EMAILS = ""
+ALLOW_LOCAL_AUTH_BYPASS = "false"
 
 # Required secrets:
 # wrangler secret put DATABASE_URL

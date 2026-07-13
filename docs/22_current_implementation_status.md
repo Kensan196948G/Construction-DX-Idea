@@ -28,6 +28,9 @@
 - Cloudflare Workers API
 - Claude API呼び出し処理
 - AI無効化、日次上限、文字数上限
+- 許可Origin限定CORS
+- Cloudflare Accessヘッダー必須化
+- 管理者・システム管理者メールの明示設定
 - Neon PostgreSQL保存処理
 - Slack新規登録通知
 - 監査ログとAI利用履歴
@@ -84,6 +87,8 @@ npm run dev
 - Cloudflare Accessの許可ユーザー、管理者、システム管理者を設定する。
 - `DATABASE_URL`、`ANTHROPIC_API_KEY`、`SLACK_WEBHOOK_URL` をCloudflare Secretへ登録する。
 - `AI_ENABLED=true`、`APP_BASE_URL`、利用上限を本番値へ変更する。
+- `ALLOWED_ORIGINS`、`ADMIN_EMAILS`、`SYSTEM_ADMIN_EMAILS` を本番値へ変更する。
+- `ALLOW_LOCAL_AUTH_BYPASS=false` を確認する。
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。
 - 一般利用者と管理者ロールでE2E確認を行う。

@@ -17,6 +17,7 @@
 - 許可するメールドメインまたはユーザー
 - 管理者グループ
 - セッション有効期限
+- Worker APIへ `CF-Access-Authenticated-User-Email` が渡ること
 
 ## 3. Cloudflare Workers
 
@@ -30,6 +31,16 @@ Workersの責務:
 - Slack通知
 - 利用制限
 - 監査ログ
+
+必須の環境変数:
+
+| 変数 | 内容 |
+|---|---|
+| `APP_BASE_URL` | 本番WebUIのURL |
+| `ALLOWED_ORIGINS` | CORSで許可するOriginのカンマ区切り |
+| `ADMIN_EMAILS` | ステージ変更などを許可する管理者メールのカンマ区切り |
+| `SYSTEM_ADMIN_EMAILS` | AI接続設定を許可するシステム管理者メールのカンマ区切り |
+| `ALLOW_LOCAL_AUTH_BYPASS` | ローカル検証専用。本番では `false` |
 
 ## 4. Secret登録
 
@@ -63,3 +74,5 @@ MVPでは手動登録を推奨する。
 4. Claude API接続テストに成功する。
 5. Slackへテスト通知できる。
 6. 監査ログが保存される。
+7. AccessヘッダーなしのAPI呼び出しが拒否される。
+8. 未許可OriginからのCORSが許可されない。

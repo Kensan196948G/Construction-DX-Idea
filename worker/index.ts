@@ -29,6 +29,10 @@ type Env = {
   DAILY_AI_LIMIT: string;
   MAX_INPUT_CHARS: string;
   APP_BASE_URL: string;
+  ALLOWED_ORIGINS?: string;
+  ADMIN_EMAILS?: string;
+  SYSTEM_ADMIN_EMAILS?: string;
+  ALLOW_LOCAL_AUTH_BYPASS?: string;
 };
 
 type AppContext = Context<{ Bindings: Env }>;
@@ -39,7 +43,7 @@ app.use("*", secureHeaders());
 app.use(
   "*",
   cors({
-    origin: (origin) => origin,
+    origin: (origin, c) => resolveCorsOrigin(origin, c.env),
     allowMethods: ["GET", "POST", "PATCH", "OPTIONS"],
     allowHeaders: ["Content-Type", "CF-Access-Authenticated-User-Email"],
     credentials: true,
@@ -55,8 +59,8 @@ app.get("/api/health", (c) =>
 );
 
 app.get("/api/me", (c) => {
-  const user = getUser(c.req.raw);
-  return c.json({ email: user, roles: inferRoles(user) });
+  const user = getUser(c.req.raw, c.env);
+  return c.json({ email: user, roles: inferRoles(user, c.env) });
 });
 
 app.get("/api/metrics", async (c) => {
@@ -105,7 +109,7 @@ app.post(
   "/api/ai/questions",
   zValidator("json", z.object({ input: issueInputSchema })),
   async (c) => {
-    const user = getUser(c.req.raw);
+    const user = getUser(c.req.raw, c.env);
     const { input } = c.req.valid("json");
     await assertAiAllowed(c.env, user, input);
     const questions = await generateQuestions(c.env, input);
@@ -118,7 +122,7 @@ app.post(
   "/api/ai/structure",
   zValidator("json", z.object({ input: issueInputSchema, answers: z.record(z.string(), z.string()) })),
   async (c) => {
-    const user = getUser(c.req.raw);
+    const user = getUser(c.req.raw, c.env);
     const { input, answers } = c.req.valid("json");
     await assertAiAllowed(c.env, user, input);
     const structured = await structureIdea(c.env, input, answers);
@@ -154,8 +158,8 @@ app.post(
   "/api/ideas/:id/stage",
   zValidator("json", z.object({ stage: z.enum(ideaStages) })),
   async (c) => {
-    const user = getUser(c.req.raw);
-    requireAdmin(user);
+    const user = getUser(c.req.raw, c.env);
+    requireAdmin(user, c.env);
     const db = getDb(c.env);
     const id = c.req.param("id");
     const { stage } = c.req.valid("json");
@@ -174,8 +178,8 @@ app.post(
 );
 
 app.get("/api/admin/ai-settings", async (c) => {
-  const user = getUser(c.req.raw);
-  requireSystemAdmin(user);
+  const user = getUser(c.req.raw, c.env);
+  requireSystemAdmin(user, c.env);
   const settings: AiSettings = {
     provider: c.env.AI_PROVIDER,
     model: c.env.AI_MODEL,
@@ -202,7 +206,7 @@ async function insertIdea(
   structured: StructuredIdea,
   stage: IdeaStage,
 ): Promise<Idea> {
-  const user = getUser(c.req.raw);
+  const user = getUser(c.req.raw, c.env);
   const db = getDb(c.env);
   const rows = await db`
     insert into ideas (
@@ -237,26 +241,54 @@ function getDb(env: Env) {
   return neon(env.DATABASE_URL);
 }
 
-function getUser(request: Request): string {
-  return request.headers.get("CF-Access-Authenticated-User-Email") ?? "local.dev@example.com";
+function resolveCorsOrigin(origin: string, env: Env): string | undefined {
+  if (!origin) return undefined;
+  const allowed = new Set([
+    ...splitCsv(env.ALLOWED_ORIGINS),
+    env.APP_BASE_URL,
+  ]);
+  if (env.ALLOW_LOCAL_AUTH_BYPASS === "true") {
+    allowed.add("http://localhost:5173");
+    allowed.add("http://127.0.0.1:5173");
+  }
+  return allowed.has(origin) ? origin : undefined;
 }
 
-function inferRoles(user: string): string[] {
+function getUser(request: Request, env: Env): string {
+  const user = request.headers.get("CF-Access-Authenticated-User-Email");
+  if (user) return user.toLowerCase();
+  if (env.ALLOW_LOCAL_AUTH_BYPASS === "true") return "local.dev@example.com";
+  throw new ApiError("UNAUTHENTICATED", "Cloudflare Access authentication is required.", 401);
+}
+
+function inferRoles(user: string, env: Env): string[] {
   const roles = ["user"];
-  if (user.includes("admin") || user.endsWith("@example.com")) roles.push("admin", "system_admin");
+  const normalized = user.toLowerCase();
+  if (splitCsv(env.ADMIN_EMAILS).includes(normalized)) roles.push("admin");
+  if (splitCsv(env.SYSTEM_ADMIN_EMAILS).includes(normalized)) roles.push("admin", "system_admin");
+  if (env.ALLOW_LOCAL_AUTH_BYPASS === "true" && normalized === "local.dev@example.com") {
+    roles.push("admin", "system_admin");
+  }
   return roles;
 }
 
-function requireAdmin(user: string) {
-  if (!inferRoles(user).includes("admin")) {
+function requireAdmin(user: string, env: Env) {
+  if (!inferRoles(user, env).includes("admin")) {
     throw new ApiError("FORBIDDEN", "管理者権限が必要です。", 403);
   }
 }
 
-function requireSystemAdmin(user: string) {
-  if (!inferRoles(user).includes("system_admin")) {
+function requireSystemAdmin(user: string, env: Env) {
+  if (!inferRoles(user, env).includes("system_admin")) {
     throw new ApiError("FORBIDDEN", "システム管理者権限が必要です。", 403);
   }
+}
+
+function splitCsv(value?: string): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 async function assertAiAllowed(env: Env, user: string, input: IssueInput) {

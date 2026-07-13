@@ -10,6 +10,10 @@ APIキーをソースコード、GitHub、WebUI、ブラウザ保存領域、ア
 - 管理画面は管理者ロールに限定する。
 - AI接続設定はシステム管理者のみ利用できる。
 - 重要操作は監査ログへ記録する。
+- Worker APIは `CF-Access-Authenticated-User-Email` ヘッダーを必須とする。
+- 管理者は `ADMIN_EMAILS`、システム管理者は `SYSTEM_ADMIN_EMAILS` に明示設定したメールアドレスだけを許可する。
+- ローカル開発用の認証バイパスは `ALLOW_LOCAL_AUTH_BYPASS=true` の場合だけ有効とし、本番では必ず `false` にする。
+- CORSは `ALLOWED_ORIGINS` と `APP_BASE_URL` に一致するOriginだけを許可する。
 
 ## 3. AIへ送信しない情報
 
@@ -81,3 +85,11 @@ Workerで送信前に以下を行う。
 ## 8. MVP制限
 
 MVPでは、会社情報や個人情報を含まないアイデアに利用範囲を限定する。
+
+## 9. 本番API公開前チェック
+
+- Cloudflare Accessの対象URLがWorker API全体を保護している。
+- `ALLOWED_ORIGINS` が本番WebUIのURLだけを含んでいる。
+- `ADMIN_EMAILS` と `SYSTEM_ADMIN_EMAILS` が実在の管理者メールだけを含んでいる。
+- `ALLOW_LOCAL_AUTH_BYPASS` が `false` である。
+- Accessヘッダーがないリクエストは `UNAUTHENTICATED` で拒否される。
