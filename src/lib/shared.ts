@@ -26,6 +26,9 @@ export const stageLabels: Record<IdeaStage, string> = {
   archived: "保管",
 };
 
+const structuredListItemSchema = z.string().min(1).max(500);
+const structuredListSchema = z.array(structuredListItemSchema).max(50);
+
 export const issueInputSchema = z.object({
   workType: z.string().min(1).max(2000),
   affectedRole: z.string().max(500).optional().default(""),
@@ -34,7 +37,7 @@ export const issueInputSchema = z.object({
   usedData: z.string().max(2000).optional().default(""),
   relatedSystems: z.string().max(1000).optional().default(""),
   confidentiality: z.enum(["none", "possible", "unknown"]),
-});
+}).strict();
 
 export type IssueInput = z.infer<typeof issueInputSchema>;
 
@@ -46,14 +49,14 @@ export const structuredIdeaSchema = z.object({
   currentWorkflow: z.string().max(4000),
   improvementIdea: z.string().max(4000),
   expectedEffects: z.string().max(4000),
-  requiredData: z.array(z.string()).default([]),
-  relatedSystems: z.array(z.string()).default([]),
-  implementationOptions: z.array(z.string()).default([]),
-  securityNotes: z.array(z.string()).default([]),
-  openQuestions: z.array(z.string()).default([]),
+  requiredData: structuredListSchema.default([]),
+  relatedSystems: structuredListSchema.default([]),
+  implementationOptions: structuredListSchema.default([]),
+  securityNotes: structuredListSchema.default([]),
+  openQuestions: structuredListSchema.default([]),
   mvpCandidate: z.string().max(4000),
   mvpDoneDefinition: z.string().max(4000),
-});
+}).strict();
 
 export type StructuredIdea = z.infer<typeof structuredIdeaSchema>;
 

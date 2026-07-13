@@ -71,4 +71,23 @@ describe("worker security helpers", () => {
   it("estimates AI cost from configured token rates", () => {
     assert.equal(workerSecurityTestHooks.estimateAiCost(env, 4000, 4000), 0.018);
   });
+
+  it("sanitizes common secret shapes before runtime logging", () => {
+    const databaseUrl = "postgres" + "ql://user:password" + "@db.example/app";
+    const sanitized = workerSecurityTestHooks.sanitizeLog(
+      "sk-ant-secret https://hooks.slack.com/services/T000/B000/XXXX " +
+        `${databaseUrl} Bearer abc.def.ghi ` +
+        "api_key=plain-secret token:another-secret",
+    );
+
+    assert.equal(sanitized.includes("sk-ant-secret"), false);
+    assert.equal(sanitized.includes("hooks.slack.com/services"), false);
+    assert.equal(sanitized.includes("user:password@db.example"), false);
+    assert.equal(sanitized.includes("Bearer abc.def.ghi"), false);
+    assert.equal(sanitized.includes("plain-secret"), false);
+    assert.match(sanitized, /\[ANTHROPIC_API_KEY]/);
+    assert.match(sanitized, /\[SLACK_WEBHOOK_URL]/);
+    assert.match(sanitized, /\[DATABASE_URL]/);
+    assert.match(sanitized, /Bearer \[TOKEN]/);
+  });
 });

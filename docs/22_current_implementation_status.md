@@ -24,6 +24,8 @@
 - WebUIからの下書き保存、正式登録、Slack通知結果表示
 - WebUIからの管理者ステージ変更
 - WebUI操作のロールガードと二重送信ガード
+- standalone WebUIブリッジ変換ロジックの単体テスト
+- 共有API schemaのstrict化、配列件数・要素長制限
 - AI利用設定カード内のClaude APIキー接続テスト
 - AI利用設定カード内の保存済みSecret接続テスト、モデル・月間上限の設定保存
 - standaloneデザイン内のダッシュボード、困りごと入力、AI壁打ち、構造化確認、一覧、詳細、ステージ管理の画面表示
@@ -47,6 +49,7 @@
 - Slack通知OutboxとCron再送
 - 監査ログとAI利用履歴
 - Secret混入検査
+- WorkerランタイムログのSecretマスキング
 - GitHub Actions CI
 
 ## 3.1 WebUI機能ブリッジ状況
@@ -75,7 +78,7 @@ npm run worker:deploy:dry-run
 | 検証 | 結果 |
 |---|---|
 | ESLint | 成功 |
-| Node test | 成功。入力検査、マスキング、CORS許可Origin、明示ロール判定を確認 |
+| Node test | 成功。入力検査、マスキング、standaloneブリッジ、共有schema、CORS許可Origin、明示ロール判定、ログ秘匿を確認 |
 | TypeScript build | 成功 |
 | Vite production build | 成功 |
 | Production API build | 成功。`VITE_USE_MOCK_API=false` でビルド確認 |

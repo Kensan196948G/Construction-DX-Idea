@@ -43,6 +43,7 @@ Workerで送信前に以下を行う。
 5. 実行者、モデル、日時、処理種別を記録する。
 6. 原文全文をAI処理ログへ残さない。
 7. AI応答にも機密情報がないか確認する。
+8. API payloadはstrict schemaで検証し、未知フィールド、過長文字列、巨大配列を拒否する。
 
 ## 5. APIキー管理
 
@@ -82,6 +83,8 @@ Workerで送信前に以下を行う。
 - 認証トークン
 - 個人情報を含む原文
 - AIへ送った未加工テキスト全文
+
+Workerの障害ログでは、Anthropic APIキー、Slack Webhook、Slack token、DATABASE_URL、Bearer token、`api_key`、`token`、`secret`、`password` 形式の値をマスクする。
 
 ## 8. MVP制限
 

@@ -1151,7 +1151,16 @@ function arrayFromJson(value: unknown): string[] {
 }
 
 function sanitizeLog(error: unknown) {
-  return String(error).replace(/sk-ant-[A-Za-z0-9_-]+/g, "[ANTHROPIC_API_KEY]");
+  return String(error)
+    .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[ANTHROPIC_API_KEY]")
+    .replace(/xox[baprs]-[A-Za-z0-9-]+/g, "[SLACK_TOKEN]")
+    .replace(/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+/g, "[SLACK_WEBHOOK_URL]")
+    .replace(/\bpostgres(?:ql)?:\/\/[^\s"'<>]+/gi, "[DATABASE_URL]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [TOKEN]")
+    .replace(
+      /\b(api[-_ ]?key|token|secret|password|passwd|pwd)[=:]\s*[^\s"',;]+/gi,
+      "$1=[SECRET]",
+    );
 }
 
 class ApiError extends Error {
@@ -1168,6 +1177,7 @@ export const workerSecurityTestHooks = {
   estimateAiCost,
   inferRoles,
   resolveCorsOrigin,
+  sanitizeLog,
 };
 
 type MinimalExecutionContext = {
