@@ -22,7 +22,7 @@
 | ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Accessユーザー識別、AI利用制御、監査ログ、Slack通知 |
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
-| 🔐 Security | 実装済み | Secret分離、Access JWT検証、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
+| 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
@@ -232,6 +232,7 @@ flowchart TD
 | 📊 | 進捗管理 | 企画、MVP、検証、本番化を追跡 |
 | 🔐 | 機密管理 | APIキーをCloudflare Secretで管理 |
 | 🧾 | 監査ログ | AI利用、承認、設定変更を記録 |
+| ⚙️ | AI設定管理 | モデル、有効/無効、利用上限、接続テストを管理 |
 
 ## 📌 MVPの終点
 

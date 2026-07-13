@@ -28,6 +28,7 @@ import {
   type IssueInput,
   type PrivacyFinding,
   type StructuredIdea,
+  type UserProfile,
   ideaStages,
   stageLabels,
 } from "./lib/shared";
@@ -48,6 +49,7 @@ export function App() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [settings, setSettings] = useState<AiSettings | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [input, setInput] = useState<IssueInput>(initialInput);
   const [findings, setFindings] = useState<PrivacyFinding[]>([]);
   const [questions, setQuestions] = useState<AiQuestion[]>([]);
@@ -60,11 +62,13 @@ export function App() {
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   const refresh = useCallback(async () => {
-    const [nextMetrics, nextIdeas, nextSettings] = await Promise.all([
+    const [nextUser, nextMetrics, nextIdeas, nextSettings] = await Promise.all([
+      api.getMe(),
       api.getMetrics(),
       api.listIdeas(),
       api.getAiSettings(),
     ]);
+    setCurrentUser(nextUser);
     setMetrics(nextMetrics);
     setIdeas(nextIdeas);
     setSettings(nextSettings);
@@ -79,6 +83,8 @@ export function App() {
     () => ideas.find((idea) => idea.id === selectedId) ?? ideas[0],
     [ideas, selectedId],
   );
+  const isAdmin = currentUser?.roles.includes("admin") ?? false;
+  const isSystemAdmin = currentUser?.roles.includes("system_admin") ?? false;
 
   async function handleInputSubmit(event: FormEvent) {
     event.preventDefault();
@@ -448,18 +454,22 @@ export function App() {
                   <span className={`stageBadge ${selectedIdea.stage}`}>{stageLabels[selectedIdea.stage]}</span>
                   <h2>{selectedIdea.title}</h2>
                 </div>
-                <select
-                  value={selectedIdea.stage}
-                  onChange={(event) => void updateStage(selectedIdea.id, event.target.value as IdeaStage)}
-                  disabled={isBusy}
-                  aria-label="ステージ変更"
-                >
-                  {ideaStages.map((stage) => (
-                    <option key={stage} value={stage}>
-                      {stageLabels[stage]}
-                    </option>
-                  ))}
-                </select>
+                {isAdmin ? (
+                  <select
+                    value={selectedIdea.stage}
+                    onChange={(event) => void updateStage(selectedIdea.id, event.target.value as IdeaStage)}
+                    disabled={isBusy}
+                    aria-label="ステージ変更"
+                  >
+                    {ideaStages.map((stage) => (
+                      <option key={stage} value={stage}>
+                        {stageLabels[stage]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="readonlyRole">閲覧のみ</span>
+                )}
               </div>
               <DetailGrid idea={selectedIdea} />
             </article>
@@ -477,6 +487,17 @@ export function App() {
             <SecurityItem icon={<BarChart3 />} title="利用制限" text="日次回数、文字数、月間予算、緊急停止を管理します。" />
             <SecurityItem icon={<FileCheck2 />} title="人間確認" text="AI結果は正式登録前に必ず利用者が確認・修正します。" />
           </div>
+          {isSystemAdmin && settings && (
+            <AiSettingsPanel
+              settings={settings}
+              isBusy={isBusy}
+              onSaved={(nextSettings) => {
+                setSettings(nextSettings);
+                setMessage("AI接続設定を更新しました。");
+              }}
+              onError={setErrorMessage}
+            />
+          )}
         </section>
       </main>
     </div>
@@ -647,6 +668,113 @@ function SecurityItem({ icon, title, text }: { icon: React.ReactNode; title: str
       <div>{icon}</div>
       <strong>{title}</strong>
       <span>{text}</span>
+    </div>
+  );
+}
+
+function AiSettingsPanel({
+  settings,
+  isBusy,
+  onSaved,
+  onError,
+}: {
+  settings: AiSettings;
+  isBusy: boolean;
+  onSaved: (settings: AiSettings) => void;
+  onError: (message: string) => void;
+}) {
+  const [model, setModel] = useState(settings.model);
+  const [enabled, setEnabled] = useState(settings.enabled);
+  const [dailyLimit, setDailyLimit] = useState(settings.dailyLimit);
+  const [monthlyBudget, setMonthlyBudget] = useState(settings.monthlyBudget);
+  const [apiKey, setApiKey] = useState("");
+  const [testMessage, setTestMessage] = useState("");
+  const [panelBusy, setPanelBusy] = useState(false);
+
+  async function save() {
+    setPanelBusy(true);
+    onError("");
+    try {
+      const nextSettings = await api.updateAiSettings({
+        model,
+        enabled,
+        dailyLimit,
+        monthlyBudget,
+      });
+      onSaved(nextSettings);
+    } catch (error) {
+      onError(toErrorMessage(error));
+    } finally {
+      setPanelBusy(false);
+    }
+  }
+
+  async function testConnection() {
+    setPanelBusy(true);
+    onError("");
+    try {
+      const result = await api.testAiSettings(apiKey || undefined, model);
+      setApiKey("");
+      setTestMessage(result.message);
+    } catch (error) {
+      onError(toErrorMessage(error));
+    } finally {
+      setPanelBusy(false);
+    }
+  }
+
+  return (
+    <div className="adminPanel">
+      <div>
+        <p className="eyebrow">Admin</p>
+        <h3>AI接続設定</h3>
+      </div>
+      <div className="adminGrid">
+        <label>
+          <span>モデル</span>
+          <input value={model} onChange={(event) => setModel(event.target.value)} />
+        </label>
+        <label>
+          <span>日次上限</span>
+          <input
+            type="number"
+            min={0}
+            value={dailyLimit}
+            onChange={(event) => setDailyLimit(Number(event.target.value))}
+          />
+        </label>
+        <label>
+          <span>月額予算</span>
+          <input
+            type="number"
+            min={0}
+            value={monthlyBudget}
+            onChange={(event) => setMonthlyBudget(Number(event.target.value))}
+          />
+        </label>
+        <label className="checkboxLabel">
+          <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+          <span>AI機能を有効にする</span>
+        </label>
+        <label>
+          <span>接続テスト用APIキー</span>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="未入力時は保存済みSecretを使用"
+          />
+        </label>
+      </div>
+      {testMessage && <p className="empty">{testMessage}</p>}
+      <div className="actions">
+        <button className="secondaryButton" disabled={isBusy || panelBusy} onClick={testConnection}>
+          接続テスト
+        </button>
+        <button className="primaryButton" disabled={isBusy || panelBusy} onClick={save}>
+          設定保存
+        </button>
+      </div>
     </div>
   );
 }

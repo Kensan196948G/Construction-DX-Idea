@@ -7,6 +7,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
 import { inspectIssueInput, inspectStructuredIdea, maskSensitiveText } from "../src/lib/privacy";
 import {
+  type AiConnectionTestResult,
   type AiQuestion,
   type AiSettings,
   type DashboardMetrics,
@@ -214,18 +215,66 @@ app.post(
 app.get("/api/admin/ai-settings", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   requireSystemAdmin(user, c.env);
-  const settings: AiSettings = {
-    provider: c.env.AI_PROVIDER,
-    model: c.env.AI_MODEL,
-    enabled: c.env.AI_ENABLED === "true",
-    status: c.env.AI_ENABLED === "true" && c.env.ANTHROPIC_API_KEY ? "connected" : "disabled",
-    keyLast4: c.env.ANTHROPIC_API_KEY ? c.env.ANTHROPIC_API_KEY.slice(-4) : undefined,
-    dailyLimit: Number(c.env.DAILY_AI_LIMIT || 10),
-    monthlyBudget: 0,
-    updatedBy: "cloudflare-secret",
-  };
-  return c.json(settings);
+  return c.json(await getAiSettings(c.env));
 });
+
+app.patch(
+  "/api/admin/ai-settings",
+  zValidator(
+    "json",
+    z.object({
+      model: z.string().min(1).max(120),
+      enabled: z.boolean(),
+      dailyLimit: z.number().int().min(0).max(10000),
+      monthlyBudget: z.number().min(0).max(100000000),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    requireSystemAdmin(user, c.env);
+    const patch = c.req.valid("json");
+    const db = getDb(c.env);
+    const status = patch.enabled && c.env.ANTHROPIC_API_KEY ? "connected" : "disabled";
+    const keyLast4 = c.env.ANTHROPIC_API_KEY ? c.env.ANTHROPIC_API_KEY.slice(-4) : undefined;
+    const rows = await db`
+      insert into ai_settings (
+        provider, model, secret_name, key_last4, status, enabled,
+        daily_limit, monthly_budget, updated_by
+      )
+      values (
+        ${c.env.AI_PROVIDER}, ${patch.model}, 'ANTHROPIC_API_KEY', ${keyLast4 ?? null},
+        ${status}, ${patch.enabled}, ${patch.dailyLimit}, ${patch.monthlyBudget}, ${user}
+      )
+      returning *
+    `;
+    await audit(c.env, user, "ai_settings.update", "ai_settings", String(rows[0].id), {
+      model: patch.model,
+      enabled: patch.enabled,
+      dailyLimit: patch.dailyLimit,
+      monthlyBudget: patch.monthlyBudget,
+      keyLast4,
+    });
+    return c.json(mapAiSettingsRow(rows[0], c.env));
+  },
+);
+
+app.post(
+  "/api/admin/ai-settings/test",
+  zValidator("json", z.object({ apiKey: z.string().optional(), model: z.string().optional() })),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    requireSystemAdmin(user, c.env);
+    const { apiKey, model } = c.req.valid("json");
+    const result = await testClaudeConnection(c.env, apiKey, model);
+    await audit(c.env, user, "ai_settings.test", "ai_settings", "connection", {
+      ok: result.ok,
+      status: result.status,
+      keyLast4: result.keyLast4,
+      model: model ?? c.env.AI_MODEL,
+    });
+    return c.json(result);
+  },
+);
 
 app.onError((error, c) => {
   if (error instanceof ApiError) {
@@ -415,7 +464,8 @@ function splitCsv(value?: string): string[] {
 }
 
 async function assertAiAllowed(env: Env, user: string, input: IssueInput) {
-  if (env.AI_ENABLED !== "true") {
+  const aiSettings = await getAiSettings(env);
+  if (env.AI_ENABLED !== "true" || !aiSettings.enabled) {
     throw new ApiError("AI_DISABLED", "AI機能は無効です。", 503);
   }
   if (!env.ANTHROPIC_API_KEY) {
@@ -437,19 +487,20 @@ async function assertAiAllowed(env: Env, user: string, input: IssueInput) {
     where executed_by = ${user}
       and created_at >= date_trunc('day', now())
   `;
-  if ((rows[0]?.count ?? 0) >= Number(env.DAILY_AI_LIMIT || 10)) {
+  if ((rows[0]?.count ?? 0) >= aiSettings.dailyLimit) {
     throw new ApiError("AI_BUDGET_EXCEEDED", "日次AI利用上限に達しました。", 429);
   }
 }
 
 async function generateQuestions(env: Env, input: IssueInput): Promise<AiQuestion[]> {
+  const aiSettings = await getAiSettings(env);
   const prompt = [
     "土木建設DXアイデア管理システムの質問生成を行う。",
     "個人情報、案件名、契約金額、認証情報は求めない。",
     "不足情報を最大3問、JSON配列で返す。",
     JSON.stringify(maskIssue(input)),
   ].join("\n");
-  const result = await callClaude(env, prompt);
+  const result = await callClaude(env, prompt, aiSettings.model);
   return parseJson<AiQuestion[]>(result, [
     {
       id: "q-frequency",
@@ -477,17 +528,18 @@ async function structureIdea(
   input: IssueInput,
   answers: Record<string, string>,
 ): Promise<StructuredIdea> {
+  const aiSettings = await getAiSettings(env);
   const prompt = [
     "土木建設DXアイデア管理システムの構造化を行う。",
     "採用、却下、セキュリティ最終判定はしない。",
     "StructuredIdeaのcamelCase JSONだけを返す。",
     JSON.stringify({ input: maskIssue(input), answers: maskSensitiveText(JSON.stringify(answers)) }),
   ].join("\n");
-  const result = await callClaude(env, prompt);
+  const result = await callClaude(env, prompt, aiSettings.model);
   return structuredIdeaSchema.parse(parseJson<StructuredIdea>(result, fallbackStructured(input)));
 }
 
-async function callClaude(env: Env, prompt: string): Promise<string> {
+async function callClaude(env: Env, prompt: string, model: string): Promise<string> {
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -496,7 +548,7 @@ async function callClaude(env: Env, prompt: string): Promise<string> {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: env.AI_MODEL,
+      model,
       max_tokens: 1600,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -508,6 +560,76 @@ async function callClaude(env: Env, prompt: string): Promise<string> {
 
   const data = (await response.json()) as { content?: Array<{ text?: string }> };
   return data.content?.[0]?.text ?? "";
+}
+
+async function testClaudeConnection(
+  env: Env,
+  apiKey?: string,
+  model?: string,
+): Promise<AiConnectionTestResult> {
+  const key = apiKey || env.ANTHROPIC_API_KEY;
+  const checkedAt = new Date().toISOString();
+  if (!key) {
+    return {
+      ok: false,
+      status: "not_configured",
+      message: "APIキーが設定されていません。",
+      checkedAt,
+    };
+  }
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: model || env.AI_MODEL,
+        max_tokens: 8,
+        messages: [{ role: "user", content: "Return OK." }],
+      }),
+    });
+    return {
+      ok: response.ok,
+      status: response.ok ? "connected" : "error",
+      message: response.ok ? "Claude API接続に成功しました。" : "Claude API接続に失敗しました。",
+      keyLast4: key.slice(-4),
+      checkedAt,
+    };
+  } catch {
+    return {
+      ok: false,
+      status: "error",
+      message: "Claude APIへ接続できませんでした。",
+      keyLast4: key.slice(-4),
+      checkedAt,
+    };
+  }
+}
+
+async function getAiSettings(env: Env): Promise<AiSettings> {
+  const fallback: AiSettings = {
+    provider: env.AI_PROVIDER,
+    model: env.AI_MODEL,
+    enabled: env.AI_ENABLED === "true",
+    status: env.AI_ENABLED === "true" && env.ANTHROPIC_API_KEY ? "connected" : "disabled",
+    keyLast4: env.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY.slice(-4) : undefined,
+    dailyLimit: Number(env.DAILY_AI_LIMIT || 10),
+    monthlyBudget: 0,
+    updatedBy: "cloudflare-secret",
+  };
+  if (!env.DATABASE_URL) return fallback;
+  const db = getDb(env);
+  const rows = await db`
+    select *
+    from ai_settings
+    order by updated_at desc
+    limit 1
+  `;
+  if (!rows[0]) return fallback;
+  return mapAiSettingsRow(rows[0], env);
 }
 
 function parseJson<T>(text: string, fallback: T): T {
@@ -627,6 +749,21 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
     aiUsageCount: Number(row.ai_usage_count ?? 0),
+  };
+}
+
+function mapAiSettingsRow(row: Record<string, unknown>, env: Env): AiSettings {
+  const enabled = Boolean(row.enabled) && env.AI_ENABLED === "true";
+  return {
+    provider: String(row.provider ?? env.AI_PROVIDER),
+    model: String(row.model ?? env.AI_MODEL),
+    enabled,
+    status: enabled && row.status === "connected" ? "connected" : enabled ? "error" : "disabled",
+    keyLast4: row.key_last4 ? String(row.key_last4) : undefined,
+    dailyLimit: Number(row.daily_limit ?? env.DAILY_AI_LIMIT ?? 10),
+    monthlyBudget: Number(row.monthly_budget ?? 0),
+    lastCheckedAt: row.last_checked_at ? new Date(String(row.last_checked_at)).toISOString() : undefined,
+    updatedBy: row.updated_by ? String(row.updated_by) : undefined,
   };
 }
 

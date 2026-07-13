@@ -1,13 +1,16 @@
 import { inspectIssueInput } from "./privacy";
 import type {
+  AiConnectionTestResult,
   AiQuestion,
   AiSettings,
+  AiSettingsPatch,
   DashboardMetrics,
   Idea,
   IdeaStage,
   IssueInput,
   PrivacyFinding,
   StructuredIdea,
+  UserProfile,
 } from "./shared";
 
 const now = () => new Date().toISOString();
@@ -63,6 +66,13 @@ const seedIdeas: Idea[] = [
 let ideas = [...seedIdeas];
 
 export const mockApi = {
+  async getMe(): Promise<UserProfile> {
+    return {
+      email: "local.dev@example.com",
+      roles: ["user", "admin", "system_admin"],
+    };
+  },
+
   async getMetrics(): Promise<DashboardMetrics> {
     return {
       totalIdeas: ideas.length,
@@ -178,6 +188,30 @@ export const mockApi = {
       keyLast4: undefined,
       lastCheckedAt: undefined,
       updatedBy: "system",
+    };
+  },
+
+  async updateAiSettings(settings: AiSettingsPatch): Promise<AiSettings> {
+    return {
+      provider: "claude",
+      model: settings.model,
+      enabled: settings.enabled,
+      status: settings.enabled ? "connected" : "disabled",
+      dailyLimit: settings.dailyLimit,
+      monthlyBudget: settings.monthlyBudget,
+      keyLast4: "mock",
+      lastCheckedAt: now(),
+      updatedBy: "local.dev@example.com",
+    };
+  },
+
+  async testAiSettings(): Promise<AiConnectionTestResult> {
+    return {
+      ok: true,
+      status: "connected",
+      message: "モック接続テストに成功しました。",
+      keyLast4: "mock",
+      checkedAt: now(),
     };
   },
 };

@@ -101,6 +101,26 @@ export type AiSettings = {
   updatedBy?: string;
 };
 
+export type UserProfile = {
+  email: string;
+  roles: string[];
+};
+
+export type AiSettingsPatch = {
+  model: string;
+  enabled: boolean;
+  dailyLimit: number;
+  monthlyBudget: number;
+};
+
+export type AiConnectionTestResult = {
+  ok: boolean;
+  status: "connected" | "error" | "not_configured";
+  message: string;
+  keyLast4?: string;
+  checkedAt: string;
+};
+
 export type DashboardMetrics = {
   totalIdeas: number;
   activeIdeas: number;

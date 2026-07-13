@@ -499,6 +499,17 @@ select:focus {
   white-space: pre-line;
 }
 
+.readonlyRole {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  color: #596b72;
+  background: #edf2f4;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
 .securityBand {
   display: grid;
   gap: 18px;
@@ -523,6 +534,36 @@ select:focus {
   color: #197263;
 }
 
+.adminPanel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  background: #f8fbfc;
+  border: 1px solid #dce7e8;
+  border-radius: 8px;
+}
+
+.adminPanel h3 {
+  margin: 0;
+}
+
+.adminGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.checkboxLabel {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 42px;
+}
+
+.checkboxLabel input {
+  width: 18px;
+  min-height: 18px;
+}
+
 @media (max-width: 1100px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -534,6 +575,7 @@ select:focus {
   }
 
   .metricsGrid,
+  .adminGrid,
   .securityGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -555,6 +597,7 @@ select:focus {
   .ideasLayout,
   .structuredGrid,
   .detailGrid,
+  .adminGrid,
   .securityGrid {
     grid-template-columns: 1fr;
   }

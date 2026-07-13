@@ -28,6 +28,9 @@
 - Cloudflare Workers API
 - Claude API呼び出し処理
 - AI無効化、日次上限、文字数上限
+- AI接続設定の取得・更新
+- Claude API接続テスト
+- システム管理者向けAI設定UI
 - 許可Origin限定CORS
 - Cloudflare Access JWT検証
 - 管理者・システム管理者メールの明示設定

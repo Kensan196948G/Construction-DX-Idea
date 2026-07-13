@@ -1,13 +1,16 @@
 import { mockApi } from "./mockApi";
 import type {
+  AiConnectionTestResult,
   AiQuestion,
   AiSettings,
+  AiSettingsPatch,
   DashboardMetrics,
   Idea,
   IdeaStage,
   IssueInput,
   PrivacyFinding,
   StructuredIdea,
+  UserProfile,
 } from "./shared";
 
 const explicitMock = import.meta.env.VITE_USE_MOCK_API === "true";
@@ -38,6 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = useMock
   ? mockApi
   : {
+      getMe: () => request<UserProfile>("/api/me"),
       getMetrics: () => request<DashboardMetrics>("/api/metrics"),
       listIdeas: () => request<Idea[]>("/api/ideas"),
       inspectInput: (input: IssueInput) =>
@@ -66,4 +70,14 @@ export const api = useMock
           body: JSON.stringify({ stage }),
         }),
       getAiSettings: () => request<AiSettings>("/api/admin/ai-settings"),
+      updateAiSettings: (settings: AiSettingsPatch) =>
+        request<AiSettings>("/api/admin/ai-settings", {
+          method: "PATCH",
+          body: JSON.stringify(settings),
+        }),
+      testAiSettings: (apiKey?: string, model?: string) =>
+        request<AiConnectionTestResult>("/api/admin/ai-settings/test", {
+          method: "POST",
+          body: JSON.stringify({ apiKey, model }),
+        }),
     };
