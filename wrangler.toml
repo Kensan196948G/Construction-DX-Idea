@@ -14,6 +14,8 @@ ALLOWED_ORIGINS = "https://example.invalid"
 ADMIN_EMAILS = ""
 SYSTEM_ADMIN_EMAILS = ""
 ALLOW_LOCAL_AUTH_BYPASS = "false"
+CF_ACCESS_CERTS_URL = ""
+CF_ACCESS_AUD = ""
 
 # Required secrets:
 # wrangler secret put DATABASE_URL

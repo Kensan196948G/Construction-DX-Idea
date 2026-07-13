@@ -29,10 +29,13 @@
 - Claude API呼び出し処理
 - AI無効化、日次上限、文字数上限
 - 許可Origin限定CORS
-- Cloudflare Accessヘッダー必須化
+- Cloudflare Access JWT検証
 - 管理者・システム管理者メールの明示設定
 - Neon PostgreSQL保存処理
+- ステージ変更履歴保存
+- 利用制限テーブル
 - Slack新規登録通知
+- Slack通知失敗時の登録成功維持
 - 監査ログとAI利用履歴
 - Secret混入検査
 - GitHub Actions CI
@@ -88,6 +91,7 @@ npm run dev
 - `DATABASE_URL`、`ANTHROPIC_API_KEY`、`SLACK_WEBHOOK_URL` をCloudflare Secretへ登録する。
 - `AI_ENABLED=true`、`APP_BASE_URL`、利用上限を本番値へ変更する。
 - `ALLOWED_ORIGINS`、`ADMIN_EMAILS`、`SYSTEM_ADMIN_EMAILS` を本番値へ変更する。
+- `CF_ACCESS_CERTS_URL` と `CF_ACCESS_AUD` をCloudflare Accessの値へ変更する。
 - `ALLOW_LOCAL_AUTH_BYPASS=false` を確認する。
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。

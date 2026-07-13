@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./lib/api";
+import { isMockApi } from "./lib/api";
 import {
   type AiQuestion,
   type AiSettings,
@@ -56,6 +57,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   const refresh = useCallback(async () => {
     const [nextMetrics, nextIdeas, nextSettings] = await Promise.all([
@@ -70,7 +72,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    void refresh().catch((error: unknown) => setErrorMessage(toErrorMessage(error)));
   }, [refresh]);
 
   const selectedIdea = useMemo(
@@ -82,10 +84,13 @@ export function App() {
     event.preventDefault();
     setIsBusy(true);
     setMessage("");
+    setErrorMessage("");
     try {
       const nextFindings = await api.inspectInput(input);
       setFindings(nextFindings);
       setStep("privacy");
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
     } finally {
       setIsBusy(false);
     }
@@ -94,10 +99,13 @@ export function App() {
   async function continueToQuestions() {
     setIsBusy(true);
     setMessage("");
+    setErrorMessage("");
     try {
       const nextQuestions = await api.generateQuestions(input);
       setQuestions(nextQuestions);
       setStep("questions");
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
     } finally {
       setIsBusy(false);
     }
@@ -106,10 +114,13 @@ export function App() {
   async function buildStructure() {
     setIsBusy(true);
     setMessage("");
+    setErrorMessage("");
     try {
       const nextStructured = await api.structureIdea(input, answers);
       setStructured(nextStructured);
       setStep("structure");
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
     } finally {
       setIsBusy(false);
     }
@@ -118,12 +129,15 @@ export function App() {
   async function saveStructured(stage: IdeaStage) {
     if (!structured) return;
     setIsBusy(true);
+    setErrorMessage("");
     try {
       const saved = await api.saveIdea(structured, stage);
       await refresh();
       setSelectedId(saved.id);
       setStep("complete");
       setMessage(stage === "draft" ? "下書きとして保存しました。" : "正式登録し、Slack通知対象にしました。");
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
     } finally {
       setIsBusy(false);
     }
@@ -131,10 +145,13 @@ export function App() {
 
   async function updateStage(id: string, stage: IdeaStage) {
     setIsBusy(true);
+    setErrorMessage("");
     try {
       await api.updateStage(id, stage);
       await refresh();
       setMessage(`ステージを「${stageLabels[stage]}」へ更新しました。`);
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
     } finally {
       setIsBusy(false);
     }
@@ -198,6 +215,18 @@ export function App() {
         {message && (
           <div className="notice" role="status">
             <CheckCircle2 size={18} /> {message}
+          </div>
+        )}
+
+        {isMockApi && (
+          <div className="mockNotice" role="status">
+            <AlertTriangle size={18} /> モックAPIモードで動作中です。本番ではWorker API URLを設定してください。
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="errorNotice" role="alert">
+            <AlertTriangle size={18} /> {errorMessage}
           </div>
         )}
 
@@ -295,11 +324,18 @@ export function App() {
                   ))}
                 </div>
               )}
+              {findings.some((finding) => finding.severity === "blocker") && (
+                <p className="errorText">ブロッカーがあるため、AIへ進む前に入力を修正してください。</p>
+              )}
               <div className="actions">
                 <button className="secondaryButton" onClick={() => setStep("input")}>
                   入力を修正
                 </button>
-                <button className="primaryButton" disabled={isBusy} onClick={continueToQuestions}>
+                <button
+                  className="primaryButton"
+                  disabled={isBusy || findings.some((finding) => finding.severity === "blocker")}
+                  onClick={continueToQuestions}
+                >
                   <Bot size={18} /> AI壁打ちへ
                 </button>
               </div>
@@ -613,4 +649,8 @@ function SecurityItem({ icon, title, text }: { icon: React.ReactNode; title: str
       <span>{text}</span>
     </div>
   );
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "処理に失敗しました。";
 }

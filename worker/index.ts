@@ -33,11 +33,26 @@ type Env = {
   ADMIN_EMAILS?: string;
   SYSTEM_ADMIN_EMAILS?: string;
   ALLOW_LOCAL_AUTH_BYPASS?: string;
+  CF_ACCESS_CERTS_URL?: string;
+  CF_ACCESS_AUD?: string;
 };
 
 type AppContext = Context<{ Bindings: Env }>;
+type AccessJwtPayload = {
+  aud?: string | string[];
+  email?: string;
+  exp?: number;
+  nbf?: number;
+};
+type AccessJwk = JsonWebKey & {
+  kid?: string;
+};
+type JwksResponse = {
+  keys: AccessJwk[];
+};
 
 const app = new Hono<{ Bindings: Env }>();
+const jwksCache = new Map<string, { expiresAt: number; keys: AccessJwk[] }>();
 
 app.use("*", secureHeaders());
 app.use(
@@ -59,8 +74,9 @@ app.get("/api/health", (c) =>
 );
 
 app.get("/api/me", (c) => {
-  const user = getUser(c.req.raw, c.env);
-  return c.json({ email: user, roles: inferRoles(user, c.env) });
+  return getUser(c.req.raw, c.env).then((user) =>
+    c.json({ email: user, roles: inferRoles(user, c.env) }),
+  );
 });
 
 app.get("/api/metrics", async (c) => {
@@ -109,7 +125,7 @@ app.post(
   "/api/ai/questions",
   zValidator("json", z.object({ input: issueInputSchema })),
   async (c) => {
-    const user = getUser(c.req.raw, c.env);
+    const user = await getUser(c.req.raw, c.env);
     const { input } = c.req.valid("json");
     await assertAiAllowed(c.env, user, input);
     const questions = await generateQuestions(c.env, input);
@@ -122,7 +138,7 @@ app.post(
   "/api/ai/structure",
   zValidator("json", z.object({ input: issueInputSchema, answers: z.record(z.string(), z.string()) })),
   async (c) => {
-    const user = getUser(c.req.raw, c.env);
+    const user = await getUser(c.req.raw, c.env);
     const { input, answers } = c.req.valid("json");
     await assertAiAllowed(c.env, user, input);
     const structured = await structureIdea(c.env, input, answers);
@@ -149,8 +165,13 @@ app.post(
   zValidator("json", z.object({ structured: structuredIdeaSchema })),
   async (c) => {
     const idea = await insertIdea(c, c.req.valid("json").structured, "submitted");
-    await notifySlack(c.env, idea);
-    return c.json(idea, 201);
+    const notificationStatus = await notifySlack(c.env, idea);
+    if (notificationStatus === "failed") {
+      await audit(c.env, idea.createdBy, "slack.notify.failed", "idea", idea.id, {
+        notificationStatus,
+      }).catch((error: unknown) => console.error("Slack failure audit failed", sanitizeLog(error)));
+    }
+    return c.json({ ...idea, notificationStatus }, 201);
   },
 );
 
@@ -158,11 +179,20 @@ app.post(
   "/api/ideas/:id/stage",
   zValidator("json", z.object({ stage: z.enum(ideaStages) })),
   async (c) => {
-    const user = getUser(c.req.raw, c.env);
+    const user = await getUser(c.req.raw, c.env);
     requireAdmin(user, c.env);
     const db = getDb(c.env);
     const id = c.req.param("id");
     const { stage } = c.req.valid("json");
+    const currentRows = await db`
+      select stage
+      from ideas
+      where id = ${id}
+    `;
+    if (!currentRows[0]) {
+      throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    }
+    const fromStage = String(currentRows[0].stage);
     const rows = await db`
       update ideas
       set stage = ${stage}, updated_at = now()
@@ -172,13 +202,17 @@ app.post(
     if (!rows[0]) {
       throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     }
+    await db`
+      insert into idea_stage_histories (idea_id, from_stage, to_stage, changed_by)
+      values (${id}, ${fromStage}, ${stage}, ${user})
+    `;
     await audit(c.env, user, "stage.update", "idea", id, { stage });
     return c.json(mapIdeaRow(rows[0]));
   },
 );
 
 app.get("/api/admin/ai-settings", async (c) => {
-  const user = getUser(c.req.raw, c.env);
+  const user = await getUser(c.req.raw, c.env);
   requireSystemAdmin(user, c.env);
   const settings: AiSettings = {
     provider: c.env.AI_PROVIDER,
@@ -206,8 +240,9 @@ async function insertIdea(
   structured: StructuredIdea,
   stage: IdeaStage,
 ): Promise<Idea> {
-  const user = getUser(c.req.raw, c.env);
+  const user = await getUser(c.req.raw, c.env);
   const db = getDb(c.env);
+  assertStructuredIdeaSafe(structured);
   const rows = await db`
     insert into ideas (
       title, current_issue, target_business, target_users, current_workflow,
@@ -254,11 +289,99 @@ function resolveCorsOrigin(origin: string, env: Env): string | undefined {
   return allowed.has(origin) ? origin : undefined;
 }
 
-function getUser(request: Request, env: Env): string {
-  const user = request.headers.get("CF-Access-Authenticated-User-Email");
-  if (user) return user.toLowerCase();
+async function getUser(request: Request, env: Env): Promise<string> {
   if (env.ALLOW_LOCAL_AUTH_BYPASS === "true") return "local.dev@example.com";
-  throw new ApiError("UNAUTHENTICATED", "Cloudflare Access authentication is required.", 401);
+  const jwt = request.headers.get("CF-Access-Jwt-Assertion");
+  if (!jwt) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is required.", 401);
+  }
+  const payload = await verifyAccessJwt(jwt, env);
+  const jwtEmail = payload.email?.toLowerCase();
+  if (!jwtEmail) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT does not include email.", 401);
+  }
+  const accessEmail = request.headers.get("CF-Access-Authenticated-User-Email")?.toLowerCase();
+  if (accessEmail && accessEmail !== jwtEmail) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access identity headers do not match.", 401);
+  }
+  return jwtEmail;
+}
+
+async function verifyAccessJwt(jwt: string, env: Env): Promise<AccessJwtPayload> {
+  if (!env.CF_ACCESS_CERTS_URL || !env.CF_ACCESS_AUD) {
+    throw new ApiError("ACCESS_CONFIG_MISSING", "Cloudflare Access JWT settings are not configured.", 503);
+  }
+  const [encodedHeader, encodedPayload, encodedSignature] = jwt.split(".");
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is malformed.", 401);
+  }
+  const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedHeader))) as {
+    alg?: string;
+    kid?: string;
+  };
+  if (header.alg !== "RS256" || !header.kid) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT header is invalid.", 401);
+  }
+  const keys = await getAccessKeys(env.CF_ACCESS_CERTS_URL);
+  const key = keys.find((candidate) => candidate.kid === header.kid);
+  if (!key) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT key is unknown.", 401);
+  }
+  const cryptoKey = await crypto.subtle.importKey(
+    "jwk",
+    key,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+  const verified = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    base64UrlDecode(encodedSignature),
+    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`),
+  );
+  if (!verified) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT signature is invalid.", 401);
+  }
+  const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedPayload))) as AccessJwtPayload;
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < now) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is expired.", 401);
+  }
+  if (payload.nbf && payload.nbf > now) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is not active yet.", 401);
+  }
+  const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud].filter(Boolean);
+  if (!audiences.includes(env.CF_ACCESS_AUD)) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT audience is invalid.", 401);
+  }
+  return payload;
+}
+
+async function getAccessKeys(certsUrl: string): Promise<AccessJwk[]> {
+  const cached = jwksCache.get(certsUrl);
+  if (cached && cached.expiresAt > Date.now()) return cached.keys;
+  const response = await fetch(certsUrl);
+  if (!response.ok) {
+    throw new ApiError("ACCESS_CONFIG_MISSING", "Cloudflare Access certs could not be loaded.", 503);
+  }
+  const body = (await response.json()) as JwksResponse;
+  jwksCache.set(certsUrl, { keys: body.keys, expiresAt: Date.now() + 10 * 60 * 1000 });
+  return body.keys;
+}
+
+function base64UrlDecode(value: string): ArrayBuffer {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+  const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function assertStructuredIdeaSafe(structured: StructuredIdea) {
+  const findings = inspectStructuredIdea(structured);
+  if (findings.length > 0) {
+    throw new ApiError("PRIVACY_BLOCKED", "機密情報候補があるため保存を停止しました。", 422);
+  }
 }
 
 function inferRoles(user: string, env: Env): string[] {
@@ -460,19 +583,25 @@ async function audit(
   `;
 }
 
-async function notifySlack(env: Env, idea: Idea) {
-  if (!env.SLACK_WEBHOOK_URL) return;
+async function notifySlack(env: Env, idea: Idea): Promise<"sent" | "skipped" | "failed"> {
+  if (!env.SLACK_WEBHOOK_URL) return "skipped";
   const text = [
     `新規DXアイデアが登録されました: ${idea.title}`,
     `対象業務: ${idea.targetBusiness}`,
     `ステージ: ${idea.stage}`,
     `${env.APP_BASE_URL}/ideas/${idea.id}`,
   ].join("\n");
-  await fetch(env.SLACK_WEBHOOK_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
+  try {
+    const response = await fetch(env.SLACK_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: maskSensitiveText(text) }),
+    });
+    return response.ok ? "sent" : "failed";
+  } catch (error) {
+    console.error("Slack notification failed", sanitizeLog(error));
+    return "failed";
+  }
 }
 
 function mapIdeaRow(row: Record<string, unknown>): Idea {

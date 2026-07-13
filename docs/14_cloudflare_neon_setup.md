@@ -41,6 +41,8 @@ Workersの責務:
 | `ADMIN_EMAILS` | ステージ変更などを許可する管理者メールのカンマ区切り |
 | `SYSTEM_ADMIN_EMAILS` | AI接続設定を許可するシステム管理者メールのカンマ区切り |
 | `ALLOW_LOCAL_AUTH_BYPASS` | ローカル検証専用。本番では `false` |
+| `CF_ACCESS_CERTS_URL` | Cloudflare AccessのJWK取得URL |
+| `CF_ACCESS_AUD` | Cloudflare AccessアプリケーションのAudience Tag |
 
 ## 4. Secret登録
 
@@ -74,5 +76,6 @@ MVPでは手動登録を推奨する。
 4. Claude API接続テストに成功する。
 5. Slackへテスト通知できる。
 6. 監査ログが保存される。
-7. AccessヘッダーなしのAPI呼び出しが拒否される。
-8. 未許可OriginからのCORSが許可されない。
+7. Access JWTなしのAPI呼び出しが拒否される。
+8. 不正なAccess JWT、期限切れJWT、audience不一致JWTが拒否される。
+9. 未許可OriginからのCORSが許可されない。

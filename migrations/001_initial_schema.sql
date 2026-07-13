@@ -97,9 +97,22 @@ create table if not exists audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists usage_limits (
+  id uuid primary key default gen_random_uuid(),
+  subject_type text not null check (subject_type in ('user', 'global')),
+  subject_id text not null,
+  daily_ai_limit integer not null default 10,
+  monthly_budget numeric(12, 2) not null default 0,
+  enabled boolean not null default true,
+  updated_by text,
+  updated_at timestamptz not null default now(),
+  unique (subject_type, subject_id)
+);
+
 create index if not exists idx_ideas_stage on ideas(stage);
 create index if not exists idx_ideas_created_by on ideas(created_by);
 create index if not exists idx_ideas_updated_at on ideas(updated_at desc);
 create index if not exists idx_ai_sessions_user_created on idea_ai_sessions(executed_by, created_at desc);
 create index if not exists idx_audit_actor_created on audit_logs(actor, created_at desc);
 create index if not exists idx_audit_resource on audit_logs(resource_type, resource_id);
+create index if not exists idx_stage_histories_idea_changed on idea_stage_histories(idea_id, changed_at desc);

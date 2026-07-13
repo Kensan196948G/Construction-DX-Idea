@@ -167,11 +167,33 @@ button {
   font-weight: 700;
 }
 
-.notice {
+.notice,
+.mockNotice,
+.errorNotice {
   padding: 12px 14px;
+  border-radius: 8px;
+}
+
+.notice {
   background: #e4f7e8;
   border: 1px solid #a8ddb2;
-  border-radius: 8px;
+}
+
+.mockNotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff7df;
+  border: 1px solid #e7cb78;
+}
+
+.errorNotice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #6f1d1d;
+  background: #ffeded;
+  border: 1px solid #efb5b5;
 }
 
 .metricsGrid {
@@ -341,6 +363,15 @@ select:focus {
   padding: 16px;
   color: #40625f;
   background: #eef9f5;
+  border-radius: 8px;
+}
+
+.errorText {
+  margin: 0;
+  padding: 12px;
+  color: #6f1d1d;
+  background: #ffeded;
+  border: 1px solid #efb5b5;
   border-radius: 8px;
 }
 
