@@ -7,12 +7,13 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
+    "build:production-api": "VITE_USE_MOCK_API=false npm run build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "tsx --test tests/*.test.ts",
     "test:watch": "tsx --test --watch tests/*.test.ts",
     "lint": "eslint .",
     "security:scan": "node scripts/security-scan.mjs",
-    "verify": "npm run lint && npm run test && npm run build && npm run security:scan",
+    "verify": "npm run lint && npm run test && npm run build && npm run build:production-api && npm run security:scan",
     "worker:dev": "wrangler dev worker/index.ts",
     "worker:deploy:dry-run": "wrangler deploy worker/index.ts --dry-run"
   },

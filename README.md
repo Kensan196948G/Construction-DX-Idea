@@ -51,8 +51,9 @@ npm run dev
 | `npm run lint` | TypeScript/React/Workerの静的検査 |
 | `npm run test` | 入力検査・マスキングのテスト |
 | `npm run build` | TypeScriptビルドとVite本番ビルド |
+| `npm run build:production-api` | モックを無効化した本番API向けビルド |
 | `npm run security:scan` | Secret混入の簡易検査 |
-| `npm run verify` | lint、test、build、security scanを一括実行 |
+| `npm run verify` | lint、test、通常build、本番API build、security scanを一括実行 |
 | `npm run worker:deploy:dry-run` | Cloudflare Workerのデプロイ直前dry-run |
 
 ---

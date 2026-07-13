@@ -46,6 +46,7 @@
 
 ```bash
 npm run verify
+npm run build:production-api
 npm run worker:deploy:dry-run
 ```
 
@@ -57,6 +58,7 @@ npm run worker:deploy:dry-run
 | Node test | 成功。入力検査、マスキング、CORS許可Origin、明示ロール判定を確認 |
 | TypeScript build | 成功 |
 | Vite production build | 成功 |
+| Production API build | 成功。`VITE_USE_MOCK_API=false` でビルド確認 |
 | Secret scan | 成功 |
 | Wrangler deploy dry-run | 成功 |
 | npm audit | 0 vulnerabilities |
