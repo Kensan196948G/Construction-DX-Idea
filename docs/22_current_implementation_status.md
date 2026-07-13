@@ -2,7 +2,7 @@
 
 ## 1. 現在の状態
 
-2026-07-13時点で、MVPのリリース直前検証に向けたバックエンド、インフラ定義、セキュリティ検査、CI、ドキュメントを実装済み。WebUIは提供された `Construction DX Idea (standalone).html` を正本として表示し、AI利用設定の接続テスト・設定保存をWorker APIへブリッジ済み。困りごと登録、一覧、詳細、ステージ管理などの業務フローは、デザインを維持したまま実APIへ接続する段階である。
+2026-07-13時点で、MVPのリリース直前検証に向けたバックエンド、インフラ定義、セキュリティ検査、CI、ドキュメントを実装済み。WebUIは提供された `Construction DX Idea (standalone).html` を正本として表示し、困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、一覧表示、ステージ変更、AI利用設定をWorker APIへブリッジ済み。本番前にはCloudflare Access、Neon、Claude API、Slackを実環境値でE2E確認する。
 
 ## 2. 実装済みファイル
 
@@ -18,8 +18,14 @@
 ## 3. 実装済み機能
 
 - 提供standaloneデザインの全画面表示
+- WebUIからの実APIデータ初期読込
+- 困りごと入力の必須項目、使用中データ、関連システム、機密情報可能性入力
+- WebUIからの入力検査、AI質問生成、AI構造化、手動フォールバック
+- WebUIからの下書き保存、正式登録、Slack通知結果表示
+- WebUIからの管理者ステージ変更
+- WebUI操作のロールガードと二重送信ガード
 - AI利用設定カード内のClaude APIキー接続テスト
-- AI利用設定カード内のモデル・月間上限の設定保存
+- AI利用設定カード内の保存済みSecret接続テスト、モデル・月間上限の設定保存
 - standaloneデザイン内のダッシュボード、困りごと入力、AI壁打ち、構造化確認、一覧、詳細、ステージ管理の画面表示
 - 入力検査・機密情報候補検出ロジック
 - Cloudflare Workers API
@@ -47,11 +53,12 @@
 
 | 領域 | 状態 | 備考 |
 |---|---|---|
-| AI利用設定 | API接続済み | APIキー接続テスト、設定保存をWorker APIへ接続。APIキー本体は保存しない |
-| 困りごと入力 | デモ表示 | `POST /api/privacy/inspect`、`POST /api/ai/questions`、`POST /api/ideas` への接続が次タスク |
-| AI壁打ち・構造化 | デモ表示 | 既存Worker APIは実装済み。UIイベント接続が次タスク |
-| 一覧・詳細 | デモ表示 | `GET /api/ideas` の実データ表示が次タスク |
-| ステージ管理 | デモ表示 | `POST /api/ideas/:id/stage` の接続が次タスク |
+| AI利用設定 | API接続済み | APIキー接続テスト、保存済みSecret接続テスト、設定保存をWorker APIへ接続。APIキー本体は保存しない |
+| 困りごと入力 | API接続済み | `POST /api/privacy/inspect`、`POST /api/ai/questions` へ接続。機密情報blocker時はAI送信停止 |
+| AI壁打ち・構造化 | API接続済み | `POST /api/ai/structure` へ接続。AI障害時は手動確認用下書きへフォールバック |
+| 一覧・詳細 | API接続済み | `GET /api/ideas` の実データ表示へ接続。失敗時は警告し再試行 |
+| 保存・正式登録 | API接続済み | `POST /api/ideas/drafts`、`POST /api/ideas` へ接続。Slack通知失敗は登録成功として表示 |
+| ステージ管理 | API接続済み | `POST /api/ideas/:id/stage` へ接続。管理者以外のUI操作は停止 |
 
 ## 4. 検証結果
 
@@ -113,6 +120,5 @@ npm run dev
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。
 - 一般利用者と管理者ロールでE2E確認を行う。
-- standaloneデザインの困りごと登録、一覧、詳細、ステージ管理を実APIへブリッジする。
 - GitHub ProjectのP0 Issueをレビュー結果に応じてDoneへ更新する。
 - PR #7のCodeRabbitレビュー完了後、指摘があれば追加修正する。

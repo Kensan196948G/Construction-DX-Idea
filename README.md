@@ -18,7 +18,7 @@
 
 | 領域 | 状態 | 実装内容 |
 |---|---|---|
-| 🖥️ WebUI | デザイン適用済み / 機能ブリッジ中 | `Construction DX Idea (standalone).html` を正本として100%表示。AI設定のAPIキー接続テスト、設定保存はAPI接続済み。困りごと登録などの業務フローは次のAPIブリッジ対象 |
+| 🖥️ WebUI | デザイン適用済み / 主要機能ブリッジ済み | `Construction DX Idea (standalone).html` を正本として100%表示。困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、ステージ変更、AI設定をWorker APIへ接続 |
 | ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Access JWT検証、AI利用制御、監査ログ、Slack通知・再送 |
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
@@ -241,20 +241,25 @@ flowchart TD
 flowchart LR
     A["Standalone Design HTML"] --> B["Vite / React Shell"]
     B --> C["全画面表示"]
-    C --> D["AI利用設定カード"]
-    D --> E["APIキー接続テスト"]
-    D --> F["設定保存"]
-    E --> G["Worker API"]
-    F --> G
+    C --> D["困りごと入力"]
+    C --> E["AI利用設定カード"]
+    D --> F["入力検査 / AI質問 / 構造化"]
+    F --> G["下書き保存 / 正式登録 / Slack通知"]
+    G --> H["ステージ変更"]
+    E --> I["APIキー接続テスト / 設定保存"]
+    F --> J["Worker API"]
+    G --> J
+    H --> J
+    I --> J
 ```
 
 | 画面領域 | 現在の状態 | 次の実装判断 |
 |---|---|---|
 | 🎨 全体UI | 提供されたstandaloneデザインを正本として表示 | デザイン差分が出ないよう維持 |
-| ⚙️ AI利用設定 | APIキー入力、接続テスト、設定保存をAPIへ接続 | Secret本体保存はMVP方針どおりCloudflare手動登録 |
-| 📝 困りごと登録 | standalone内のデモ状態 | Worker APIへの保存・AI質問・構造化ブリッジを追加 |
-| 📋 一覧・詳細 | standalone内のデモ状態 | Neon実データ表示へ接続 |
-| 🗂️ ステージ管理 | standalone内のデモ状態 | `/api/ideas/:id/stage` へ接続 |
+| ⚙️ AI利用設定 | APIキー入力、保存済みSecret接続テスト、設定保存をAPIへ接続 | Secret本体保存はMVP方針どおりCloudflare手動登録 |
+| 📝 困りごと登録 | 入力検査、AI質問、構造化、手動フォールバックをAPIへ接続 | 本番E2EでClaude実接続確認が必要 |
+| 📋 一覧・詳細 | `GET /api/ideas` の実データ表示へ接続 | API取得失敗時は警告し再試行 |
+| 🗂️ ステージ管理 | `/api/ideas/:id/stage` へ接続 | 管理者ロール以外はUI操作時点で停止 |
 
 ## 📌 MVPの終点
 
