@@ -1,0 +1,17 @@
+name = "construction-dx-idea-api"
+main = "worker/index.ts"
+compatibility_date = "2026-07-13"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AI_PROVIDER = "claude"
+AI_MODEL = "claude-sonnet-4-5"
+AI_ENABLED = "false"
+DAILY_AI_LIMIT = "10"
+MAX_INPUT_CHARS = "2000"
+APP_BASE_URL = "https://example.invalid"
+
+# Required secrets:
+# wrangler secret put DATABASE_URL
+# wrangler secret put ANTHROPIC_API_KEY
+# wrangler secret put SLACK_WEBHOOK_URL

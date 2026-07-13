@@ -1,0 +1,88 @@
+import type { IssueInput, PrivacyFinding, StructuredIdea } from "./shared";
+
+const detectors: Array<{
+  type: PrivacyFinding["type"];
+  label: string;
+  severity: PrivacyFinding["severity"];
+  pattern: RegExp;
+}> = [
+  {
+    type: "email",
+    label: "メールアドレス候補",
+    severity: "warning",
+    pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+  },
+  {
+    type: "employee_id",
+    label: "社員番号候補",
+    severity: "warning",
+    pattern: /\b(?:社員番号|employee|emp)[-_\s:]?[A-Z0-9]{4,12}\b/gi,
+  },
+  {
+    type: "ip_address",
+    label: "IPアドレス候補",
+    severity: "warning",
+    pattern: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g,
+  },
+  {
+    type: "project_number",
+    label: "案件番号・工事番号候補",
+    severity: "warning",
+    pattern: /\b(?:PJ|工事|案件)[-_]?[0-9A-Z]{4,16}\b/gi,
+  },
+  {
+    type: "money",
+    label: "契約金額・金額候補",
+    severity: "blocker",
+    pattern: /(?:契約金額|請負金額|予算|金額).{0,12}(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:円|万円|億円)/g,
+  },
+];
+
+export function inspectIssueInput(input: IssueInput): PrivacyFinding[] {
+  const text = Object.values(input).join("\n");
+  const findings: PrivacyFinding[] = [];
+
+  for (const detector of detectors) {
+    const matches = text.match(detector.pattern) ?? [];
+    for (const match of matches.slice(0, 5)) {
+      findings.push({
+        type: detector.type,
+        label: detector.label,
+        severity: detector.severity,
+        excerpt: maskSensitiveText(match),
+      });
+    }
+  }
+
+  if (input.confidentiality !== "none") {
+    findings.push({
+      type: "confidentiality_flag",
+      label: "機密情報の可能性",
+      severity: input.confidentiality === "unknown" ? "warning" : "blocker",
+      excerpt: input.confidentiality === "unknown" ? "不明" : "あり",
+    });
+  }
+
+  return findings;
+}
+
+export function maskSensitiveText(text: string): string {
+  return text
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[メールアドレス]")
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[IPアドレス]")
+    .replace(/\b(?:PJ|工事|案件)[-_]?[0-9A-Z]{4,16}\b/gi, "[案件番号]")
+    .replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:円|万円|億円)/g, "[金額]");
+}
+
+export function inspectStructuredIdea(idea: StructuredIdea): PrivacyFinding[] {
+  const text = JSON.stringify(idea);
+  return inspectIssueInput({
+    workType: text,
+    affectedRole: "",
+    currentWorkflow: text,
+    desiredState: text,
+    usedData: "",
+    relatedSystems: "",
+    confidentiality: "none",
+  });
+}
