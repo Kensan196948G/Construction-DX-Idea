@@ -96,7 +96,7 @@ npm run dev
 - `DATABASE_URL`、`ANTHROPIC_API_KEY`、`SLACK_WEBHOOK_URL` をCloudflare Secretへ登録する。
 - `AI_ENABLED=true`、`APP_BASE_URL`、利用上限を本番値へ変更する。
 - `ALLOWED_ORIGINS`、`ADMIN_EMAILS`、`SYSTEM_ADMIN_EMAILS` を本番値へ変更する。
-- `CF_ACCESS_CERTS_URL` と `CF_ACCESS_AUD` をCloudflare Accessの値へ変更する。
+- `CF_ACCESS_CERTS_URL`、`CF_ACCESS_AUD`、`CF_ACCESS_ISSUER` をCloudflare Accessの値へ変更する。
 - `ALLOW_LOCAL_AUTH_BYPASS=false` を確認する。
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。

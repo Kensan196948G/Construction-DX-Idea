@@ -16,6 +16,7 @@ SYSTEM_ADMIN_EMAILS = ""
 ALLOW_LOCAL_AUTH_BYPASS = "false"
 CF_ACCESS_CERTS_URL = ""
 CF_ACCESS_AUD = ""
+CF_ACCESS_ISSUER = ""
 
 # Required secrets:
 # wrangler secret put DATABASE_URL

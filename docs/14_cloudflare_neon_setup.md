@@ -43,6 +43,7 @@ Workersの責務:
 | `ALLOW_LOCAL_AUTH_BYPASS` | ローカル検証専用。本番では `false` |
 | `CF_ACCESS_CERTS_URL` | Cloudflare AccessのJWK取得URL |
 | `CF_ACCESS_AUD` | Cloudflare AccessアプリケーションのAudience Tag |
+| `CF_ACCESS_ISSUER` | Cloudflare Accessチームドメイン由来のissuer URL |
 
 ## 4. Secret登録
 
@@ -77,5 +78,5 @@ MVPでは手動登録を推奨する。
 5. Slackへテスト通知できる。
 6. 監査ログが保存される。
 7. Access JWTなしのAPI呼び出しが拒否される。
-8. 不正なAccess JWT、期限切れJWT、audience不一致JWTが拒否される。
+8. 不正なAccess JWT、期限切れJWT、issuer不一致JWT、audience不一致JWTが拒否される。
 9. 未許可OriginからのCORSが許可されない。

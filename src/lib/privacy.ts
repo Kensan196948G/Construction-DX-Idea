@@ -16,7 +16,7 @@ const detectors: Array<{
     type: "employee_id",
     label: "社員番号候補",
     severity: "warning",
-    pattern: /\b(?:社員番号|employee|emp)[-_\s:]?[A-Z0-9]{4,12}\b/gi,
+    pattern: /(?:社員番号|employee|emp)[-_\s:]?[A-Z0-9]{4,12}\b/gi,
   },
   {
     type: "ip_address",
@@ -69,6 +69,7 @@ export function inspectIssueInput(input: IssueInput): PrivacyFinding[] {
 export function maskSensitiveText(text: string): string {
   return text
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[メールアドレス]")
+    .replace(/(?:社員番号|employee|emp)[-_\s:]?[A-Z0-9]{4,12}\b/gi, "[社員番号]")
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[IPアドレス]")
     .replace(/\b(?:PJ|工事|案件)[-_]?[0-9A-Z]{4,16}\b/gi, "[案件番号]")
     .replace(/(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:円|万円|億円)/g, "[金額]");

@@ -18,24 +18,48 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 const useMock =
   explicitMock ||
   (!import.meta.env.PROD && import.meta.env.VITE_USE_MOCK_API !== "false" && !apiBaseUrl);
+const API_TIMEOUT_MS = 15_000;
 
 export const isMockApi = useMock;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-    ...init,
-  });
+  const controller = new AbortController();
+  const callerSignal = init?.signal;
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const abortFromCaller = () => controller.abort();
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
-    throw new Error(error.message ?? "API request failed");
+  if (callerSignal?.aborted) {
+    controller.abort();
+  } else {
+    callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
   }
 
-  return response.json() as Promise<T>;
+  try {
+    const { headers, ...requestInit } = init ?? {};
+    const response = await fetch(`${apiBaseUrl}${path}`, {
+      ...requestInit,
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: response.statusText }));
+      throw new Error(error.message ?? "API request failed");
+    }
+
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (controller.signal.aborted && !callerSignal?.aborted) {
+      throw new Error("API request timed out");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 export const api = useMock

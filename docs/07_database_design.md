@@ -88,6 +88,23 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | metadata | jsonb | 追加情報 |
 | created_at | timestamptz | 実行日時 |
 
+### notification_outbox
+
+| カラム | 型 | 内容 |
+|---|---|---|
+| id | uuid | 通知イベントID |
+| event_type | text | `idea.submitted` などのイベント種別 |
+| resource_type | text | 対象種別 |
+| resource_id | uuid | 対象ID |
+| idempotency_key | text | 二重送信防止キー |
+| payload | jsonb | マスキング済み通知内容 |
+| status | text | pending/sent/failed/skipped |
+| attempts | integer | 送信試行回数 |
+| next_attempt_at | timestamptz | 次回再送予定 |
+| last_error | text | 機密情報を含まない最終エラー |
+| created_at | timestamptz | 作成日時 |
+| updated_at | timestamptz | 更新日時 |
+
 ## 3. リレーション
 
 ```mermaid
@@ -96,6 +113,7 @@ erDiagram
     ideas ||--o{ idea_decisions : has
     ideas ||--o{ idea_stage_histories : has
     ideas ||--o{ idea_comments : has
+    ideas ||--o{ notification_outbox : notifies
 ```
 
 ## 4. インデックス候補
@@ -107,3 +125,4 @@ erDiagram
 - idea_ai_sessions(created_at)
 - audit_logs(actor, created_at)
 - audit_logs(resource_type, resource_id)
+- notification_outbox(status, next_attempt_at)

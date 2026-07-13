@@ -36,6 +36,7 @@ type Env = {
   ALLOW_LOCAL_AUTH_BYPASS?: string;
   CF_ACCESS_CERTS_URL?: string;
   CF_ACCESS_AUD?: string;
+  CF_ACCESS_ISSUER?: string;
 };
 
 type AppContext = Context<{ Bindings: Env }>;
@@ -43,6 +44,7 @@ type AccessJwtPayload = {
   aud?: string | string[];
   email?: string;
   exp?: number;
+  iss?: string;
   nbf?: number;
 };
 type AccessJwk = JsonWebKey & {
@@ -128,10 +130,15 @@ app.post(
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
     const { input } = c.req.valid("json");
-    await assertAiAllowed(c.env, user, input);
-    const questions = await generateQuestions(c.env, input);
-    await auditAi(c.env, user, "questions", input, questions);
-    return c.json(questions);
+    const reservation = await reserveAiUsage(c.env, user, input);
+    try {
+      const questions = await generateQuestions(c.env, input);
+      await auditAi(c.env, user, "questions", input, questions);
+      return c.json(questions);
+    } catch (error) {
+      await releaseAiUsage(c.env, reservation);
+      throw error;
+    }
   },
 );
 
@@ -141,14 +148,19 @@ app.post(
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
     const { input, answers } = c.req.valid("json");
-    await assertAiAllowed(c.env, user, input);
-    const structured = await structureIdea(c.env, input, answers);
-    const findings = inspectStructuredIdea(structured);
-    if (findings.some((finding) => finding.severity === "blocker")) {
-      throw new ApiError("AI_PRIVACY_FINDING", "AI応答に機密情報候補が含まれています。", 422);
+    const reservation = await reserveAiUsage(c.env, user, input);
+    try {
+      const structured = await structureIdea(c.env, input, answers);
+      const findings = inspectStructuredIdea(structured);
+      if (findings.length > 0) {
+        throw new ApiError("AI_PRIVACY_FINDING", "AI応答に機密情報候補が含まれています。", 422);
+      }
+      await auditAi(c.env, user, "structure", input, structured);
+      return c.json(structured);
+    } catch (error) {
+      await releaseAiUsage(c.env, reservation);
+      throw error;
     }
-    await auditAi(c.env, user, "structure", input, structured);
-    return c.json(structured);
   },
 );
 
@@ -185,28 +197,29 @@ app.post(
     const db = getDb(c.env);
     const id = c.req.param("id");
     const { stage } = c.req.valid("json");
-    const currentRows = await db`
-      select stage
-      from ideas
-      where id = ${id}
-    `;
-    if (!currentRows[0]) {
-      throw new ApiError("NOT_FOUND", "Idea not found.", 404);
-    }
-    const fromStage = String(currentRows[0].stage);
     const rows = await db`
-      update ideas
-      set stage = ${stage}, updated_at = now()
-      where id = ${id}
-      returning *
+      with locked as (
+        select id, stage as from_stage
+        from ideas
+        where id = ${id}
+        for update
+      ),
+      updated as (
+        update ideas
+        set stage = ${stage}
+        from locked
+        where ideas.id = locked.id
+        returning ideas.*, locked.from_stage
+      ),
+      history as (
+        insert into idea_stage_histories (idea_id, from_stage, to_stage, changed_by)
+        select id, from_stage, stage, ${user}
+        from updated
+      )
+      select *
+      from updated
     `;
-    if (!rows[0]) {
-      throw new ApiError("NOT_FOUND", "Idea not found.", 404);
-    }
-    await db`
-      insert into idea_stage_histories (idea_id, from_stage, to_stage, changed_by)
-      values (${id}, ${fromStage}, ${stage}, ${user})
-    `;
+    if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     await audit(c.env, user, "stage.update", "idea", id, { stage });
     return c.json(mapIdeaRow(rows[0]));
   },
@@ -357,17 +370,24 @@ async function getUser(request: Request, env: Env): Promise<string> {
 }
 
 async function verifyAccessJwt(jwt: string, env: Env): Promise<AccessJwtPayload> {
-  if (!env.CF_ACCESS_CERTS_URL || !env.CF_ACCESS_AUD) {
+  if (!env.CF_ACCESS_CERTS_URL || !env.CF_ACCESS_AUD || !env.CF_ACCESS_ISSUER) {
     throw new ApiError("ACCESS_CONFIG_MISSING", "Cloudflare Access JWT settings are not configured.", 503);
   }
   const [encodedHeader, encodedPayload, encodedSignature] = jwt.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is malformed.", 401);
   }
-  const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedHeader))) as {
-    alg?: string;
-    kid?: string;
-  };
+  let header: { alg?: string; kid?: string };
+  let payload: AccessJwtPayload;
+  try {
+    header = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedHeader))) as {
+      alg?: string;
+      kid?: string;
+    };
+    payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedPayload))) as AccessJwtPayload;
+  } catch {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is malformed.", 401);
+  }
   if (header.alg !== "RS256" || !header.kid) {
     throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT header is invalid.", 401);
   }
@@ -392,13 +412,15 @@ async function verifyAccessJwt(jwt: string, env: Env): Promise<AccessJwtPayload>
   if (!verified) {
     throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT signature is invalid.", 401);
   }
-  const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedPayload))) as AccessJwtPayload;
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp && payload.exp < now) {
+  if (!Number.isSafeInteger(payload.exp) || Number(payload.exp) <= now) {
     throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is expired.", 401);
   }
-  if (payload.nbf && payload.nbf > now) {
+  if (payload.nbf !== undefined && (!Number.isSafeInteger(payload.nbf) || payload.nbf > now)) {
     throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT is not active yet.", 401);
+  }
+  if (payload.iss !== env.CF_ACCESS_ISSUER) {
+    throw new ApiError("UNAUTHENTICATED", "Cloudflare Access JWT issuer is invalid.", 401);
   }
   const audiences = Array.isArray(payload.aud) ? payload.aud : [payload.aud].filter(Boolean);
   if (!audiences.includes(env.CF_ACCESS_AUD)) {
@@ -463,7 +485,11 @@ function splitCsv(value?: string): string[] {
     .filter(Boolean);
 }
 
-async function assertAiAllowed(env: Env, user: string, input: IssueInput) {
+type AiReservation = {
+  reservations: Array<{ subjectType: "user" | "global"; subjectId: string }>;
+};
+
+async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promise<AiReservation> {
   const aiSettings = await getAiSettings(env);
   if (env.AI_ENABLED !== "true" || !aiSettings.enabled) {
     throw new ApiError("AI_DISABLED", "AI機能は無効です。", 503);
@@ -481,15 +507,75 @@ async function assertAiAllowed(env: Env, user: string, input: IssueInput) {
   }
 
   const db = getDb(env);
-  const rows = await db`
-    select count(*)::int as count
-    from idea_ai_sessions
-    where executed_by = ${user}
-      and created_at >= date_trunc('day', now())
-  `;
-  if ((rows[0]?.count ?? 0) >= aiSettings.dailyLimit) {
-    throw new ApiError("AI_BUDGET_EXCEEDED", "日次AI利用上限に達しました。", 429);
+  const limits = await getEffectiveUsageLimits(env, user, aiSettings.dailyLimit);
+  const reservations: AiReservation["reservations"] = [];
+  try {
+    for (const limit of limits) {
+      const rows = await db`
+        insert into ai_usage_counters (subject_type, subject_id, usage_date, used_count, limit_count)
+        values (${limit.subjectType}, ${limit.subjectId}, current_date, 1, ${limit.dailyLimit})
+        on conflict (subject_type, subject_id, usage_date)
+        do update
+          set used_count = ai_usage_counters.used_count + 1,
+              limit_count = ${limit.dailyLimit},
+              updated_at = now()
+          where ai_usage_counters.used_count < ${limit.dailyLimit}
+        returning used_count
+      `;
+      if (!rows[0]) {
+        throw new ApiError("AI_BUDGET_EXCEEDED", "日次AI利用上限に達しました。", 429);
+      }
+      reservations.push({ subjectType: limit.subjectType, subjectId: limit.subjectId });
+    }
+  } catch (error) {
+    await releaseAiUsage(env, { reservations });
+    throw error;
   }
+  return { reservations };
+}
+
+async function releaseAiUsage(env: Env, reservation: AiReservation) {
+  if (reservation.reservations.length === 0) return;
+  const db = getDb(env);
+  for (const item of reservation.reservations) {
+    await db`
+      update ai_usage_counters
+      set used_count = greatest(used_count - 1, 0),
+          updated_at = now()
+      where subject_type = ${item.subjectType}
+        and subject_id = ${item.subjectId}
+        and usage_date = current_date
+    `;
+  }
+}
+
+async function getEffectiveUsageLimits(
+  env: Env,
+  user: string,
+  fallbackDailyLimit: number,
+): Promise<Array<{ subjectType: "user" | "global"; subjectId: string; dailyLimit: number }>> {
+  const db = getDb(env);
+  const rows = await db`
+    select subject_type, subject_id, daily_ai_limit
+    from usage_limits
+    where enabled = true
+      and (
+        (subject_type = 'user' and subject_id = ${user})
+        or (subject_type = 'global' and subject_id = '*')
+      )
+  `;
+  const globalLimit = rows.find((row) => row.subject_type === "global");
+  const userLimit = rows.find((row) => row.subject_type === "user");
+  return [
+    ...(globalLimit
+      ? [{ subjectType: "global" as const, subjectId: "*", dailyLimit: Number(globalLimit.daily_ai_limit) }]
+      : []),
+    {
+      subjectType: "user" as const,
+      subjectId: user,
+      dailyLimit: Number(userLimit?.daily_ai_limit ?? fallbackDailyLimit),
+    },
+  ];
 }
 
 async function generateQuestions(env: Env, input: IssueInput): Promise<AiQuestion[]> {
@@ -705,24 +791,102 @@ async function audit(
   `;
 }
 
-async function notifySlack(env: Env, idea: Idea): Promise<"sent" | "skipped" | "failed"> {
-  if (!env.SLACK_WEBHOOK_URL) return "skipped";
+type NotificationStatus = "sent" | "skipped" | "failed";
+
+async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
   const text = [
     `新規DXアイデアが登録されました: ${idea.title}`,
     `対象業務: ${idea.targetBusiness}`,
     `ステージ: ${idea.stage}`,
     `${env.APP_BASE_URL}/ideas/${idea.id}`,
   ].join("\n");
+  const maskedText = maskSensitiveText(text);
+  const outboxId = await createNotificationOutbox(env, {
+    eventType: "idea.submitted",
+    resourceType: "idea",
+    resourceId: idea.id,
+    idempotencyKey: `idea.submitted:idea:${idea.id}:1`,
+    payload: { text: maskedText },
+  });
+
+  if (!env.SLACK_WEBHOOK_URL) {
+    await updateNotificationOutbox(env, outboxId, "skipped");
+    return "skipped";
+  }
+
+  if (outboxId === "already-sent") {
+    return "sent";
+  }
+
   try {
     const response = await fetch(env.SLACK_WEBHOOK_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: maskSensitiveText(text) }),
+      body: JSON.stringify({ text: maskedText }),
     });
-    return response.ok ? "sent" : "failed";
+    const status = response.ok ? "sent" : "failed";
+    await updateNotificationOutbox(env, outboxId, status, response.ok ? undefined : `Slack HTTP ${response.status}`);
+    return status;
   } catch (error) {
     console.error("Slack notification failed", sanitizeLog(error));
+    await updateNotificationOutbox(env, outboxId, "failed", String(sanitizeLog(error)));
     return "failed";
+  }
+}
+
+async function createNotificationOutbox(
+  env: Env,
+  event: {
+    eventType: string;
+    resourceType: string;
+    resourceId: string;
+    idempotencyKey: string;
+    payload: Record<string, unknown>;
+  },
+): Promise<string | "already-sent" | undefined> {
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      insert into notification_outbox (
+        event_type, resource_type, resource_id, idempotency_key, payload, status
+      )
+      values (
+        ${event.eventType}, ${event.resourceType}, ${event.resourceId},
+        ${event.idempotencyKey}, ${JSON.stringify(event.payload)}::jsonb, 'pending'
+      )
+      on conflict (idempotency_key) do update
+      set payload = excluded.payload,
+          updated_at = now()
+      returning id, status
+    `;
+    if (rows[0]?.status === "sent") return "already-sent";
+    return String(rows[0]?.id);
+  } catch (error) {
+    console.error("Slack outbox write failed", sanitizeLog(error));
+    return undefined;
+  }
+}
+
+async function updateNotificationOutbox(
+  env: Env,
+  id: string | "already-sent" | undefined,
+  status: "sent" | "failed" | "skipped",
+  lastError?: string,
+) {
+  if (!id || id === "already-sent") return;
+  try {
+    const db = getDb(env);
+    await db`
+      update notification_outbox
+      set status = ${status},
+          attempts = attempts + case when ${status} = 'skipped' then 0 else 1 end,
+          last_error = ${lastError ?? null},
+          next_attempt_at = case when ${status} = 'failed' then now() + interval '10 minutes' else null end,
+          updated_at = now()
+      where id = ${id}
+    `;
+  } catch (error) {
+    console.error("Slack outbox update failed", sanitizeLog(error));
   }
 }
 
@@ -746,10 +910,15 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     stage: String(row.stage) as IdeaStage,
     createdBy: String(row.created_by),
     ownerId: row.owner_id ? String(row.owner_id) : undefined,
-    createdAt: new Date(String(row.created_at)).toISOString(),
-    updatedAt: new Date(String(row.updated_at)).toISOString(),
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
     aiUsageCount: Number(row.ai_usage_count ?? 0),
   };
+}
+
+function toIsoString(value: unknown): string {
+  const date = new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
 }
 
 function mapAiSettingsRow(row: Record<string, unknown>, env: Env): AiSettings {
