@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { ApiClientError, api } from "./lib/api";
 import {
   buildManualStructuredIdea,
+  emptyIntakeForm,
   formatQuestion,
   fromReviewDraft,
   mapAiSettingsToStandalone,
@@ -28,7 +29,7 @@ type StandaloneComponent = {
   submitIntake?: () => void;
   submitAnswer?: () => void;
   registerIdea?: () => void;
-  saveDraft?: () => void;
+  saveApiKey?: () => void;
   advanceStage?: (id: string | number) => void;
   goTo?: (view: string) => void;
   runConnectionTest?: () => void;
@@ -40,6 +41,7 @@ type StandaloneComponent = {
   __bridgeStructuredDraft?: StructuredIdea;
   __bridgeRoles?: string[];
   __bridgeBusy?: Record<string, boolean>;
+  __bridgeDailyLimit?: number;
 };
 
 export function App() {
@@ -47,7 +49,6 @@ export function App() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      bindIntegratedAiKeyControls(frameRef.current);
       bindStandaloneWorkflowBridge(frameRef.current);
     }, workflowBindIntervalMs);
 
@@ -63,7 +64,6 @@ export function App() {
         src={designPath}
         onLoad={() => {
           window.setTimeout(() => {
-            bindIntegratedAiKeyControls(frameRef.current);
             bindStandaloneWorkflowBridge(frameRef.current);
           }, 500);
         }}
@@ -77,20 +77,42 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   if (!component || component.__hostWorkflowBound) return;
 
   component.__hostWorkflowBound = true;
+  const originalSubmitIntake = component.submitIntake?.bind(component);
+  const originalSubmitAnswer = component.submitAnswer?.bind(component);
+  const originalRegisterIdea = component.registerIdea?.bind(component);
+  const originalAdvanceStage = component.advanceStage?.bind(component);
+
   component.submitIntake = () => {
+    if (component.state.intakeForm.type === "idea") {
+      originalSubmitIntake?.();
+      return;
+    }
     void submitIntakeThroughApi(component);
   };
   component.submitAnswer = () => {
+    if (component.state.wizard.sourceIntake?.type === "idea") {
+      originalSubmitAnswer?.();
+      return;
+    }
     void submitAnswerThroughApi(component);
   };
   component.registerIdea = () => {
+    if (component.state.reviewDraft?.type === "idea") {
+      originalRegisterIdea?.();
+      return;
+    }
     void saveReviewDraftThroughApi(component, "submitted");
   };
-  component.saveDraft = () => {
-    void saveReviewDraftThroughApi(component, "draft");
-  };
   component.advanceStage = (id: string | number) => {
+    const idea = component.state.ideas.find((candidate) => candidate.id === id);
+    if (!idea?.apiStage) {
+      originalAdvanceStage?.(id);
+      return;
+    }
     void advanceStageThroughApi(component, id);
+  };
+  component.saveApiKey = () => {
+    void saveApiKeyThroughApi(component);
   };
   component.runConnectionTest = () => {
     void testSavedAiConnectionThroughApi(component);
@@ -146,6 +168,7 @@ async function loadInitialData(component: StandaloneComponent) {
 
   if (settingsResult.status === "fulfilled" && settingsResult.value !== null) {
     const settings = settingsResult.value;
+    component.__bridgeDailyLimit = settings.dailyLimit;
     component.setState((state) => ({
       adminSettings: mapAiSettingsToStandalone(settings, state.adminSettings),
     }));
@@ -222,7 +245,7 @@ async function submitIntakeThroughApi(component: StandaloneComponent) {
     component.setState((state) => ({
       view: "review",
       wizard: { ...state.wizard, thinking: false },
-      reviewDraft: toReviewDraft(fallback),
+      reviewDraft: toReviewDraft(fallback, state.intakeForm),
       toast: {
         message: `${toErrorMessage(error)} 手動確認用の下書きを作成しました。`,
       },
@@ -263,7 +286,7 @@ async function submitAnswerThroughApi(component: StandaloneComponent) {
     component.setState((state) => ({
       view: "review",
       wizard: { ...state.wizard, thinking: false },
-      reviewDraft: toReviewDraft(structured),
+      reviewDraft: toReviewDraft(structured, wizard.sourceIntake ?? state.intakeForm),
     }));
     component.pushAudit?.("AI利用", `${input.affectedRole || "利用者"}が「${structured.title}」についてAI壁打ちを実施`);
   } catch (error) {
@@ -272,7 +295,7 @@ async function submitAnswerThroughApi(component: StandaloneComponent) {
     component.setState((state) => ({
       view: "review",
       wizard: { ...state.wizard, thinking: false },
-      reviewDraft: toReviewDraft(fallback),
+      reviewDraft: toReviewDraft(fallback, wizard.sourceIntake ?? state.intakeForm),
       toast: {
         message: `${toErrorMessage(error)} 手動確認用の下書きを作成しました。`,
       },
@@ -304,16 +327,7 @@ async function saveReviewDraftThroughApi(component: StandaloneComponent, stage: 
       ideas: [savedIdea, ...state.ideas.filter((idea) => idea.id !== savedIdea.id)],
       selectedIdeaId: savedIdea.id,
       view: stage === "draft" ? "list" : "detail",
-      intakeForm: {
-        work: "",
-        who: "現場代理人",
-        currentMethod: "",
-        desiredState: "",
-        usedData: "",
-        relatedSystems: "",
-        confidentiality: "unknown",
-        freeText: "",
-      },
+      intakeForm: emptyIntakeForm(state.intakeForm),
       wizard: {
         questions: [],
         answers: [],
@@ -418,6 +432,62 @@ async function testSavedAiConnectionThroughApi(component: StandaloneComponent) {
   }
 }
 
+async function saveApiKeyThroughApi(component: StandaloneComponent) {
+  if (!startBridgeAction(component, "saveApiKey")) return;
+  if (!hasRole(component, "system_admin")) {
+    showToast(component, "AI設定の変更にはシステム管理者権限が必要です。");
+    finishBridgeAction(component, "saveApiKey");
+    return;
+  }
+
+  const monthlyCapRaw = component.state.adminSettings.monthlyCap;
+  const monthlyBudget = Number(monthlyCapRaw);
+  if (monthlyCapRaw === "" || !Number.isFinite(monthlyBudget) || monthlyBudget < 0) {
+    showToast(component, "月間利用上限には0以上の数値を入力してください。");
+    finishBridgeAction(component, "saveApiKey");
+    return;
+  }
+
+  const apiKey = component.state.adminSettings.apiKey?.trim();
+  const model = component.state.adminSettings.model;
+
+  try {
+    if (apiKey) {
+      const result = await api.testAiSettings(apiKey, model);
+      if (!result.ok) {
+        showToast(component, `接続確認に失敗しました: ${result.message}`);
+        return;
+      }
+    }
+
+    const settings = await api.updateAiSettings({
+      model,
+      enabled: component.state.adminSettings.enabled,
+      dailyLimit: component.__bridgeDailyLimit ?? 10,
+      monthlyBudget,
+    });
+    component.setState((state) => ({
+      adminSettings: {
+        ...mapAiSettingsToStandalone(settings, state.adminSettings),
+        apiKey: "",
+        apiKeySaved: true,
+        apiKeySavedMsg: true,
+      },
+      toast: { message: `AI利用設定を保存しました: ${settings.model}` },
+    }));
+    component.pushAudit?.("設定変更", "Claude APIキーを更新");
+    window.setTimeout(() => {
+      component.setState((state) => ({
+        adminSettings: { ...state.adminSettings, apiKeySavedMsg: false },
+      }));
+    }, 3200);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  } finally {
+    finishBridgeAction(component, "saveApiKey");
+  }
+}
+
 function showToast(component: StandaloneComponent, message: string) {
   component.setState({ toast: { message } });
 }
@@ -440,128 +510,6 @@ function finishBridgeAction(component: StandaloneComponent, key: string) {
   if (component.__bridgeBusy) {
     component.__bridgeBusy[key] = false;
   }
-}
-
-function bindIntegratedAiKeyControls(frame: HTMLIFrameElement | null) {
-  const doc = frame?.contentDocument;
-  if (!doc) return;
-
-  const input = doc.getElementById("admin-api-key-input") as HTMLInputElement | null;
-  const testButton = doc.getElementById("admin-api-key-test-button") as HTMLButtonElement | null;
-  const clearButton = doc.getElementById("admin-api-key-clear-button") as HTMLButtonElement | null;
-  const saveButton = doc.getElementById("admin-settings-save-button") as HTMLButtonElement | null;
-  const status = doc.getElementById("admin-api-key-status") as HTMLElement | null;
-  if (!input || !testButton || !clearButton || !saveButton || !status || testButton.dataset.bridgeBound === "true") {
-    return;
-  }
-
-  testButton.dataset.bridgeBound = "true";
-  clearButton.dataset.bridgeBound = "true";
-  saveButton.dataset.bridgeBound = "true";
-
-  testButton.addEventListener("click", () => {
-    void testConnectionWithEnteredKey(doc, input, testButton, status);
-  });
-  clearButton.addEventListener("click", () => {
-    input.value = "";
-    showStatus(status, "", "neutral");
-  });
-  saveButton.addEventListener("click", () => {
-    void saveAiSettings(doc, saveButton, status);
-  });
-}
-
-async function testConnectionWithEnteredKey(
-  doc: Document,
-  input: HTMLInputElement,
-  button: HTMLButtonElement,
-  status: HTMLElement,
-) {
-  const apiKey = input.value.trim();
-  if (!apiKey) {
-    showStatus(status, "APIキーを入力してください。", "error");
-    return;
-  }
-
-  const model = doc.querySelector<HTMLSelectElement>("select")?.value;
-  button.disabled = true;
-  button.style.opacity = "0.62";
-  button.style.cursor = "wait";
-  showStatus(status, "接続確認中です。APIキーは保存しません。", "neutral");
-
-  try {
-    const result = await api.testAiSettings(apiKey, model);
-    const keyLast4 = result.keyLast4 ?? apiKey.slice(-4);
-    showStatus(
-      status,
-      result.ok
-        ? `接続成功: ${result.message} キー末尾 ${keyLast4}`
-        : `接続失敗: ${result.message}`,
-      result.ok ? "success" : "error",
-    );
-  } catch (error) {
-    showStatus(status, toErrorMessage(error), "error");
-  } finally {
-    input.value = "";
-    button.disabled = false;
-    button.style.opacity = "1";
-    button.style.cursor = "pointer";
-  }
-}
-
-async function saveAiSettings(doc: Document, button: HTMLButtonElement, status: HTMLElement) {
-  const model = doc.querySelector<HTMLSelectElement>("select")?.value ?? "claude-sonnet-4.5";
-  const monthlyLimit = readMonthlyLimit(doc);
-  const enabledLabel = Array.from(doc.querySelectorAll("div")).find((element) =>
-    element.textContent?.includes("AIによる整理・壁打ち"),
-  );
-
-  button.disabled = true;
-  button.style.opacity = "0.62";
-  button.style.cursor = "wait";
-  showStatus(status, "AI利用設定を保存中です。APIキー本体は保存しません。", "neutral");
-
-  try {
-    const settings = await api.updateAiSettings({
-      model,
-      enabled: enabledLabel?.textContent?.includes("有効") ?? true,
-      dailyLimit: 10,
-      monthlyBudget: monthlyLimit,
-    });
-    showStatus(
-      status,
-      `設定保存完了: ${settings.model} / 月間上限 ${settings.monthlyBudget} 回`,
-      "success",
-    );
-  } catch (error) {
-    showStatus(status, toErrorMessage(error), "error");
-  } finally {
-    button.disabled = false;
-    button.style.opacity = "1";
-    button.style.cursor = "pointer";
-  }
-}
-
-function readMonthlyLimit(doc: Document) {
-  const input = Array.from(doc.querySelectorAll<HTMLInputElement>("input")).find((candidate) =>
-    candidate.previousElementSibling?.textContent?.includes("月間利用上限"),
-  );
-  const value = Number(input?.value);
-  return Number.isFinite(value) && value >= 0 ? value : 500;
-}
-
-function showStatus(status: HTMLElement, message: string, tone: "success" | "error" | "neutral") {
-  status.textContent = message;
-  const styles = {
-    success: "background:#E4F3EC;color:#1F8255;border:1px solid #CBE8DA;",
-    error: "background:#FCE9E7;color:#C5392F;border:1px solid #F4C7C2;",
-    neutral: "background:#F2F4F8;color:#5A6678;border:1px solid #E3E8EF;",
-  };
-  status.style.cssText =
-    "display:" +
-    (message ? "block" : "none") +
-    ";margin-top:2px;padding:9px 11px;border-radius:8px;font-size:12.5px;font-weight:500;" +
-    styles[tone];
 }
 
 function toErrorMessage(error: unknown) {

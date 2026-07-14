@@ -7,57 +7,79 @@ import type {
   StructuredIdea,
 } from "./shared";
 
+export type StandaloneIntakeType = "issue" | "idea";
+
 export type StandaloneIdea = {
   id: string | number;
+  type: StandaloneIntakeType;
   title: string;
   category: string;
   who: string;
+  department: string;
+  submitterName: string;
+  email: string;
   currentProcess: string;
   problem: string;
   dataUsed: string;
   existingSystemRelation: string;
+  ideaProcess: string;
+  isNewIdea: "yes" | "no";
+  requiredResources: string;
+  coordinationNeeded: string;
   expectedEffect: string;
   mvpProposal: string;
   securityNotes: string;
   stage: string;
   targetCount: number;
   createdAt: string;
+  comments: Array<{ author: string; time: string; text: string }>;
   history: Array<{ date: string; stage: string; note: string }>;
   apiStage?: IdeaStage;
 };
 
 export type StandaloneReviewDraft = {
+  type: StandaloneIntakeType;
   title: string;
   category: string;
   who: string;
+  department: string;
+  submitterName: string;
+  email: string;
   problem: string;
   currentProcess: string;
   dataUsed: string;
   existingSystemRelation: string;
+  ideaProcess: string;
+  isNewIdea: "yes" | "no";
+  requiredResources: string;
+  coordinationNeeded: string;
   expectedEffect: string;
   mvpProposal: string;
   securityNotes: string;
 };
 
 export type StandaloneIntakeForm = {
+  type: StandaloneIntakeType;
+  department: string;
+  submitterName: string;
+  email: string;
   work: string;
   who: string;
   currentMethod: string;
   desiredState: string;
-  usedData: string;
-  relatedSystems: string;
-  confidentiality: "none" | "possible" | "unknown";
   freeText: string;
+  currentProcess: string;
+  ideaProcess: string;
+  isNewIdea: "yes" | "no";
+  requiredResources: string;
+  coordinationNeeded: string;
 };
 
 export type StandaloneState = {
   view: string;
   selectedIdeaId: string | number | null;
   ideas: StandaloneIdea[];
-  auditLog: Array<{ time: string; actor: string; action: string; detail: string }>;
   toast: { message: string } | null;
-  filterStage: string;
-  searchQuery: string;
   intakeForm: StandaloneIntakeForm;
   wizard: {
     questions: string[];
@@ -70,12 +92,38 @@ export type StandaloneState = {
   adminSettings: {
     model: string;
     enabled: boolean;
-    monthlyCap: number;
+    monthlyCap: number | string;
     used: number;
     testing: boolean;
     testResult: string | null;
+    apiKey: string;
+    apiKeySaved: boolean;
+    apiKeySavedMsg: boolean;
   };
 };
+
+const emptyIntakeDefaults = {
+  work: "",
+  who: "現場代理人",
+  currentMethod: "",
+  desiredState: "",
+  freeText: "",
+  currentProcess: "",
+  ideaProcess: "",
+  isNewIdea: "yes" as const,
+  requiredResources: "",
+  coordinationNeeded: "",
+};
+
+export function emptyIntakeForm(source: StandaloneIntakeForm): StandaloneIntakeForm {
+  return {
+    type: "issue",
+    department: source.department,
+    submitterName: source.submitterName,
+    email: source.email,
+    ...emptyIntakeDefaults,
+  };
+}
 
 export function toIssueInput(intake: StandaloneIntakeForm): IssueInput {
   const issueText = normalizeText(intake.freeText);
@@ -84,18 +132,21 @@ export function toIssueInput(intake: StandaloneIntakeForm): IssueInput {
       .filter(Boolean)
       .join("\n\n"),
   );
+  const submitterInfo = [intake.department, intake.submitterName].filter(Boolean).join(" ");
   return {
     workType: workText,
-    affectedRole: normalizeText(intake.who),
+    affectedRole: normalizeText(
+      [intake.who, submitterInfo ? `(提出: ${submitterInfo})` : ""].filter(Boolean).join(" "),
+    ),
     currentWorkflow: normalizeText(
       [intake.currentMethod, issueText ? `補足: ${issueText}` : ""]
         .filter(Boolean)
         .join("\n\n"),
     ),
     desiredState: normalizeText(intake.desiredState),
-    usedData: normalizeText(intake.usedData),
-    relatedSystems: normalizeText(intake.relatedSystems),
-    confidentiality: intake.confidentiality,
+    usedData: "",
+    relatedSystems: "",
+    confidentiality: "unknown",
   };
 }
 
@@ -156,15 +207,26 @@ export function buildManualStructuredIdea(input: IssueInput, answers: Record<str
   };
 }
 
-export function toReviewDraft(structured: StructuredIdea): StandaloneReviewDraft {
+export function toReviewDraft(
+  structured: StructuredIdea,
+  source?: StandaloneIntakeForm,
+): StandaloneReviewDraft {
   return {
+    type: "issue",
     title: structured.title,
     category: structured.targetBusiness,
     who: structured.targetUsers,
+    department: source?.department ?? "",
+    submitterName: source?.submitterName ?? "",
+    email: source?.email ?? "",
     problem: structured.currentIssue,
     currentProcess: structured.currentWorkflow,
     dataUsed: structured.requiredData.join("、"),
     existingSystemRelation: structured.relatedSystems.join("、"),
+    ideaProcess: "",
+    isNewIdea: "yes",
+    requiredResources: "",
+    coordinationNeeded: "",
     expectedEffect: structured.expectedEffects,
     mvpProposal: structured.mvpCandidate,
     securityNotes: structured.securityNotes.join("、"),
@@ -204,19 +266,28 @@ export function mapApiIdeaToStandalone(idea: Idea): StandaloneIdea {
   const stageLabel = toStandaloneStage(idea.stage);
   return {
     id: idea.id,
+    type: "issue",
     title: idea.title,
     category: idea.targetBusiness || "未分類",
     who: idea.targetUsers || "未設定",
+    department: "",
+    submitterName: "",
+    email: "",
     currentProcess: idea.currentWorkflow,
     problem: idea.currentIssue,
     dataUsed: idea.requiredData.join("、"),
     existingSystemRelation: idea.relatedSystems.join("、"),
+    ideaProcess: "",
+    isNewIdea: "yes",
+    requiredResources: "",
+    coordinationNeeded: "",
     expectedEffect: idea.expectedEffects,
     mvpProposal: idea.mvpCandidate,
     securityNotes: idea.securityNotes.join("、"),
     stage: stageLabel,
     targetCount: Math.max(1, idea.aiUsageCount + idea.securityNotes.length + 8),
     createdAt: idea.createdAt.slice(0, 10),
+    comments: [],
     history: [{ date: idea.updatedAt.slice(0, 10), stage: stageLabel, note: "APIデータから表示" }],
     apiStage: idea.stage,
   };

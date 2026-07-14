@@ -16,21 +16,27 @@ import type { Idea } from "../src/lib/shared";
 describe("standalone WebUI bridge helpers", () => {
   it("keeps the free-text issue body in the API input", () => {
     const input = toIssueInput({
+      type: "issue",
+      department: "土木工事部",
+      submitterName: "山田太郎",
+      email: "",
       work: "日報作成",
       who: "主任技術者",
       currentMethod: "紙の日報をExcelへ転記",
       desiredState: "転記をなくしたい",
-      usedData: "日報Excel",
-      relatedSystems: "共有フォルダ",
-      confidentiality: "none",
       freeText: "同じ内容を複数回入力していて月末に残業が増える",
+      currentProcess: "",
+      ideaProcess: "",
+      isNewIdea: "yes",
+      requiredResources: "",
+      coordinationNeeded: "",
     });
 
     assert.match(input.workType, /日報作成/);
     assert.match(input.workType, /同じ内容を複数回入力/);
     assert.match(input.currentWorkflow, /紙の日報/);
     assert.match(input.currentWorkflow, /同じ内容を複数回入力/);
-    assert.equal(input.confidentiality, "none");
+    assert.equal(input.confidentiality, "unknown");
     assert.equal(validateIssueInput(input), null);
   });
 

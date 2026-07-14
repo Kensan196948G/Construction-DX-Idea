@@ -7,6 +7,8 @@ import { defineConfig, type Plugin } from "vite";
 const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 const designSource = resolve(projectRoot, "Construction DX Idea (standalone).html");
 const designRoute = "/design/construction-dx-idea.html";
+const designSupportSource = resolve(projectRoot, "support.js");
+const designSupportRoute = "/design/support.js";
 
 function standaloneDesignPlugin(): Plugin {
   return {
@@ -15,6 +17,9 @@ function standaloneDesignPlugin(): Plugin {
       if (!existsSync(designSource)) {
         this.error(`Required design file is missing: ${designSource}`);
       }
+      if (!existsSync(designSupportSource)) {
+        this.error(`Required design runtime is missing: ${designSupportSource}`);
+      }
     },
     configureServer(server) {
       server.middlewares.use(designRoute, (_request, response) => {
@@ -22,11 +27,20 @@ function standaloneDesignPlugin(): Plugin {
         response.setHeader("Content-Type", "text/html; charset=utf-8");
         response.end(readFileSync(designSource));
       });
+      server.middlewares.use(designSupportRoute, (_request, response) => {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "text/javascript; charset=utf-8");
+        response.end(readFileSync(designSupportSource));
+      });
     },
     closeBundle() {
       const target = resolve(projectRoot, "dist", designRoute.slice(1));
       mkdirSync(dirname(target), { recursive: true });
       copyFileSync(designSource, target);
+
+      const supportTarget = resolve(projectRoot, "dist", designSupportRoute.slice(1));
+      mkdirSync(dirname(supportTarget), { recursive: true });
+      copyFileSync(designSupportSource, supportTarget);
     },
   };
 }
