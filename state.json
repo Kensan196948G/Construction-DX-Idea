@@ -23,7 +23,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-07-14",
-    "verified_by": "main HEAD (366091e) で npm run verify (lint PASS, test 24/24 PASS, build PASS, build:production-api PASS, security:scan PASS) と worker:deploy:dry-run を再実行しPASS確認。PR #9 (53ca40b)・PR #10 (366091e) はCI green・CodeRabbit/Codexレビュー完了でmain squash merge済み"
+    "verified_by": "main HEAD (593b84f) 時点: PR #13 (WebUI Claude Design 100%適用、Issue #12) をlint PASS・test 24/24 PASS・build PASS・CI green・Codexレビュー・CodeRabbit 3ラウンド(最終指摘0件)・Firefox headless E2E実機検証の全ゲート通過後、人間承認を得てmain squash merge。PR #11 (Release Ready判断記録) も同日人間承認でmerge済み"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -35,7 +35,7 @@
     "auto_issue_generation": true,
     "self_evolution": true
   },
-  "completed_issues": [2, 3, 4, 5],
+  "completed_issues": [2, 3, 4, 5, 12],
   "in_progress_issues": [
     {
       "number": 6,
@@ -56,7 +56,8 @@
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
       "release-smoke-test.mjs は実行前にDNS事前チェックを行うことで、無意味なHTTPタイムアウト待ちを避け、失敗原因を即座に特定できる設計にしている。",
       "TeammateIdle フックは公式仕様で matcher 非対応（常時発火）。settings.json 設定例で matcher を書くと誤解を招くため省略する。TaskCreated/TaskCompleted は matcher 指定可。",
-      "PR #1（旧・静的サイト+Docker構想、mainとCONFLICTING）は現行アーキテクチャ（React+Cloudflare Workers+Neon、Docker廃止方針）と不一致のため人間確認の上クローズ（2026-07-14）。"
+      "PR #1（旧・静的サイト+Docker構想、mainとCONFLICTING）は現行アーキテクチャ（React+Cloudflare Workers+Neon、Docker廃止方針）と不一致のため人間確認の上クローズ（2026-07-14）。",
+      "gh pr edit がProjects classic廃止起因のGraphQLエラーで失敗する場合、REST API（gh api --method PATCH repos/{repo}/pulls/{n} -F body=@file）で回避できる。-f はリテラル文字列送信なので @file 参照を解決する -F を使うこと。"
     ]
   }
 }
