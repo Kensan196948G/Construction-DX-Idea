@@ -7,6 +7,16 @@
 - Slack通知失敗がないか確認する。
 - 監査ログに異常な操作がないか確認する。
 - エラーレート、タイムアウトを確認する。
+- `npm run release:smoke` で一般ユーザー/管理者境界の継続監視を行う。
+  - 前提:
+    - `SMOKE_API_BASE_URL` 必須。未設定時は即時終了コード1。
+    - 取得エラー時は `SMOKE_API_BASE_URL format` / `DNS lookup failed` / `Release smoke test failed.` を確認。
+    - ログイン環境の制約で `SMOKE_CF_ACCESS_*` 未設定の場合、ユーザー系・管理者系APIは `- Skip` で実行継続される。
+  - 必須補足:
+    - `SMOKE_CF_ACCESS_USER_JWT / SMOKE_CF_ACCESS_USER_EMAIL`
+    - `SMOKE_CF_ACCESS_ADMIN_JWT / SMOKE_CF_ACCESS_ADMIN_EMAIL`
+  - 失敗時の対応:
+    - 先にDNS登録とCloudflare Access経路を確認し、APIが返すHTTPコードとJSON内容をチェックして誤警報と実障害を切り分ける。
 
 ## 2. AI障害時
 

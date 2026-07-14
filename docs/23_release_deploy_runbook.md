@@ -4,6 +4,15 @@
 
 本書は、`Construction-DX-Idea` を本番直前状態へ進めるための環境値、デプロイ、スモークテスト、ロールバック手順を定義する。
 
+## 1.5 Cloudflare実行前提（外部認証）
+
+Cloudflareコマンド実行前提:
+
+- `wrangler login` 済みであること
+- 対象アカウントに `dxidea.mirai-dx-platform.com` の管理権限があること
+- `wrangler whoami` が成功すること
+- `release:deploy` を使う場合は `CLOUDFLARE_PAGES_PROJECT` が設定されること
+
 ## 2. 本番環境値
 
 運用FQDN:
@@ -14,6 +23,7 @@
 |---|---|---:|---|
 | Frontend | `VITE_API_BASE_URL` | 必須 | Cloudflare Worker APIのOrigin |
 | Frontend | `VITE_USE_MOCK_API=false` | 必須 | 本番でモックAPIを禁止 |
+| Frontend/Pages | `CLOUDFLARE_PAGES_PROJECT` | リリース時必須 | `npm run release:deploy` で `frontend:deploy` を実行する場合のみ |
 | Worker | `APP_BASE_URL` | 必須 | WebUIの本番URL |
 | Worker | `ALLOWED_ORIGINS` | 必須 | WebUI Originのみ |
 | Worker | `ADMIN_EMAILS` | 必須 | ステージ変更権限 |
@@ -37,9 +47,42 @@ npm run worker:deploy:dry-run
 npm audit --audit-level=high
 VITE_USE_MOCK_API=false npm run build
 npm run predeploy:check
+npm run release:monitor
+npm run release:smoke
 ```
 
-`npm run predeploy:check` は本番環境値をシェル環境に設定してから実行する。placeholder、ローカルURL、モックAPI有効状態では失敗させる。
+`npm run predeploy:check` と `npm run release:smoke` は本番環境値をシェル環境に設定してから実行する。placeholder、ローカルURL、モックAPI有効状態では失敗させる。
+
+`release:smoke` は起動時に `SMOKE_API_BASE_URL` のDNS到達性を先に検証する。DNS未解決時は即時 `BLOCKED` とし、別途 `Cloudflare DNS/custom domain` の確認が必要。
+
+`release:smoke` 用変数の最小構成:
+
+```bash
+export SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
+export SMOKE_CF_ACCESS_USER_JWT=<一般利用者JWT>
+export SMOKE_CF_ACCESS_USER_EMAIL=<一般利用者メール>
+export SMOKE_CF_ACCESS_ADMIN_JWT=<システム管理者JWT>
+export SMOKE_CF_ACCESS_ADMIN_EMAIL=<システム管理者メール>
+```
+
+任意:
+
+```bash
+export SMOKE_ADMIN_TEST_MODEL=claude-sonnet-4-5
+export SMOKE_ADMIN_TEST_API_KEY=<接続テストキー>
+export SMOKE_SLACK_WEBHOOK_TEST=<通知確認用Webhook>
+export SMOKE_REQUEST_TIMEOUT_MS=12000
+```
+
+`release:deploy` を使う場合は、追加で次を設定します。
+
+```bash
+export CLOUDFLARE_PAGES_PROJECT=construction-dx-idea
+```
+
+```bash
+npm run release:deploy
+```
 
 ## 4. Neon
 
@@ -66,11 +109,19 @@ wrangler deploy worker/index.ts
 
 Worker を `https://dxidea.mirai-dx-platform.com` で公開する場合:
 
-1. `mirai-dx-platform.com` のゾーンに対し `wrangler.toml` の `routes` を有効化し、`dxidea.mirai-dx-platform.com` を Worker のエントリに設定する。
+1. `wrangler.toml` の `routes` に Cloudflare Custom Domains 方式のルートを追加し、Host名とWorkersを紐づける。Custom Domainsはホスト名のみのパターンを取り、`zone_name` は不要（`https://` プレフィックスや `/*` サフィックスを付けない）。
+
+```toml
+routes = [
+  { pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }
+]
+```
+
 2. `APP_BASE_URL` を `https://dxidea.mirai-dx-platform.com` に設定する。
 3. `ALLOWED_ORIGINS` を `https://dxidea.mirai-dx-platform.com` のみ許可する。
 4. Accessアプリケーションの対象URLを同一オリジンへ向ける。
 5. `npm run worker:deploy:dry-run` と `wrangler deploy worker/index.ts` を実行し、401/200を確認する。
+6. `SMOKE_CF_ACCESS_*` 用JWTが未期限切れで、正しい issuer/audience を持つことを確認する。
 
 Cron Triggersは `wrangler.toml` の `*/10 * * * *` を利用し、Slack通知Outboxのfailed行を再送する。
 
@@ -92,7 +143,8 @@ export CLOUDFLARE_PAGES_PROJECT=construction-dx-idea
 npm run frontend:deploy
 ```
 
-`CLOUDFLARE_PAGES_PROJECT` はCloudflare Pagesプロジェクト名を指定する。
+`CLOUDFLARE_PAGES_PROJECT` はCloudflare Pagesプロジェクト名を指定します。  
+デプロイ先アカウントは `wrangler login` 済みのプロファイル側のデフォルトアカウントを参照します。
 
 ## 8. スモークテスト
 
@@ -110,6 +162,7 @@ npm run frontend:deploy
 | 10 | Slack | sent/skipped/failedがUIへ反映 |
 | 11 | Slack再送 | failed OutboxがCron後に再試行される |
 | 12 | 本番公開先 | `https://dxidea.mirai-dx-platform.com` が閲覧でき、Access未認証時に保護される |
+| 13 | リリースゲート | `npm run release:gate` が 0 exit で完了 |
 
 ## 9. ロールバック
 
@@ -124,8 +177,12 @@ npm run frontend:deploy
 - `npm run verify` が成功している。
 - `npm run worker:deploy:dry-run` が成功している。
 - `npm run predeploy:check` が本番環境値で成功している。
-- 実Claude API、Neon、Slack、Cloudflare Accessでスモークテストが完了している。
-- CodeRabbit、Codex review、security reviewの未対応P0/P1がない。
+- `npm run release:smoke` が本番環境値で成功している。
+- `npm run release:gate` が成功している（`release:monitor` + `release:prepare` + `release:smoke`）。
+- `npm run release:deploy` が成功している（`release:monitor` + `release:prepare`、デプロイ実行、デプロイ後smoke）。
+- 実Claude API、Neon、Slack、Cloudflare Accessで必要観点のスモークテストが完了している。
+- CodeRabbitレビューは P0/P1実装要件に対し完了扱い。`codex review --uncommitted` は `No findings`。
+- security review は `npm run security:scan` をPASS。`code-review --fix` は `command not found` で未導入のため、`Issue #6` でトラックを継続。
 
 ## 11. 最近の実行結果（2026-07-13）
 
@@ -136,11 +193,34 @@ npm run frontend:deploy
 | `npm run verify` | ✅ 完了 | lint / test / build / security scan すべて通過 |
 | `npm run worker:deploy:dry-run` | ✅ 完了 | 環境変数一覧が想定値で読み込み可 |
 | `npm audit --audit-level=high` | ✅ 完了 | 高リスク脆弱性なし |
-| `npm run predeploy:check` | ⚠️ 未完了 | Production値未設定のため失敗（次項目を確認） |
+| `npm run release:prepare` | ✅ 完了 | 11:05の `release:prepare` 通過 |
+| `npm run release:smoke` | 🚫 BLOCKED | DNS未解決で失敗 |
+| `npm run release:gate` | 🚫 BLOCKED | `release:prepare` PASS、`release:smoke` BLOCKED |
+| `npm run verify`（15:56） | ✅ 完了 | 通常検証再実行 |
+| `npm run predeploy:check`（15:56） | ⚠️ BLOCKED | 実環境値未投入 |
+| `npm run predeploy:check`（15:56） | ✅ PASS（疑似値） | `ALLOW_LOCAL_AUTH_BYPASS=false`・`VITE_USE_MOCK_API=false` |
+| `npm run predeploy:check`（15:58） | ⚠️ BLOCKED | 実運用値未投入 |
+| `npm run release:monitor`（15:58） | 🚫 BLOCKED | `wrangler` 未認証 / DNS未解決 |
+| `npm run verify`（15:59） | ✅ 完了 | lint / test / build / security scan を再確認 |
+| `npm run release:monitor`（15:59） | 🚫 BLOCKED | `APP_BASE_URL`等の必須値不足 / DNS未解決 / wrangler未認証 |
+| `code-review --fix` | ⚠️ 未実施 | 実行環境に未導入（command not found） |
+| `codex review --uncommitted` | ✅ No findings | release readiness差分を再確認済み |
+| `security scan` | ✅ PASS | `npm run security:scan` |
+| `codex review` | ⚠️ 実行未完了 | `--uncommitted` / `--base` / `--commit` が必要 |
+| `npm run verify`（16:05） | ✅ 完了 | `16:05` 再確認 |
+| `npm run predeploy:check`（16:05） | ✅ 完了 | 本番値ダミー投入時PASS |
+| `npm run worker:deploy:dry-run`（16:05） | ✅ 完了 | `wrangler` dry-run完了 |
+| `npm run verify`（16:05再実行） | ✅ 完了 | eslint/test/build/security scan を再確認 |
+| `npm run predeploy:check`（16:05再実行） | ✅ 完了 | 本番値ダミー投入時にPASS |
+| `npm run release:smoke`（16:08） | 🚫 BLOCKED | `dxidea.mirai-dx-platform.com` のDNS解決失敗 |
+| `npm run release:gate`（16:08） | 🚫 BLOCKED | `release:prepare` はPASS、`release:smoke` はDNSエラー |
+| `npm run release:monitor`（17:20） | 🚫 BLOCKED | `wrangler` 未認証、DNS未解決 |
 
 次は以下を実環境値で実行し、Release Gate を打ち上げる。
 
 1. `APP_BASE_URL`、`ALLOWED_ORIGINS`、`ADMIN_EMAILS`、`SYSTEM_ADMIN_EMAILS`  
 2. `CF_ACCESS_CERTS_URL`、`CF_ACCESS_AUD`、`CF_ACCESS_ISSUER`  
 3. `DATABASE_URL`、`VITE_API_BASE_URL`、`ALLOW_LOCAL_AUTH_BYPASS=false`、`VITE_USE_MOCK_API=false`  
-4. `npm run predeploy:check` を再実行
+4. `npm run predeploy:check` を再実行  
+5. `npm run release:smoke` を実行  
+6. `npm run release:deploy` を実行（または本番値確定環境で `release:gate` を事前確認後、`release:deploy` へ進む）  

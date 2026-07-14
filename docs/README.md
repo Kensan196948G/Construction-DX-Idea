@@ -29,6 +29,7 @@
 | 21 | [自律CTO実行プロセス](21_autonomous_cto_execution.md) | 実装バックログ、リリース判定、GitHub Projects更新、レビュー・監視ループ |
 | 22 | [現在の実装・検証ステータス](22_current_implementation_status.md) | 実装済み範囲、検証結果、起動手順、残ゲート |
 | 23 | [リリース・デプロイRunbook](23_release_deploy_runbook.md) | 本番直前チェック、環境値、デプロイ、スモークテスト、ロールバック |
+| 24 | [自動化CTO実行ログ](24_autonomous_cto_execution_log.md) | 監視・開発サイクル結果、次アクション |
 
 ## 文書の優先順位
 

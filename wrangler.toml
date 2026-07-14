@@ -23,9 +23,10 @@ CF_ACCESS_ISSUER = ""
 AI_INPUT_COST_PER_1K_TOKENS = "0.003"
 AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 
-# Production sample (set actual route only in production account)
+# Production sample (set in production account/branch when route is configured)
+# Custom Domains take a hostname-only pattern with no zone_name (see Cloudflare docs).
 # routes = [
-#   { pattern = "https://dxidea.mirai-dx-platform.com/*", zone_name = "mirai-dx-platform.com" }
+#   { pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }
 # ]
 
 # Required secrets:

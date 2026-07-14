@@ -6,10 +6,25 @@
 
 2026-07-13（最新）:
 
+- 16:05 JST: `npm run verify` PASS、`npm run worker:deploy:dry-run` PASS、`npm run predeploy:check` PASS（本番値ダミー再現）
+- 16:08 JST: `npm run release:prepare` PASS、`npm run release:smoke` BLOCKED（DNS lookup failed for dxidea.mirai-dx-platform.com）
+- 16:41 JST: `npm run -s release:monitor` → BLOCKED（13件）。未設定（APP/Access/DB/VITE）、本番前提フラグ不一致、`dxidea.mirai-dx-platform.com` DNS未解決、`wrangler` 未認証。
+- 16:41 JST: `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:smoke` → `DNS lookup failed` で BLOCKED。
+- 16:44 JST: `TMPDIR=<tmpdir> npm run -s verify` → ✅ PASS（`lint` / `test` / `build` / `build:production-api` / `security:scan`）。
+- テスト補足: `npm run -s test` は Node 25.2.1 + tsx でデフォルトTMPDIRだと EPERM(pipe作成)が再現。`TMPDIR=<tmpdir> npm run -s test` は PASS。`npm run -s lint` と `npm run security:scan` は PASS。
+- 22:20 JST: `codex review --uncommitted` 実行 → No findings。`CodeRabbit review --plain` も No findings。`npm run security:scan` PASS。`code-review --fix` は `command not found`。
+- 22:20 JST: `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:smoke` → `DNS lookup failed` でBLOCKED。
+- 22:20 JST: `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:gate` → `release:monitor` で BLOCKED（本番Env未投入、wrangler未認証、DNS未解決）。
+- 22:20 JST: `release:monitor` → 本番Env未設定、`wrangler auth` 失敗、DNS未解決で BLOCKED。
+
 - `main` に PR #8 がマージされ、リモート `origin/main` と同一 (`ab327b5`)。
 - `npm run verify`、`npm run worker:deploy:dry-run`、`npm audit --audit-level=high` は通過。
-- `npm run predeploy:check` は本番環境値未設定のため失敗（`APP_BASE_URL` など8項目が未設定）。
+- `npm run predeploy:check` は実環境値未設定では失敗するが、`ALLOW_LOCAL_AUTH_BYPASS=false` と実設定を入れた本番疑似値でPASSを確認済み。
+- `npm run release:smoke` は `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api` でDNS解決不能のため未達（status=0）。
+- `npm run release:gate` は `release:prepare` PASS 後に `release:smoke` ブロックで失敗（DNS未解決）。
+- `npm run release:monitor` は `wrangler whoami` 未認証＋DNS未解決で失敗（外部接続準備未完了）。
 - GitHub Projects `users/Kensan196948G/projects/42` は P0 Issue#2-5 を Done、Issue#6 を In Progress に更新済み。
+- `code-review --fix` は現在の作業環境に未導入（`command not found`）。導入後は release 直前に再実施し、レビュー結果をIssue #6 に追記する。
 
 ## 2. 実装済みファイル
 
@@ -92,6 +107,12 @@ npm run worker:deploy:dry-run
 | Secret scan | 成功 |
 | Wrangler deploy dry-run | 成功 |
 | npm audit | 成功。0 vulnerabilities |
+| `npm run predeploy:check` | 実環境値未投入時は未完了。ダミー本番値で再実行するとPASS |
+| `npm run release:monitor` | BLOCKED（`wrangler auth` 未認証、DNS未解決） |
+| `npm run release:smoke` | BLOCKED（`dxidea.mirai-dx-platform.com` のDNS解決失敗） |
+| `npm run release:gate` | BLOCKED（`release:smoke` ブロック） |
+| `code-review --fix` | BLOCKED（未インストール） |
+| `codex review --uncommitted` | 改善実施（`custom_domain` サンプルを `routes` 形式へ修正） |
 
 ## 5. GitHub Projects
 
@@ -127,9 +148,14 @@ npm run dev
 - `ALLOW_LOCAL_AUTH_BYPASS=false` を確認する。
 - `VITE_USE_MOCK_API=false` と `VITE_API_BASE_URL` を本番値へ設定する。
 - `npm run predeploy:check` を本番環境値で実行する。
+- `npm run release:smoke` を実行し、一般ユーザーとシステム管理者の観点でAPI境界・接続確認を実施する。
+- `npm run release:gate` を実行し、`release:monitor` + `release:prepare` + `release:smoke` をまとめて事前確認する。
+- 本番デプロイ実行時は `npm run release:deploy` を用いて、実デプロイ後に `release:smoke` が走ることを確認する。
 - 実Claude API接続テストを実行する。
 - Slack通知テストを実行する。
 - 一般利用者と管理者ロールでE2E確認を行う。
 - GitHub ProjectのP0 Issueをレビュー結果に応じてDoneへ更新する。
-- PR #7のCodeRabbitレビュー完了後、指摘があれば追加修正する。
-- 未完了の `#6 Production deployment settings and real environment validation` を、`mirai-dx-platform.com` サブドメイン導入前提の実環境手順に合わせてクローズする。
+- PR #8のCodeRabbitレビュー完了後、指摘があれば追加修正する。
+- 未完了の `#6 Production deployment settings and real environment validation` は、
+  `mirai-dx-platform.com` サブドメイン導入前提でCloudflare設定、Secret投入、Neon移行、ライブE2E検証が完了した場合のみクローズする。現時点はDNS解決と公開接続が未完了のため In Progress。
+- `code-review --fix` は実行環境に未導入（`command not found`）。代替として `npm run security:scan` をセキュリティゲートとして継続。

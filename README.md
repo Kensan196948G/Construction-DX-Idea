@@ -24,8 +24,54 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
-| 🌐 Release | 最終ゲート待ち | PR #8は `main` にマージ済み（`ab327b5`）。`npm run verify` / `npm run worker:deploy:dry-run` は通過。`predeploy:check` は本番値未設定で未完了。 |
+| 🌐 Release | 実行中 | PR #8は `main` にマージ済み（`ab327b5`）。`npm run verify` / `npm run worker:deploy:dry-run` はPASS。`npm run release:gate` は実環境未接続（DNS解決失敗）でBLOCKED。外部到達性とwrangler認証待ち。 |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
+
+```mermaid
+flowchart TD
+    M["Monitor<br/>DNS/設定チェック"] --> V["Verify<br/>verify + predeploy"]
+    V --> G["Gate試行<br/>release:gate"]
+    G --> S["Smoke試行<br/>release:smoke"]
+    S --> I["改善<br/>インフラ接続待ち"]
+    I --> M
+```
+
+## 📊 リリースゲート監視（最新）
+
+| 日時 (JST) | 項目 | 結果 |
+|---|---|---|
+| 2026-07-13 11:05 | `npm run release:prepare` | ✅ PASS |
+| 2026-07-13 11:05 | `npm run release:smoke` | 🚫 BLOCKED（DNS解決不能: `Could not resolve host: dxidea.mirai-dx-platform.com`） |
+| 2026-07-13 11:05 | `npm run release:gate` | 🚫 BLOCKED（`release:smoke` 未完了） |
+| 2026-07-13 15:56 | `npm run verify` | ✅ PASS |
+| 2026-07-13 15:56 | `npm run predeploy:check` | ⚠️ BLOCKED（`APP_BASE_URL`等の実環境値未投入） |
+| 2026-07-13 15:56 | `npm run predeploy:check`（本番疑似値） | ✅ PASS |
+| 2026-07-13 15:56 | `npm run release:smoke` | 🚫 BLOCKED（`DNS lookup failed for dxidea.mirai-dx-platform.com`） |
+| 2026-07-13 15:56 | `npm run release:gate` | 🚫 BLOCKED（`release:smoke` 未完了） |
+| 2026-07-13 15:56 | `code-review --fix` | ⚠️ 未実施（`command not found`） |
+| 2026-07-13 15:58 | `npm run predeploy:check` | ⚠️ BLOCKED（実運用実値未投入） |
+| 2026-07-13 15:58 | `npm run release:monitor` | 🚫 BLOCKED（`wrangler` 未認証 / DNS未解決） |
+| 2026-07-13 15:59 | `npm run verify` | ✅ PASS（lint / test / build / security scan） |
+| 2026-07-13 15:59 | `npm run release:monitor` | 🚫 BLOCKED（必須設定不足、DNS解決失敗、wrangler未認証） |
+| 2026-07-13 16:05 | `npm run verify` | ✅ PASS |
+| 2026-07-13 16:05 | `npm run predeploy:check` | ✅ PASS（本番値ダミー） |
+| 2026-07-13 16:05 | `npm run worker:deploy:dry-run` | ✅ PASS |
+| 2026-07-13 16:08 | `npm run release:smoke` | 🚫 BLOCKED（`DNS lookup failed for dxidea.mirai-dx-platform.com`） |
+| 2026-07-13 16:08 | `npm run release:gate` | 🚫 BLOCKED（`release:prepare` PASS、`release:smoke` DNS失敗） |
+| 2026-07-13 16:41 | `npm run -s release:monitor` | 🚫 BLOCKED（環境変数未設定 + DNS解決失敗 + wrangler未認証） |
+| 2026-07-13 16:41 | `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:smoke` | 🚫 BLOCKED（`DNS lookup failed for dxidea.mirai-dx-platform.com`） |
+| 2026-07-13 16:44 | `TMPDIR=<tmpdir> npm run -s verify` | ✅ PASS（`lint` + `test` + `build` + `build:production-api` + `security:scan`） |
+| 2026-07-13 17:20 | `npm run release:monitor` | 🚫 BLOCKED（`wrangler` 未認証 / DNS未解決） |
+| 2026-07-13 22:20 | `codex review --uncommitted` | ✅ PASS（No findings） |
+| 2026-07-13 22:20 | `CodeRabbit review --plain` | ✅ PASS（No findings） |
+| 2026-07-13 22:20 | `npm run security:scan` | ✅ PASS |
+| 2026-07-13 22:20 | `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:smoke` | 🚫 BLOCKED（DNS lookup failed） |
+| 2026-07-13 22:20 | `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:gate` | 🚫 BLOCKED（`release:monitor` BLOCKED） |
+| 2026-07-13 22:20 | `code-review --fix` | ⚠️ 未実施（command not found） |
+
+## 4. 付随ゲート（補足）
+
+`npm run -s test` はNode v25.2.1 + tsxの組み合わせで、既定のTMPDIR（長いセッションUUID付きパス）だとテストランナー間通信用Unix domain socketのパス長制限に抵触し `listen EPERM` で未完走になります。`TMPDIR=<短いパス、例: /tmp/cdx-verify> npm run -s test`（または `verify`）と短いTMPDIRを指定することで回避できます（上表 16:44 の実行例を参照）。`npm run -s lint` / `npm run security:scan` は既定設定のままPASSです。
 
 ```mermaid
 flowchart LR
@@ -57,8 +103,11 @@ npm run dev
 | `npm run verify` | lint、test、通常build、本番API build、security scanを一括実行 |
 | `npm run worker:deploy:dry-run` | Cloudflare Workerのデプロイ直前dry-run |
 | `npm run predeploy:check` | 本番環境値のplaceholder、モックAPI、Access設定漏れを検査 |
+| `npm run release:monitor` | リリース監査（必須変数、wrangler auth、DNS到達性） |
+| `npm run release:smoke` | 実環境URL向け API E2E スモーク確認 |
+| `npm run release:gate` | `release:monitor` + `release:prepare` + `release:smoke`（本番環境前提の事前ゲート） |
 | `npm run release:prepare` | 本番向けprepare（ビルド+predeploy+dry-run） |
-| `npm run release:deploy` | 本番デプロイ（Worker + Frontend） |
+| `npm run release:deploy` | デプロイ（monitor + prepare）→ Worker/Frontend反映→ `release:smoke`（`release:deploy` 時は `CLOUDFLARE_PAGES_PROJECT` 必須） |
 
 ---
 

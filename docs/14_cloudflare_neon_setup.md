@@ -92,3 +92,8 @@ MVPでは手動登録を推奨する。
 10. `npm run predeploy:check` が本番環境値で成功する。
 11. AI設定の `connected` 表示は接続テスト成功後だけになる。
 12. `https://dxidea.mirai-dx-platform.com` でAccess保護された画面とAPI応答を確認する。
+
+## 7. Cloudflare Pages デプロイ補足
+
+- 本番配信には次の環境変数が必要です。
+  - `CLOUDFLARE_PAGES_PROJECT`: Cloudflare Pagesプロジェクト名
