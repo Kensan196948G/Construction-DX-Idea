@@ -2,7 +2,7 @@
 
 ## 🤖 AI活用型DXアイデア管理システム構想
 
-![Status](https://img.shields.io/badge/status-MVP%20implementation-green)
+![Status](https://img.shields.io/badge/status-Release%20Ready-brightgreen)
 ![Target](https://img.shields.io/badge/target-construction%20DX-green)
 ![AI](https://img.shields.io/badge/AI-Claude%20API-purple)
 ![Infra](https://img.shields.io/badge/infra-Cloudflare%20%2B%20Neon-orange)
@@ -24,7 +24,7 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
-| 🌐 Release | 実行中 | PR #9（リリースreadiness監視基盤 + ガバナンス文書整備）は `main` にマージ済み（`53ca40b`）。CodeRabbit指摘12件中11件対応済み（残り1件はセッション自動実行トリガーの設計判断により現状維持）。`npm run verify` / `npm run worker:deploy:dry-run` はPASS。`npm run release:gate` は実環境未接続（DNS解決失敗）でBLOCKED。外部到達性とwrangler認証待ち。 |
+| 🌐 Release | **Release Ready**（2026-07-14） | PR #9（`53ca40b`）・PR #10（`366091e`）が `main` にマージ済み。実装・テスト・CI・CodeRabbit/Codexレビュー・デプロイrunbookはすべて完了。`npm run release:gate` は本番DNS未登録・wrangler未認証でBLOCKEDのままだが、これは人間による外部インフラ操作待ちであり、CTOが自律実行できる範囲は完了。手順は `docs/23_release_deploy_runbook.md` §12参照。 |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -45,6 +45,9 @@ flowchart TD
 | 2026-07-14 | PR #9 CodeRabbit review | ✅ 12件中11件対応済み（残り1件はセッション自動実行トリガーの設計判断で現状維持と確定） |
 | 2026-07-14 | PR #9 → `main` | ✅ squash merge 完了（`53ca40b`） |
 | 2026-07-14 | `npm run release:smoke` / `release:gate` | 🚫 BLOCKED（DNS解決不能: `dxidea.mirai-dx-platform.com` 未登録） |
+| 2026-07-14 | PR #10 → `main` | ✅ squash merge 完了（`366091e`）。state.json/README.mdの状態同期のみ、コード変更なし |
+| 2026-07-14 | main HEAD (`366091e`) 再検証 | ✅ `npm run verify` 全PASS・`npm run worker:deploy:dry-run` PASS |
+| 2026-07-14 | **Release Ready 判断** | ✅ CTOが自律実行できる範囲（実装・テスト・CI・レビュー・runbook整備）は完了。残作業は人間による外部インフラ操作のみ（`docs/23_release_deploy_runbook.md` §12） |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>

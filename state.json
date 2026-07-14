@@ -10,8 +10,11 @@
   "goal": "CTO全権委任によりRelease ReadyまたはProduction Ready状態へ到達。Issue #6 (本番デプロイ設定・実環境検証) の残課題を、人間決裁が必要な外部インフラ操作を除いて可能な限り解消する。",
   "phase": "Monitor",
   "deploy": {
-    "ready": false,
-    "blocked_reason": "Cloudflare DNS登録・Access設定・Secrets投入・wrangler認証など人間決裁/外部アカウント操作が未完了"
+    "ready": true,
+    "ready_at": "2026-07-14",
+    "ready_note": "CTOが自律実行できる範囲（実装・テスト・CI・レビュー・runbook整備）は完了しRelease Readyと判断。ここでの ready=true はRelease Ready（デプロイ準備完了）を意味し、production_ready（実際の本番稼働）とは別。手順はdocs/23_release_deploy_runbook.md §12参照。",
+    "production_ready": false,
+    "production_ready_note": "release:gate / release:deploy は本番DNS未登録・wrangler未認証でBLOCKED。Cloudflare DNS登録・Access設定・Secrets投入・wrangler認証・Neonプロジェクト作成という人間決裁の外部インフラ操作が完了しrelease:gateが成功した時点でtrueへ更新する。"
   },
   "kpi": {
     "success_rate_target": 0.9,
@@ -20,7 +23,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-07-14",
-    "verified_by": "npm run verify (lint PASS, test 24/24 PASS, build PASS, build:production-api PASS, security:scan PASS)。PR #9 (issue-6/release-readiness-monitoring) はCI green・CodeRabbit指摘12件中11件対応済みでmain squash merge (53ca40b) 済み"
+    "verified_by": "main HEAD (366091e) で npm run verify (lint PASS, test 24/24 PASS, build PASS, build:production-api PASS, security:scan PASS) と worker:deploy:dry-run を再実行しPASS確認。PR #9 (53ca40b)・PR #10 (366091e) はCI green・CodeRabbit/Codexレビュー完了でmain squash merge済み"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -37,8 +40,8 @@
     {
       "number": 6,
       "title": "P1: Production deployment settings and real environment validation",
-      "status": "external_dependency_wait",
-      "note": "コード/CI/検証はローカル完結分すべてPASS。残るのはCloudflare DNS登録・Access設定・Secrets投入・wrangler認証など人間決裁/外部アカウント操作のみ。"
+      "status": "release_ready_pending_human_deploy",
+      "note": "コード/CI/検証/レビュー/runbookはすべて完了しRelease Ready判断済み(2026-07-14)。残るのはCloudflare DNS登録・Access設定・Secrets投入・wrangler認証・Neonプロジェクト作成という人間決裁/外部アカウント操作のみ。手順はdocs/23_release_deploy_runbook.md §12参照。"
     }
   ],
   "blocked_issues": [],
