@@ -24,7 +24,7 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
-| 🌐 Release | 実行中 | PR #8は `main` にマージ済み（`ab327b5`）。`npm run verify` / `npm run worker:deploy:dry-run` はPASS。`npm run release:gate` は実環境未接続（DNS解決失敗）でBLOCKED。外部到達性とwrangler認証待ち。 |
+| 🌐 Release | 実行中 | PR #9（リリースreadiness監視基盤 + ガバナンス文書整備）は `main` にマージ済み（`53ca40b`）。CodeRabbit指摘12件中11件対応済み（残り1件はセッション自動実行トリガーの設計判断により現状維持）。`npm run verify` / `npm run worker:deploy:dry-run` はPASS。`npm run release:gate` は実環境未接続（DNS解決失敗）でBLOCKED。外部到達性とwrangler認証待ち。 |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -40,34 +40,20 @@ flowchart TD
 
 | 日時 (JST) | 項目 | 結果 |
 |---|---|---|
-| 2026-07-13 11:05 | `npm run release:prepare` | ✅ PASS |
-| 2026-07-13 11:05 | `npm run release:smoke` | 🚫 BLOCKED（DNS解決不能: `Could not resolve host: dxidea.mirai-dx-platform.com`） |
-| 2026-07-13 11:05 | `npm run release:gate` | 🚫 BLOCKED（`release:smoke` 未完了） |
-| 2026-07-13 15:56 | `npm run verify` | ✅ PASS |
-| 2026-07-13 15:56 | `npm run predeploy:check` | ⚠️ BLOCKED（`APP_BASE_URL`等の実環境値未投入） |
-| 2026-07-13 15:56 | `npm run predeploy:check`（本番疑似値） | ✅ PASS |
-| 2026-07-13 15:56 | `npm run release:smoke` | 🚫 BLOCKED（`DNS lookup failed for dxidea.mirai-dx-platform.com`） |
-| 2026-07-13 15:56 | `npm run release:gate` | 🚫 BLOCKED（`release:smoke` 未完了） |
-| 2026-07-13 15:56 | `code-review --fix` | ⚠️ 未実施（`command not found`） |
-| 2026-07-13 15:58 | `npm run predeploy:check` | ⚠️ BLOCKED（実運用実値未投入） |
-| 2026-07-13 15:58 | `npm run release:monitor` | 🚫 BLOCKED（`wrangler` 未認証 / DNS未解決） |
-| 2026-07-13 15:59 | `npm run verify` | ✅ PASS（lint / test / build / security scan） |
-| 2026-07-13 15:59 | `npm run release:monitor` | 🚫 BLOCKED（必須設定不足、DNS解決失敗、wrangler未認証） |
-| 2026-07-13 16:05 | `npm run verify` | ✅ PASS |
-| 2026-07-13 16:05 | `npm run predeploy:check` | ✅ PASS（本番値ダミー） |
-| 2026-07-13 16:05 | `npm run worker:deploy:dry-run` | ✅ PASS |
-| 2026-07-13 16:08 | `npm run release:smoke` | 🚫 BLOCKED（`DNS lookup failed for dxidea.mirai-dx-platform.com`） |
-| 2026-07-13 16:08 | `npm run release:gate` | 🚫 BLOCKED（`release:prepare` PASS、`release:smoke` DNS失敗） |
-| 2026-07-13 16:41 | `npm run -s release:monitor` | 🚫 BLOCKED（環境変数未設定 + DNS解決失敗 + wrangler未認証） |
-| 2026-07-13 16:41 | `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:smoke` | 🚫 BLOCKED（`DNS lookup failed for dxidea.mirai-dx-platform.com`） |
-| 2026-07-13 16:44 | `TMPDIR=<tmpdir> npm run -s verify` | ✅ PASS（`lint` + `test` + `build` + `build:production-api` + `security:scan`） |
-| 2026-07-13 17:20 | `npm run release:monitor` | 🚫 BLOCKED（`wrangler` 未認証 / DNS未解決） |
-| 2026-07-13 22:20 | `codex review --uncommitted` | ✅ PASS（No findings） |
-| 2026-07-13 22:20 | `CodeRabbit review --plain` | ✅ PASS（No findings） |
-| 2026-07-13 22:20 | `npm run security:scan` | ✅ PASS |
-| 2026-07-13 22:20 | `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:smoke` | 🚫 BLOCKED（DNS lookup failed） |
-| 2026-07-13 22:20 | `SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run release:gate` | 🚫 BLOCKED（`release:monitor` BLOCKED） |
-| 2026-07-13 22:20 | `code-review --fix` | ⚠️ 未実施（command not found） |
+| 2026-07-14 | `npm run verify` | ✅ PASS（lint / test 24件 / build / build:production-api / security:scan） |
+| 2026-07-14 | PR #9 Codex review | ✅ 指摘1件（環境変数伝播）修正済み |
+| 2026-07-14 | PR #9 CodeRabbit review | ✅ 12件中11件対応済み（残り1件はセッション自動実行トリガーの設計判断で現状維持と確定） |
+| 2026-07-14 | PR #9 → `main` | ✅ squash merge 完了（`53ca40b`） |
+| 2026-07-14 | `npm run release:smoke` / `release:gate` | 🚫 BLOCKED（DNS解決不能: `dxidea.mirai-dx-platform.com` 未登録） |
+
+<details>
+<summary>2026-07-13 詳細ログ（折りたたみ）</summary>
+
+`npm run verify` / `predeploy:check`（疑似値）/ `worker:deploy:dry-run` は終日PASS。`release:smoke` / `release:gate` / `release:monitor` は終日一貫して同一原因（Cloudflare DNS未登録 `dxidea.mirai-dx-platform.com` + `wrangler` 未認証）でBLOCKED。`code-review --fix` はコマンド未導入のため未実施。詳細は `docs/24_autonomous_cto_execution_log.md` を参照。
+
+</details>
+
+> 💡 外部インフラ（Cloudflare DNS/Access、Neon本番接続、Secrets投入、wrangler認証）が未設定である限り `release:smoke`/`release:gate` はBLOCKEDのままです。これはコード側の問題ではなく、人間による外部アカウント操作が必要な領域です（詳細は [Issue #6](https://github.com/Kensan196948G/Construction-DX-Idea/issues/6)）。
 
 ## 4. 付随ゲート（補足）
 

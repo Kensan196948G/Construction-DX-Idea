@@ -8,7 +8,7 @@
     "phase_mode": "development"
   },
   "goal": "CTO全権委任によりRelease ReadyまたはProduction Ready状態へ到達。Issue #6 (本番デプロイ設定・実環境検証) の残課題を、人間決裁が必要な外部インフラ操作を除いて可能な限り解消する。",
-  "phase": "Verify",
+  "phase": "Monitor",
   "deploy": {
     "ready": false,
     "blocked_reason": "Cloudflare DNS登録・Access設定・Secrets投入・wrangler認証など人間決裁/外部アカウント操作が未完了"
@@ -20,7 +20,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-07-14",
-    "verified_by": "npm run verify (TMPDIR=/tmp/cdx-verify): lint PASS, test 24/24 PASS, build PASS, build:production-api PASS, security:scan PASS"
+    "verified_by": "npm run verify (lint PASS, test 24/24 PASS, build PASS, build:production-api PASS, security:scan PASS)。PR #9 (issue-6/release-readiness-monitoring) はCI green・CodeRabbit指摘12件中11件対応済みでmain squash merge (53ca40b) 済み"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -42,21 +42,18 @@
     }
   ],
   "blocked_issues": [],
-  "stale_prs": [
-    {
-      "number": 1,
-      "headRefName": "master",
-      "note": "2026-06-17作成の旧・静的サイト構想PR。masterはmainの祖先ではなく別系統。現行Worker+React+Neon実装と競合するため要判断。"
-    }
-  ],
+  "stale_prs": [],
   "learning": {
     "failure_patterns": [
       "tsx --test はUnix domain socketを使うため、Claude Codeのスクラッチパス(長いUUID付きパス)をTMPDIRにするとEINVAL/EPERMで失敗する。短いTMPDIR(例: /tmp/cdx-verify)を指定すれば回避可能。",
-      "release:smoke / release:monitor は本番ドメイン dxidea.mirai-dx-platform.com のDNSが未登録のため恒常的にBLOCKED。実運用インフラ未接続が根本原因であり、コード側の問題ではない。"
+      "release:smoke / release:monitor は本番ドメイン dxidea.mirai-dx-platform.com のDNSが未登録のため恒常的にBLOCKED。実運用インフラ未接続が根本原因であり、コード側の問題ではない。",
+      "外部インフラ依存でBLOCKEDなIssueに対し、進捗がないまま同一内容の状況報告コメントを繰り返すとIssueが読みにくくなる（Issue #6に1日で20件超の類似コメントが蓄積した）。状態不変ならコメント追加を控え、state.jsonの記録のみで十分。"
     ],
     "success_patterns": [
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
-      "release-smoke-test.mjs は実行前にDNS事前チェックを行うことで、無意味なHTTPタイムアウト待ちを避け、失敗原因を即座に特定できる設計にしている。"
+      "release-smoke-test.mjs は実行前にDNS事前チェックを行うことで、無意味なHTTPタイムアウト待ちを避け、失敗原因を即座に特定できる設計にしている。",
+      "TeammateIdle フックは公式仕様で matcher 非対応（常時発火）。settings.json 設定例で matcher を書くと誤解を招くため省略する。TaskCreated/TaskCompleted は matcher 指定可。",
+      "PR #1（旧・静的サイト+Docker構想、mainとCONFLICTING）は現行アーキテクチャ（React+Cloudflare Workers+Neon、Docker廃止方針）と不一致のため人間確認の上クローズ（2026-07-14）。"
     ]
   }
 }
