@@ -33,7 +33,8 @@ Workersの責務:
 - 利用制限
 - 監査ログ
 
-必須の環境変数:
+必須の環境変数（Stage B完成形。段階リリース中の扱いは `docs/23_release_deploy_runbook.md` §1.6参照 —
+Stage Aでは `CF_ACCESS_*` は未設定のままWorkerがfail-closeで401/503を返す）:
 
 | 変数 | 内容 |
 |---|---|
@@ -93,7 +94,9 @@ MVPでは手動登録を推奨する。
 11. AI設定の `connected` 表示は接続テスト成功後だけになる。
 12. `https://dxidea.mirai-dx-platform.com` でAccess保護された画面とAPI応答を確認する。
 
-## 7. Cloudflare Pages デプロイ補足
+## 7. フロントエンド配信補足
 
-- 本番配信には次の環境変数が必要です。
-  - `CLOUDFLARE_PAGES_PROJECT`: Cloudflare Pagesプロジェクト名
+- フロントエンド（SPA）は独立したホスティングを持たず、`wrangler.toml` の `[assets]` 設定により
+  Worker本体と同一デプロイ（`wrangler deploy`）で `https://dxidea.mirai-dx-platform.com` から配信される。
+- 旧構成（Cloudflare Pages分離配信、`CLOUDFLARE_PAGES_PROJECT`）は2026-07-21に廃止した。
+  詳細は `docs/23_release_deploy_runbook.md` §7 を参照。
