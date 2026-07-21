@@ -244,6 +244,18 @@ Stage B以降:
 
 ## 11. 実行結果履歴
 
+### 2026-07-21（Stage B完了 — Production Ready）
+
+| 項目 | 結果 |
+|---|---|
+| Accessアプリ作成 | ✅ ユーザーがダッシュボードで作成（team `winter-lake-f4c9`、対象 `dxidea.mirai-dx-platform.com` 全パス、Allow: 管理者メール + `mirai-const.co.jp` ドメイン） |
+| `CF_ACCESS_*` 反映 | ✅ PR #22（`afafc2b`）。AUD/チームはAccessリダイレクトの `kid`+meta JWT `aud` から取得（certs 200/JWK 2鍵疎通） |
+| フロント404バグ修正 | ✅ PR #24（`3e354d5`）。`VITE_API_BASE_URL` の `/api` 二重付与（Issue #23）を正規化+ゲートで恒久対策。test 28/28 |
+| `DATABASE_URL` 投入 | ✅ ユーザー実行。1回目はNeonリセット画面のパスワード単体を投入し全API 500（`neon()` が「not a valid URL」）→ wrangler tailで即特定 → パスワード再リセット+URL全体の再投入で解消 |
+| 本番E2E（実ユーザー/system_admin） | ✅ `/api/me`・`/api/ideas`・`/api/admin/ai-settings` すべて200、ダッシュボード表示正常、wrangler tail 50秒間エラー0件 |
+| `RELEASE_STAGE=full` のJWT付きgate | ⏸ NOT RUN（Access JWTが必要）。実ユーザーE2E確認で代替。JWT提供時に実行可能 |
+| AI機能 | ⏸ 無効のまま（`AI_ENABLED=false`、`ANTHROPIC_API_KEY` 未投入）。有効化は任意の後続作業 |
+
 ### 2026-07-21（Stage A本番デプロイ完了）
 
 PR #18（`2da4055` としてsquash merge）のY承認に基づき、CTOがStage Aを実行した。
@@ -323,7 +335,10 @@ BLOCKED記録）は `docs/24_autonomous_cto_execution_log.md` を参照。
 3. 【人間】**先にNeonダッシュボードでロール `neondb_owner` のパスワードをリセット**する
    （プロジェクト作成時にNeon MCPが接続文字列を応答へ含める仕様のため、リセットにより
    セッションログへ出た値を無効化してから使う）。その後Secrets投入（値はCTOに共有しない）:
-   `wrangler secret put DATABASE_URL`（リセット後の接続文字列）、
+   `wrangler secret put DATABASE_URL`（リセット後の**接続URL全体** —
+   `postgresql://` で始まる1行。リセット画面のパスワード単体Copyと取り違えないこと）、
    AI有効化時は `wrangler secret put ANTHROPIC_API_KEY`、任意で `SLACK_WEBHOOK_URL`
+   → ✅ 2026-07-21完了（§11参照）
 4. 本番環境値＋JWTを設定して `npm run release:gate`（`RELEASE_STAGE` 未指定）→
    `npm run release:deploy` で **Production Ready** へ進む
+   → ✅ 2026-07-21 Production Ready判定（JWT付きgateは未実行、実ユーザーE2Eで代替。§11参照）
