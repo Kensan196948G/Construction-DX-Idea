@@ -51,7 +51,7 @@ Cloudflareコマンド実行前提:
 
 | 区分 | 変数 | Stage A | Stage B | 備考 |
 |---|---|---|---|---|
-| Frontend | `VITE_API_BASE_URL` | 必須 | 必須 | `https://dxidea.mirai-dx-platform.com/api` |
+| Frontend | `VITE_API_BASE_URL` | 必須 | 必須 | `https://dxidea.mirai-dx-platform.com`（**オリジンのみ**。`/api` を付けるとリクエストパスと二重になり404 — Issue #23。`predeploy:check` が `/api` 末尾を拒否し、フロント側も正規化する） |
 | Frontend | `VITE_USE_MOCK_API=false` | 必須 | 必須 | 本番でモックAPIを禁止 |
 | Worker | `APP_BASE_URL` | 必須 | 必須 | WebUIの本番URL |
 | Worker | `ALLOWED_ORIGINS` | 必須 | 必須 | WebUI Originのみ |
@@ -94,7 +94,7 @@ export APP_BASE_URL=https://dxidea.mirai-dx-platform.com
 export ALLOWED_ORIGINS=https://dxidea.mirai-dx-platform.com
 export ADMIN_EMAILS=<admin-email>
 export SYSTEM_ADMIN_EMAILS=<admin-email>
-export VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
+export VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com
 export SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
 export ALLOW_LOCAL_AUTH_BYPASS=false
 export VITE_USE_MOCK_API=false
@@ -185,7 +185,7 @@ Cron Triggersは `wrangler.toml` の `*/10 * * * *` を利用し、Slack通知Ou
 ビルドのみ行う場合:
 
 ```bash
-VITE_USE_MOCK_API=false VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run build
+VITE_USE_MOCK_API=false VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com npm run build
 ```
 
 旧構成（Cloudflare Pages分離配信、`frontend:deploy` / `CLOUDFLARE_PAGES_PROJECT`)は
