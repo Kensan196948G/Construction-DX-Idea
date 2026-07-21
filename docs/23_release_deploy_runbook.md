@@ -125,7 +125,11 @@ export SMOKE_REQUEST_TIMEOUT_MS=12000
 
 ## 4. Neon
 
-1. Neonプロジェクトを作成する（region: `aws-ap-southeast-1`、プロジェクト名 `Construction-DX-Idea`）。
+> ✅ 2026-07-21実施済み: project `Construction-DX-Idea`（`twilight-cloud-06040828`）、
+> region `aws-us-east-2`（MCPのリージョン指定不可により組織デフォルト。ユーザー決裁で確定）、
+> DB `neondb`、migration適用済み。
+
+1. Neonプロジェクトを作成する（プロジェクト名 `Construction-DX-Idea`）。
 2. `migrations/001_initial_schema.sql` を適用する。
 3. `ideas`、`idea_ai_sessions`、`audit_logs`、`ai_usage_counters`、`ai_monthly_usage_counters`、`notification_outbox` が作成されたことを確認する。
 4. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
@@ -240,6 +244,21 @@ Stage B以降:
 
 ## 11. 実行結果履歴
 
+### 2026-07-21（Stage A本番デプロイ完了）
+
+PR #18（`2da4055` としてsquash merge）のY承認に基づき、CTOがStage Aを実行した。
+
+| 項目 | 結果 |
+|---|---|
+| PR #18 merge → main CI | ✅ PASS（`2da4055`） |
+| tag / GitHub Release | ✅ `v0.1.0` 作成済み |
+| Neonプロジェクト作成 | ✅ `Construction-DX-Idea`（project_id `twilight-cloud-06040828`、region **us-east-2**、PG17、DB `neondb`）。MCPにリージョン指定がなく組織デフォルトが適用されたため、承認どおり us-east-2 続行をユーザーが追加決裁（2026-07-21）。初回に誤作成した `round-queen-86824264` はユーザー承認のうえ削除済み |
+| migration `001_initial_schema.sql` | ✅ 適用完了（29文を1トランザクションで実行、全11テーブル作成確認） |
+| デプロイ前検証（monitor + prepare） | ✅ PASS（monitor 9チェック、build、predeploy:check、dry-run） |
+| `RELEASE_STAGE=pre-access npm run release:deploy` | ✅ 成功。Worker `construction-dx-idea-api` 作成、静的アセット5ファイル、custom domain `dxidea.mirai-dx-platform.com` 自動登録（DNS A/AAAA + TLS）、cron設定。Version ID `eb7807c5-b93e-451a-af41-c61c9891d9b7`（2026-07-21T09:57:47Z、100%） |
+| デプロイ後smoke | ✅ PASS 6チェック（`GET /` HTML 200+識別子、`/api/health` 200、`/api/me` 401、境界401、JWT系はStage A仕様でSkip）。直後はローカルリゾルバのnegative cacheでDNS失敗→ `resolvectl flush-caches` で即解決 |
+| `release:gate`（初回デプロイ後） | ✅ PASS（monitor + prepare + smoke） |
+
 ### 2026-07-21（Stage A準備）
 
 | チェック | 実行結果 | 備考 |
@@ -275,6 +294,8 @@ BLOCKED記録）は `docs/24_autonomous_cto_execution_log.md` を参照。
 
 ### Stage A: 外殻公開（マージY承認の範囲でCTOが自律実行）
 
+> ✅ **2026-07-21完了**。実行結果は§11参照。本番URL: `https://dxidea.mirai-dx-platform.com`
+
 前提: wrangler認証は完了済み（2026-07-21確認）。
 
 1. Neonプロジェクト `Construction-DX-Idea` 作成（region `aws-ap-southeast-1`）
@@ -293,8 +314,10 @@ BLOCKED記録）は `docs/24_autonomous_cto_execution_log.md` を参照。
    （対象: `dxidea.mirai-dx-platform.com`、許可ユーザー: `wrangler.toml` の `ADMIN_EMAILS` と同じ管理者メール）
 2. 【人間→CTO】Audience Tag（AUD）・チーム名を共有 → CTOが `CF_ACCESS_CERTS_URL` /
    `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER` を `wrangler.toml` へ反映するPRを作成
-3. 【人間】Secrets投入（値はCTOに共有しない）:
-   `wrangler secret put DATABASE_URL`（Neonダッシュボードの接続文字列）、
+3. 【人間】**先にNeonダッシュボードでロール `neondb_owner` のパスワードをリセット**する
+   （プロジェクト作成時にNeon MCPが接続文字列を応答へ含める仕様のため、リセットにより
+   セッションログへ出た値を無効化してから使う）。その後Secrets投入（値はCTOに共有しない）:
+   `wrangler secret put DATABASE_URL`（リセット後の接続文字列）、
    AI有効化時は `wrangler secret put ANTHROPIC_API_KEY`、任意で `SLACK_WEBHOOK_URL`
 4. 本番環境値＋JWTを設定して `npm run release:gate`（`RELEASE_STAGE` 未指定）→
    `npm run release:deploy` で **Production Ready** へ進む
