@@ -2,6 +2,14 @@
 
 ## 1. 現在の状態
 
+2026-07-21（最新）:
+
+- wrangler認証が `CLOUDFLARE_API_TOKEN` 設定により解消。`release:monitor` の wrangler auth チェックがPASS。
+- 配信構成を同一オリジンへ統合: 1つのWorker（`construction-dx-idea-api`）が `[assets]`（Workers Static Assets、SPA fallback、`run_worker_first=["/api/*"]`）でSPAと `/api/*` を `https://dxidea.mirai-dx-platform.com` 上で配信する。Cloudflare Pages分離配信（`frontend:deploy` / `CLOUDFLARE_PAGES_PROJECT`）は廃止。
+- 段階リリース `RELEASE_STAGE`（`full`=従来どおり全必須 / `pre-access`=Stage A外殻公開向け緩和）を `predeploy-check` / `release-readiness-monitor` / `release-smoke-test` へ実装。詳細は `docs/23_release_deploy_runbook.md` §1.6。
+- `wrangler.toml` に本番値（routes custom_domain、APP_BASE_URL、ALLOWED_ORIGINS、ADMIN_EMAILS/SYSTEM_ADMIN_EMAILS）を投入。CF_ACCESS_* はStage Bで設定。
+- Stage A実行（Neonプロジェクト作成 + migration + `RELEASE_STAGE=pre-access release:deploy`）はマージY承認後にCTOが自律実行する。Stage B（Accessアプリ作成・Secrets投入）は人間作業を含む。
+
 2026-07-13時点で、MVPのリリース直前検証に向けたバックエンド、インフラ定義、セキュリティ検査、CI、ドキュメントを実装済み。WebUIは提供された `Construction DX Idea (standalone).html` を正本として表示し、困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、一覧表示、ステージ変更、AI利用設定をWorker APIへブリッジ済み。本番前にはCloudflare Access、Neon、Claude API、Slackを実環境値でE2E確認する。
 
 2026-07-13（最新）:
@@ -108,11 +116,13 @@ npm run worker:deploy:dry-run
 | Wrangler deploy dry-run | 成功 |
 | npm audit | 成功。0 vulnerabilities |
 | `npm run predeploy:check` | 実環境値未投入時は未完了。ダミー本番値で再実行するとPASS |
-| `npm run release:monitor` | BLOCKED（`wrangler auth` 未認証、DNS未解決） |
-| `npm run release:smoke` | BLOCKED（`dxidea.mirai-dx-platform.com` のDNS解決失敗） |
-| `npm run release:gate` | BLOCKED（`release:smoke` ブロック） |
+| `npm run release:monitor` | BLOCKED（`wrangler auth` 未認証、DNS未解決）→ **2026-07-21: `RELEASE_STAGE=pre-access` でPASS 9チェック**（wrangler auth解消、DNS未解決は初回デプロイ前の想定内扱い） |
+| `npm run release:smoke` | BLOCKED（`dxidea.mirai-dx-platform.com` のDNS解決失敗）→ Stage Aデプロイ後に実測予定 |
+| `npm run release:gate` | BLOCKED（`release:smoke` ブロック）→ Stage Aデプロイ後に実測予定 |
 | `code-review --fix` | BLOCKED（未インストール） |
 | `codex review --uncommitted` | 改善実施（`custom_domain` サンプルを `routes` 形式へ修正） |
+| `RELEASE_STAGE` 段階モード（2026-07-21） | 成功。pre-access緩和 / full従来動作 / 不正値fail-fast / placeholder（localhost入りDATABASE_URL）拒否を実機検証 |
+| `wrangler dev` ローカル実動（2026-07-21） | BLOCKED。workerd（V8）が開発機sandboxで `Fatal process out of memory: SegmentedTable::InitializeTable` により起動不可。`worker:deploy:dry-run`（assets 7ファイル認識）とデプロイ後smokeで代替 |
 
 ## 5. GitHub Projects
 
@@ -138,6 +148,9 @@ npm run dev
 ローカル開発では `VITE_USE_MOCK_API=true` でモックAPIを利用できる。本番ビルドでは `VITE_USE_MOCK_API=false` と `VITE_API_BASE_URL` を必ず設定し、`npm run predeploy:check` を通す。
 
 ## 7. 本番直前に必要な作業
+
+> 💡 2026-07-21更新: 以下はStage A（外殻公開）/ Stage B（Access/DB/AI有効化）の
+> 2段階へ再編した。実行順・分担の正本は `docs/23_release_deploy_runbook.md` §12。
 
 - Neonへ `migrations/001_initial_schema.sql` を適用する。
 - Cloudflare Accessの許可ユーザー、管理者、システム管理者を設定する。

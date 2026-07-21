@@ -24,7 +24,7 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
-| 🌐 Release | **Release Ready**（2026-07-14） | PR #9（`53ca40b`）・PR #10（`366091e`）が `main` にマージ済み。実装・テスト・CI・CodeRabbit/Codexレビュー・デプロイrunbookはすべて完了。`npm run release:gate` は本番DNS未登録・wrangler未認証でBLOCKEDのままだが、これは人間による外部インフラ操作待ちであり、CTOが自律実行できる範囲は完了。手順は `docs/23_release_deploy_runbook.md` §12参照。 |
+| 🌐 Release | **Stage Aデプロイ準備完了**（2026-07-21） | wrangler認証（`CLOUDFLARE_API_TOKEN`）が解消され、同一オリジン構成（WorkerがSPA+APIを `dxidea.mirai-dx-platform.com` で配信）と段階リリース（`RELEASE_STAGE=pre-access`）を実装。Stage A（外殻公開、APIはfail-close 401/503）はマージY承認後にCTOが自律実行、Stage B（Access/DB/AI有効化）は人間作業を含む。手順は `docs/23_release_deploy_runbook.md` §1.6・§12参照。 |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -48,6 +48,11 @@ flowchart TD
 | 2026-07-14 | PR #10 → `main` | ✅ squash merge 完了（`366091e`）。state.json/README.mdの状態同期のみ、コード変更なし |
 | 2026-07-14 | main HEAD (`366091e`) 再検証 | ✅ `npm run verify` 全PASS・`npm run worker:deploy:dry-run` PASS |
 | 2026-07-14 | **Release Ready 判断** | ✅ CTOが自律実行できる範囲（実装・テスト・CI・レビュー・runbook整備）は完了。残作業は人間による外部インフラ操作のみ（`docs/23_release_deploy_runbook.md` §12） |
+| 2026-07-21 | wrangler認証 | ✅ 解消（`CLOUDFLARE_API_TOKEN` 設定済み、`release:monitor` の wrangler auth PASS） |
+| 2026-07-21 | `npm run verify` / `worker:deploy:dry-run` | ✅ PASS（同一オリジン `[assets]` 構成で dist 7ファイル認識） |
+| 2026-07-21 | `RELEASE_STAGE` 段階モード検証 | ✅ PASS（pre-access緩和 / full従来動作 / 不正値fail-fast / placeholder拒否） |
+| 2026-07-21 | `RELEASE_STAGE=pre-access npm run release:monitor` | ✅ PASS 9チェック（DNS未解決は初回デプロイ前の想定内として許容） |
+| 2026-07-21 | `wrangler dev` ローカル実動 | 🚫 BLOCKED（workerdが開発機sandboxで起動不可。dry-run＋デプロイ後smokeで代替） |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>
@@ -96,7 +101,7 @@ npm run dev
 | `npm run release:smoke` | 実環境URL向け API E2E スモーク確認 |
 | `npm run release:gate` | `release:monitor` + `release:prepare` + `release:smoke`（本番環境前提の事前ゲート） |
 | `npm run release:prepare` | 本番向けprepare（ビルド+predeploy+dry-run） |
-| `npm run release:deploy` | デプロイ（monitor + prepare）→ Worker/Frontend反映→ `release:smoke`（`release:deploy` 時は `CLOUDFLARE_PAGES_PROJECT` 必須） |
+| `npm run release:deploy` | デプロイ（monitor + prepare）→ `wrangler deploy`（Worker+SPA静的アセットを同一オリジンで反映）→ `release:smoke` |
 
 ---
 
@@ -253,7 +258,7 @@ flowchart TD
 flowchart TD
     A["利用者"] --> B["Construction-DX-Idea"]
     B --> C["Cloudflare Access"]
-    C --> D["Cloudflare Workers API"]
+    C --> D["Cloudflare Workers<br/>SPA静的アセット + /api/* 同一オリジン"]
     D --> E["入力検査・匿名化"]
     E --> F["Claude API"]
     F --> G["AI整理結果"]

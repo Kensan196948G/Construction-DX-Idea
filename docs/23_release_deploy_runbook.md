@@ -2,41 +2,66 @@
 
 ## 1. 目的
 
-本書は、`Construction-DX-Idea` を本番直前状態へ進めるための環境値、デプロイ、スモークテスト、ロールバック手順を定義する。
+本書は、`Construction-DX-Idea` を本番公開するための環境値、デプロイ、スモークテスト、ロールバック手順を定義する。
+
+本番リリースは §1.6 の2段階（Stage A: 外殻公開 → Stage B: Access/DB/AI有効化）で行う。
 
 ## 1.5 Cloudflare実行前提（外部認証）
 
 Cloudflareコマンド実行前提:
 
-- `wrangler login` 済みであること
-- 対象アカウントに `dxidea.mirai-dx-platform.com` の管理権限があること
+- wrangler認証済みであること（`wrangler login` または `CLOUDFLARE_API_TOKEN` 環境変数）
+- 対象アカウントに zone `mirai-dx-platform.com` の管理権限があること
 - `wrangler whoami` が成功すること
-- `release:deploy` を使う場合は `CLOUDFLARE_PAGES_PROJECT` が設定されること
+
+## 1.6 段階リリース（RELEASE_STAGE）
+
+本プロジェクトは同一オリジン構成（1つのWorkerがSPA静的アセットと `/api/*` の両方を
+`https://dxidea.mirai-dx-platform.com` で配信）を採用し、2段階でリリースする。
+
+| Stage | `RELEASE_STAGE` | 内容 | 前提 |
+|---|---|---|---|
+| Stage A | `pre-access` | SPA外殻+APIを公開。Access/DB/AIは未接続で、APIは401/503のfail-close応答 | wrangler認証のみ |
+| Stage B | `full`（デフォルト） | Cloudflare Access有効化・`DATABASE_URL`投入・（任意で）AI有効化を経た完全リリース | Accessアプリ作成・Secrets投入 |
+
+`predeploy:check` / `release:monitor` / `release:smoke` は `RELEASE_STAGE=pre-access` を
+明示した場合のみStage A緩和を適用する:
+
+- `CF_ACCESS_CERTS_URL` / `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER` / `DATABASE_URL` /
+  `ANTHROPIC_API_KEY` を任意化（設定されている値へのplaceholder検査は継続）
+- 本番ホスト名のDNS未解決を許容（初回custom domainデプロイ前は未登録が正常）
+- smokeのAccess JWT必須チェックをskipに維持し、代わりにSPA外殻（`GET /` が
+  HTML 200）を検証
+
+`RELEASE_STAGE` 未指定（または `full`）では従来どおり全値必須・DNS解決必須で、
+未知の値は3スクリプトともfail-fastする。
 
 ## 2. 本番環境値
 
 運用FQDN:
 
-- `https://dxidea.mirai-dx-platform.com`
+- `https://dxidea.mirai-dx-platform.com`（SPAとAPIの同一オリジン）
 
-| 区分 | 変数 | 必須 | 備考 |
-|---|---|---:|---|
-| Frontend | `VITE_API_BASE_URL` | 必須 | Cloudflare Worker APIのOrigin |
-| Frontend | `VITE_USE_MOCK_API=false` | 必須 | 本番でモックAPIを禁止 |
-| Frontend/Pages | `CLOUDFLARE_PAGES_PROJECT` | リリース時必須 | `npm run release:deploy` で `frontend:deploy` を実行する場合のみ |
-| Worker | `APP_BASE_URL` | 必須 | WebUIの本番URL |
-| Worker | `ALLOWED_ORIGINS` | 必須 | WebUI Originのみ |
-| Worker | `ADMIN_EMAILS` | 必須 | ステージ変更権限 |
-| Worker | `SYSTEM_ADMIN_EMAILS` | 必須 | AI設定権限 |
-| Worker | `ALLOW_LOCAL_AUTH_BYPASS=false` | 必須 | 本番でローカル認証を禁止 |
-| Worker | `CF_ACCESS_CERTS_URL` | 必須 | Access JWK URL |
-| Worker | `CF_ACCESS_AUD` | 必須 | Access Audience Tag |
-| Worker | `CF_ACCESS_ISSUER` | 必須 | Access issuer |
-| Worker | `AI_INPUT_COST_PER_1K_TOKENS` | 推奨 | 概算費用計算 |
-| Worker | `AI_OUTPUT_COST_PER_1K_TOKENS` | 推奨 | 概算費用計算 |
-| Secret | `DATABASE_URL` | 必須 | Neon接続文字列 |
-| Secret | `ANTHROPIC_API_KEY` | 必須 | Claude API |
-| Secret | `SLACK_WEBHOOK_URL` | 任意 | 未設定時はSlack通知をskippedにする |
+| 区分 | 変数 | Stage A | Stage B | 備考 |
+|---|---|---|---|---|
+| Frontend | `VITE_API_BASE_URL` | 必須 | 必須 | `https://dxidea.mirai-dx-platform.com/api` |
+| Frontend | `VITE_USE_MOCK_API=false` | 必須 | 必須 | 本番でモックAPIを禁止 |
+| Worker | `APP_BASE_URL` | 必須 | 必須 | WebUIの本番URL |
+| Worker | `ALLOWED_ORIGINS` | 必須 | 必須 | WebUI Originのみ |
+| Worker | `ADMIN_EMAILS` | 必須 | 必須 | ステージ変更権限 |
+| Worker | `SYSTEM_ADMIN_EMAILS` | 必須 | 必須 | AI設定権限 |
+| Worker | `ALLOW_LOCAL_AUTH_BYPASS=false` | 必須 | 必須 | 本番でローカル認証を禁止 |
+| Worker | `CF_ACCESS_CERTS_URL` | 任意 | 必須 | Access JWK URL |
+| Worker | `CF_ACCESS_AUD` | 任意 | 必須 | Access Audience Tag |
+| Worker | `CF_ACCESS_ISSUER` | 任意 | 必須 | Access issuer |
+| Worker | `AI_INPUT_COST_PER_1K_TOKENS` | 推奨 | 推奨 | 概算費用計算 |
+| Worker | `AI_OUTPUT_COST_PER_1K_TOKENS` | 推奨 | 推奨 | 概算費用計算 |
+| Secret | `DATABASE_URL` | 任意 | 必須 | Neon接続文字列 |
+| Secret | `ANTHROPIC_API_KEY` | 任意 | 必須 | Claude API（`AI_ENABLED=true` 時） |
+| Secret | `SLACK_WEBHOOK_URL` | 任意 | 任意 | 未設定時はSlack通知をskippedにする |
+
+Stage Aで「任意」の値は未設定のままWorkerがfail-close（401/503）に倒れるため、
+公開しても認証・データ・AIの各機能は一切露出しない。
 
 ## 3. 事前チェック
 
@@ -53,12 +78,26 @@ npm run release:smoke
 
 `npm run predeploy:check` と `npm run release:smoke` は本番環境値をシェル環境に設定してから実行する。placeholder、ローカルURL、モックAPI有効状態では失敗させる。
 
-`release:smoke` は起動時に `SMOKE_API_BASE_URL` のDNS到達性を先に検証する。DNS未解決時は即時 `BLOCKED` とし、別途 `Cloudflare DNS/custom domain` の確認が必要。
-
-`release:smoke` 用変数の最小構成:
+Stage Aの実行例（Access/DB/AI値なし）:
 
 ```bash
+export RELEASE_STAGE=pre-access
+export APP_BASE_URL=https://dxidea.mirai-dx-platform.com
+export ALLOWED_ORIGINS=https://dxidea.mirai-dx-platform.com
+export ADMIN_EMAILS=kensan1969@gmail.com
+export SYSTEM_ADMIN_EMAILS=kensan1969@gmail.com
+export VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
 export SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
+export ALLOW_LOCAL_AUTH_BYPASS=false
+export VITE_USE_MOCK_API=false
+npm run release:gate    # デプロイ前検証
+npm run release:deploy  # デプロイ（Worker+静的アセット、custom domain自動登録）
+```
+
+Stage B（`RELEASE_STAGE` を外すか `full`）では追加で `CF_ACCESS_*`、`DATABASE_URL`、
+`ANTHROPIC_API_KEY` と `release:smoke` 用JWTを設定する:
+
+```bash
 export SMOKE_CF_ACCESS_USER_JWT=<一般利用者JWT>
 export SMOKE_CF_ACCESS_USER_EMAIL=<一般利用者メール>
 export SMOKE_CF_ACCESS_ADMIN_JWT=<システム管理者JWT>
@@ -74,126 +113,140 @@ export SMOKE_SLACK_WEBHOOK_TEST=<通知確認用Webhook>
 export SMOKE_REQUEST_TIMEOUT_MS=12000
 ```
 
-`release:deploy` を使う場合は、追加で次を設定します。
-
-```bash
-export CLOUDFLARE_PAGES_PROJECT=construction-dx-idea
-```
-
-```bash
-npm run release:deploy
-```
-
 ## 4. Neon
 
-1. Neonプロジェクトを作成する。
+1. Neonプロジェクトを作成する（region: `aws-ap-southeast-1`、プロジェクト名 `Construction-DX-Idea`）。
 2. `migrations/001_initial_schema.sql` を適用する。
 3. `ideas`、`idea_ai_sessions`、`audit_logs`、`ai_usage_counters`、`ai_monthly_usage_counters`、`notification_outbox` が作成されたことを確認する。
-4. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する。
+4. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
 
-## 5. Cloudflare Access
+Stage Aではプロジェクト作成とmigration適用（スキーマ準備）まで行い、`DATABASE_URL` の
+Secret投入はStage Bで行ってよい。Workerは `DATABASE_URL` 未設定の間、DB依存APIを503で
+fail-closeする。
 
-1. WebUIとWorker APIをAccess保護対象にする。
-2. 許可ユーザーまたは許可ドメインを設定する。
-3. Audience Tag、JWK URL、issuerをWorker変数へ設定する。
+## 5. Cloudflare Access（Stage B）
+
+1. WebUIとWorker API（同一オリジン `dxidea.mirai-dx-platform.com`）をAccess保護対象にする。
+2. 許可ユーザーまたは許可ドメインを設定する（`kensan1969@gmail.com`）。
+3. Audience Tag、JWK URL、issuerをWorker変数（`wrangler.toml` の `CF_ACCESS_*`）へ設定し再デプロイする。
 4. JWTなし、期限切れJWT、issuer不一致、audience不一致が401になることを確認する。
 
-## 6. Cloudflare Worker
+同一オリジン構成のためAccessアプリケーションは1つでよい。現行のCloudflare API Tokenには
+Access編集権限がないため、Accessアプリの作成はダッシュボードでの人間作業となる。
+
+## 6. Cloudflare Worker（同一オリジン配信）
+
+`wrangler.toml` は次を設定済み:
+
+- `routes = [{ pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }]`
+  （Custom Domainsはホスト名のみのパターンで `zone_name` 不要。初回デプロイ時に
+  DNSレコードとTLS証明書が自動作成される）
+- `[assets]` で `./dist` をSPA配信（`not_found_handling = "single-page-application"`、
+  `run_worker_first = ["/api/*"]` により `/api/*` のみWorkerコードが処理）
+
+デプロイ:
+
+```bash
+npm run build:production-api   # dist を生成（release:prepare 経由でも可）
+wrangler deploy worker/index.ts
+```
+
+Secrets（Stage B）:
 
 ```bash
 wrangler secret put DATABASE_URL
 wrangler secret put ANTHROPIC_API_KEY
 wrangler secret put SLACK_WEBHOOK_URL
-wrangler deploy worker/index.ts
 ```
-
-Worker を `https://dxidea.mirai-dx-platform.com` で公開する場合:
-
-1. `wrangler.toml` の `routes` に Cloudflare Custom Domains 方式のルートを追加し、Host名とWorkersを紐づける。Custom Domainsはホスト名のみのパターンを取り、`zone_name` は不要（`https://` プレフィックスや `/*` サフィックスを付けない）。
-
-```toml
-routes = [
-  { pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }
-]
-```
-
-2. `APP_BASE_URL` を `https://dxidea.mirai-dx-platform.com` に設定する。
-3. `ALLOWED_ORIGINS` を `https://dxidea.mirai-dx-platform.com` のみ許可する。
-4. Accessアプリケーションの対象URLを同一オリジンへ向ける。
-5. `npm run worker:deploy:dry-run` と `wrangler deploy worker/index.ts` を実行し、401/200を確認する。
-6. `SMOKE_CF_ACCESS_*` 用JWTが未期限切れで、正しい issuer/audience を持つことを確認する。
 
 Cron Triggersは `wrangler.toml` の `*/10 * * * *` を利用し、Slack通知Outboxのfailed行を再送する。
 
-## 7. Frontend
+## 7. Frontend（Workers Static Assetsに同梱）
 
-本番では次を設定してビルドする。
+フロントエンドは独立したホスティングを持たず、`dist/` をWorkerの静的アセットとして
+同一デプロイで配信する。`npm run release:deploy` は `release:prepare` 内の
+`build:production-api`（`VITE_USE_MOCK_API=false`）で `dist/` を生成してから
+`wrangler deploy` する。
 
-```bash
-VITE_USE_MOCK_API=false VITE_API_BASE_URL=https://<worker-origin> npm run build
-```
-
-配信先はCloudflare Pagesまたは既存の静的ホスティングを利用する。WebUI OriginはWorkerの `ALLOWED_ORIGINS` とCloudflare Accessの許可対象に含める。
-
-Cloudflare Pagesを使う場合:
+ビルドのみ行う場合:
 
 ```bash
-npm run build:frontend
-export CLOUDFLARE_PAGES_PROJECT=construction-dx-idea
-npm run frontend:deploy
+VITE_USE_MOCK_API=false VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api npm run build
 ```
 
-`CLOUDFLARE_PAGES_PROJECT` はCloudflare Pagesプロジェクト名を指定します。  
-デプロイ先アカウントは `wrangler login` 済みのプロファイル側のデフォルトアカウントを参照します。
+旧構成（Cloudflare Pages分離配信、`frontend:deploy` / `CLOUDFLARE_PAGES_PROJECT`)は
+2026-07-21に廃止した。クロスオリジンではCloudflare AccessのJWTヘッダがフロントからの
+API呼び出しに乗らず、CORS許可ヘッダの追加も必要になるため、同一オリジンへ統合した。
 
 ## 8. スモークテスト
 
-| No | 確認 | 期待結果 |
-|---:|---|---|
-| 1 | Accessログイン | 許可ユーザーだけ入れる |
-| 2 | `/api/health` | 未認証でも200 |
-| 3 | `/api/me` | JWTなしは401、JWTありはユーザー情報 |
-| 4 | 一般利用者 | ダッシュボード、入力、手動登録が可能 |
-| 5 | システム管理者 | AI接続設定を取得・更新できる |
-| 6 | AI接続テスト | 成功時に末尾4文字だけ表示 |
-| 7 | 機密情報検出 | blockerはAI送信・登録を停止 |
-| 8 | AI構造化 | JSON不正時は `AI_RESPONSE_INVALID` |
-| 9 | 月次予算 | 上限到達時に `AI_BUDGET_EXCEEDED` |
-| 10 | Slack | sent/skipped/failedがUIへ反映 |
-| 11 | Slack再送 | failed OutboxがCron後に再試行される |
-| 12 | 本番公開先 | `https://dxidea.mirai-dx-platform.com` が閲覧でき、Access未認証時に保護される |
-| 13 | リリースゲート | `npm run release:gate` が 0 exit で完了 |
+| No | 確認 | 期待結果 | Stage A |
+|---:|---|---|---|
+| 1 | Accessログイン | 許可ユーザーだけ入れる | −（Stage B） |
+| 2 | `GET /`（SPA外殻） | HTML 200 | ✅ 対象 |
+| 3 | `/api/health` | 未認証でも200 | ✅ 対象 |
+| 4 | `/api/me` | JWTなしは401、JWTありはユーザー情報 | ✅ 401側のみ |
+| 5 | 一般利用者 | ダッシュボード、入力、手動登録が可能 | −（Stage B） |
+| 6 | システム管理者 | AI接続設定を取得・更新できる | −（Stage B） |
+| 7 | AI接続テスト | 成功時に末尾4文字だけ表示 | −（Stage B） |
+| 8 | 機密情報検出 | blockerはAI送信・登録を停止 | −（Stage B） |
+| 9 | AI構造化 | JSON不正時は `AI_RESPONSE_INVALID` | −（Stage B） |
+| 10 | 月次予算 | 上限到達時に `AI_BUDGET_EXCEEDED` | −（Stage B） |
+| 11 | Slack | sent/skipped/failedがUIへ反映 | −（Stage B） |
+| 12 | Slack再送 | failed OutboxがCron後に再試行される | −（Stage B） |
+| 13 | 本番公開先 | `https://dxidea.mirai-dx-platform.com` が閲覧できる | ✅ 対象（Access保護はStage B） |
+| 14 | リリースゲート | `npm run release:gate` が 0 exit で完了 | ✅ `RELEASE_STAGE=pre-access` |
 
 ## 9. ロールバック
 
-1. Workerの直前バージョンへ戻す。
-2. Frontend配信を直前ビルドへ戻す。
-3. `AI_ENABLED=false` にしてAI機能を停止する。
-4. Slack通知に失敗した場合は `notification_outbox` を確認し、必要に応じて手動共有する。
-5. 監査ログ、AI利用履歴、Cloudflareログから影響範囲を確認する。
+Stage A（初回デプロイ）:
+
+1. 公開を止める場合は `wrangler.toml` から `routes` を外して再デプロイするか、
+   ダッシュボードでWorkerのCustom Domainを切断する（DB未接続のためデータ影響なし）。
+2. Worker自体を撤去する場合は `wrangler delete`（人間確認のうえで実行）。
+
+Stage B以降:
+
+1. `wrangler rollback` または直前バージョンの再デプロイでWorker（静的アセット込み）を戻す。
+2. `AI_ENABLED=false` にしてAI機能を停止する。
+3. Slack通知に失敗した場合は `notification_outbox` を確認し、必要に応じて手動共有する。
+4. 監査ログ、AI利用履歴、Cloudflareログから影響範囲を確認する。
 
 ## 10. Production Ready 判定
 
-> 💡 以下は**Production Ready**（本番稼働開始）の判定条件です。CTOが自律実行できる
-> 範囲が完了した状態を指す**Release Ready**（デプロイ準備完了）の判断基準・現在地は
-> §12を参照してください。本節の項目のうち `release:smoke` 以降は外部インフラ未接続の
-> ため現時点で未達成です。
+> 💡 以下は**Production Ready**（Stage B完了＝本番稼働開始）の判定条件です。
+> Stage A完了時点は「外殻公開済み・機能はfail-close」であり、Production Readyでは
+> ありません。Release Ready（デプロイ準備完了）の判断基準・現在地は§12を参照。
 
 - `npm run verify` が成功している。
 - `npm run worker:deploy:dry-run` が成功している。
-- `npm run predeploy:check` が本番環境値で成功している。
+- `npm run predeploy:check` が本番環境値（`RELEASE_STAGE` 未指定）で成功している。
 - `npm run release:smoke` が本番環境値で成功している。
 - `npm run release:gate` が成功している（`release:monitor` + `release:prepare` + `release:smoke`）。
 - `npm run release:deploy` が成功している（`release:monitor` + `release:prepare`、デプロイ実行、デプロイ後smoke）。
 - 実Claude API、Neon、Slack、Cloudflare Accessで必要観点のスモークテストが完了している。
 - CodeRabbitレビューは P0/P1実装要件に対し完了扱い。`codex review --uncommitted` は `No findings`。
-- security review は `npm run security:scan` をPASS。`code-review --fix` は `command not found` で未導入のため、`Issue #6` でトラックを継続。
+- security review は `npm run security:scan` をPASS。
 
-## 11. 最近の実行結果（2026-07-14）
+## 11. 実行結果履歴
+
+### 2026-07-21（Stage A準備）
+
+| チェック | 実行結果 | 備考 |
+|---|---|---|
+| wrangler認証 | ✅ 解消 | `CLOUDFLARE_API_TOKEN` 設定済み。`release:monitor` の `wrangler auth` がPASS |
+| `npm run verify` | ✅ 完了 | lint / test（fail 0）/ build / build:production-api / security scan すべて通過 |
+| `npm run worker:deploy:dry-run` | ✅ 完了 | `[assets]` 統合構成で dist 7ファイルを認識、バインディング本番値 |
+| `RELEASE_STAGE` 段階モード | ✅ 完了 | pre-access緩和 / fullの従来動作 / 不正値fail-fast / placeholder拒否を実機検証 |
+| `wrangler dev` ローカル実動 | 🚫 BLOCKED | workerd（V8）が開発機sandboxで起動不可（`Fatal process out of memory: SegmentedTable::InitializeTable`）。dry-run＋デプロイ後smokeで代替 |
+| Neonプロジェクト | ⏳ Stage A実行時 | 未作成（2026-07-21時点）。承認済み: region `aws-ap-southeast-1` |
+| Cloudflare上のWorker/DNS | ⏳ Stage A実行時 | Worker `construction-dx-idea-api` 未作成、`dxidea.` DNS未登録（初回デプロイで自動作成） |
+
+### 2026-07-14
 
 コード・CI・レビュー側で実行可能な検証はすべて完了した。残る未達成項目は
 すべて外部インフラ（Cloudflare DNS・Access・Secrets・wrangler認証）のセット
-アップに依存しており、人間による実施が必要（§12参照）。
+アップに依存しており、人間による実施が必要。
 
 | チェック | 実行結果 | 備考 |
 |---|---|---|
@@ -208,20 +261,28 @@ npm run frontend:deploy
 過去の詳細な実行ログ（2026-07-13時点、DNS未解決/wrangler未認証の同一原因による
 BLOCKED記録）は `docs/24_autonomous_cto_execution_log.md` を参照。
 
-## 12. Release Ready 判断と Production Ready への残作業
+## 12. 残作業（Stage A / Stage B）
 
-CTOが自律実行できる範囲（実装・テスト・CI・レビュー・手順書整備）はすべて
-完了しており、**Release Ready**（デプロイ準備完了）と判断する。
+### Stage A: 外殻公開（マージY承認の範囲でCTOが自律実行）
 
-`release:gate` の実環境到達確認は、以下の人間による外部インフラ操作が
-完了して初めて実行可能になる（すべて人間決裁事項。CTOは代行しない）：
+前提: wrangler認証は完了済み（2026-07-21確認）。
 
-1. Cloudflareで `dxidea.mirai-dx-platform.com` のDNS登録・Custom Domain設定
-2. Cloudflare Accessアプリケーションの設定（許可ユーザー/ドメイン、Audience Tag）
-3. `wrangler login` によるCloudflareアカウント認証
-4. Worker Secrets投入（`DATABASE_URL`、`ANTHROPIC_API_KEY`、`SLACK_WEBHOOK_URL`）
-5. Neonプロジェクト作成 + `migrations/001_initial_schema.sql` 適用
-6. 上記完了後、本番環境値を投入して `npm run predeploy:check` → `npm run release:smoke` → `npm run release:gate` を実行
-7. `release:gate` 成功を確認したら `npm run release:deploy` で **Production Ready** へ進む
+1. Neonプロジェクト `Construction-DX-Idea` 作成（region `aws-ap-southeast-1`）
+   → `migrations/001_initial_schema.sql` 適用 → テーブル作成確認
+2. §3のStage A環境値を設定し `RELEASE_STAGE=pre-access npm run release:gate` を実行
+3. `RELEASE_STAGE=pre-access npm run release:deploy` を実行
+   （初回 `wrangler deploy` がWorker作成・静的アセットアップロード・
+   `dxidea.mirai-dx-platform.com` のDNS/TLS自動登録を行う）
+4. デプロイ後smoke（`GET /` HTML 200、`/api/health` 200、`/api/me` 401）を確認
 
-上記1〜5が完了すれば、6・7はコマンド1回で実行できる状態まで準備済み。
+### Stage B: Access / DB / AI 有効化（人間作業を含む）
+
+1. 【人間】Cloudflare AccessアプリをダッシュボードでSelf-hostedとして作成
+   （対象: `dxidea.mirai-dx-platform.com`、許可ユーザー: `kensan1969@gmail.com`）
+2. 【人間→CTO】Audience Tag（AUD）・チーム名を共有 → CTOが `CF_ACCESS_CERTS_URL` /
+   `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER` を `wrangler.toml` へ反映するPRを作成
+3. 【人間】Secrets投入（値はCTOに共有しない）:
+   `wrangler secret put DATABASE_URL`（Neonダッシュボードの接続文字列）、
+   AI有効化時は `wrangler secret put ANTHROPIC_API_KEY`、任意で `SLACK_WEBHOOK_URL`
+4. 本番環境値＋JWTを設定して `npm run release:gate`（`RELEASE_STAGE` 未指定）→
+   `npm run release:deploy` で **Production Ready** へ進む

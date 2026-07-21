@@ -7,14 +7,14 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "development"
   },
-  "goal": "CTO全権委任によりRelease ReadyまたはProduction Ready状態へ到達。Issue #6 (本番デプロイ設定・実環境検証) の残課題を、人間決裁が必要な外部インフラ操作を除いて可能な限り解消する。",
-  "phase": "Monitor",
+  "goal": "Stage A本番デプロイ（同一オリジン外殻公開）の実施。PR（issue-6/stage-a-same-origin-deploy）のマージY承認後、Neonプロジェクト作成・migration適用・RELEASE_STAGE=pre-access release:deploy・デプロイ後smokeまでCTOが自律実行する。Stage B（Access/DB/AI有効化）は人間作業を含む後続フェーズ。",
+  "phase": "Review",
   "deploy": {
     "ready": true,
     "ready_at": "2026-07-14",
-    "ready_note": "CTOが自律実行できる範囲（実装・テスト・CI・レビュー・runbook整備）は完了しRelease Readyと判断。ここでの ready=true はRelease Ready（デプロイ準備完了）を意味し、production_ready（実際の本番稼働）とは別。手順はdocs/23_release_deploy_runbook.md §12参照。",
+    "ready_note": "2026-07-21更新: wrangler認証（CLOUDFLARE_API_TOKEN）解消を確認し、同一オリジン構成（Worker assets+API）と段階リリース（RELEASE_STAGE=pre-access/full）を実装。Stage Aデプロイはverify・dry-run・段階モード検証まで完了しマージY承認待ち。手順はdocs/23_release_deploy_runbook.md §1.6・§12参照。",
     "production_ready": false,
-    "production_ready_note": "release:gate / release:deploy は本番DNS未登録・wrangler未認証でBLOCKED。Cloudflare DNS登録・Access設定・Secrets投入・wrangler認証・Neonプロジェクト作成という人間決裁の外部インフラ操作が完了しrelease:gateが成功した時点でtrueへ更新する。"
+    "production_ready_note": "production_ready=trueはStage B完了（Cloudflare Accessアプリ作成・CF_ACCESS_*反映・DATABASE_URL投入・RELEASE_STAGE未指定のrelease:gate成功）時点で更新する。Stage A完了時点は外殻公開（APIはfail-close 401/503）でありproduction_readyではない。Accessアプリ作成は現APIトークンの権限外のため人間のダッシュボード作業（ユーザー決裁2026-07-21: 初回はAccessなし公開を承認済み）。"
   },
   "kpi": {
     "success_rate_target": 0.9,
@@ -22,8 +22,8 @@
     "test_pass_rate": 1.0,
     "security_critical": 0,
     "blocker_count": 0,
-    "verified_at": "2026-07-14",
-    "verified_by": "main HEAD (593b84f) 時点: PR #13 (WebUI Claude Design 100%適用、Issue #12) をlint PASS・test 24/24 PASS・build PASS・CI green・Codexレビュー・CodeRabbit 3ラウンド(最終指摘0件)・Firefox headless E2E実機検証の全ゲート通過後、人間承認を得てmain squash merge。PR #11 (Release Ready判断記録) も同日人間承認でmerge済み"
+    "verified_at": "2026-07-21",
+    "verified_by": "branch issue-6/stage-a-same-origin-deploy: 同一オリジン構成+RELEASE_STAGE実装後に npm run verify（lint/test fail0/build/production build/security scan）PASS、worker:deploy:dry-run PASS（assets 7ファイル認識）、段階モード6ケース実機検証PASS、release:monitor（pre-access）9チェックPASS（wrangler auth authenticated含む）"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -40,8 +40,8 @@
     {
       "number": 6,
       "title": "P1: Production deployment settings and real environment validation",
-      "status": "release_ready_pending_human_deploy",
-      "note": "コード/CI/検証/レビュー/runbookはすべて完了しRelease Ready判断済み(2026-07-14)。残るのはCloudflare DNS登録・Access設定・Secrets投入・wrangler認証・Neonプロジェクト作成という人間決裁/外部アカウント操作のみ。手順はdocs/23_release_deploy_runbook.md §12参照。"
+      "status": "stage_a_pr_pending_merge_approval",
+      "note": "2026-07-21: wrangler認証解消を確認。ユーザー決裁（Neon作成承認ap-southeast-1/同一オリジン統合/初回Accessなし公開/管理者メール）に基づきStage A構成PR（issue-6/stage-a-same-origin-deploy）を作成。マージY承認後にNeon作成→migration→RELEASE_STAGE=pre-access release:deploy→smokeをCTOが自律実行。Stage B（Access/Secrets）はdocs/23 §12参照。"
     }
   ],
   "blocked_issues": [],
@@ -50,14 +50,17 @@
     "failure_patterns": [
       "tsx --test はUnix domain socketを使うため、Claude Codeのスクラッチパス(長いUUID付きパス)をTMPDIRにするとEINVAL/EPERMで失敗する。短いTMPDIR(例: /tmp/cdx-verify)を指定すれば回避可能。",
       "release:smoke / release:monitor は本番ドメイン dxidea.mirai-dx-platform.com のDNSが未登録のため恒常的にBLOCKED。実運用インフラ未接続が根本原因であり、コード側の問題ではない。",
-      "外部インフラ依存でBLOCKEDなIssueに対し、進捗がないまま同一内容の状況報告コメントを繰り返すとIssueが読みにくくなる（Issue #6に1日で20件超の類似コメントが蓄積した）。状態不変ならコメント追加を控え、state.jsonの記録のみで十分。"
+      "外部インフラ依存でBLOCKEDなIssueに対し、進捗がないまま同一内容の状況報告コメントを繰り返すとIssueが読みにくくなる（Issue #6に1日で20件超の類似コメントが蓄積した）。状態不変ならコメント追加を控え、state.jsonの記録のみで十分。",
+      "wrangler dev（workerd/V8）は本開発機のsandbox環境では『Fatal process out of memory: SegmentedTable::InitializeTable』で起動不可（2026-07-21確認）。ローカル実動確認はworker:deploy:dry-run（assets認識・バインディング検証）とデプロイ後release:smokeで代替する。"
     ],
     "success_patterns": [
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
       "release-smoke-test.mjs は実行前にDNS事前チェックを行うことで、無意味なHTTPタイムアウト待ちを避け、失敗原因を即座に特定できる設計にしている。",
       "TeammateIdle フックは公式仕様で matcher 非対応（常時発火）。settings.json 設定例で matcher を書くと誤解を招くため省略する。TaskCreated/TaskCompleted は matcher 指定可。",
       "PR #1（旧・静的サイト+Docker構想、mainとCONFLICTING）は現行アーキテクチャ（React+Cloudflare Workers+Neon、Docker廃止方針）と不一致のため人間確認の上クローズ（2026-07-14）。",
-      "gh pr edit がProjects classic廃止起因のGraphQLエラーで失敗する場合、REST API（gh api --method PATCH repos/{repo}/pulls/{n} -F body=@file）で回避できる。-f はリテラル文字列送信なので @file 参照を解決する -F を使うこと。"
+      "gh pr edit がProjects classic廃止起因のGraphQLエラーで失敗する場合、REST API（gh api --method PATCH repos/{repo}/pulls/{n} -F body=@file）で回避できる。-f はリテラル文字列送信なので @file 参照を解決する -F を使うこと。",
+      "Workers Static Assets（[assets] + run_worker_first=[\"/api/*\"]）でSPAとAPIを同一オリジン統合すると、Access JWTがクロスオリジンfetchに乗らない問題と、worker/index.tsのCORS allowHeadersにCF-Access-Jwt-Assertionが無い問題を同時に回避できる（2026-07-21採用）。",
+      "リリースゲートの段階緩和は明示オプトイン（RELEASE_STAGE=pre-access）時のみ適用し、未指定デフォルト（full）は従来どおり全必須・未知値はfail-fastにすることで、後方互換と誤用防止を両立できる。"
     ]
   }
 }
