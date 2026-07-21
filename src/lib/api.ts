@@ -1,4 +1,5 @@
 import { mockApi } from "./mockApi";
+import { normalizeApiBaseUrl } from "./shared";
 import type {
   AiConnectionTestResult,
   AiQuestion,
@@ -15,7 +16,7 @@ import type {
 } from "./shared";
 
 const explicitMock = !import.meta.env.PROD && import.meta.env.VITE_USE_MOCK_API === "true";
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+const apiBaseUrl = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL || "");
 const useMock =
   explicitMock ||
   (!import.meta.env.PROD && import.meta.env.VITE_USE_MOCK_API !== "false" && !apiBaseUrl);

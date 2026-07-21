@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { issueInputSchema, structuredIdeaSchema } from "../src/lib/shared";
+import { issueInputSchema, normalizeApiBaseUrl, structuredIdeaSchema } from "../src/lib/shared";
 
 describe("shared API schemas", () => {
   it("rejects unknown fields in issue input", () => {
@@ -77,3 +77,41 @@ function validStructuredIdea() {
     mvpDoneDefinition: "1週間運用できる",
   };
 }
+
+describe("normalizeApiBaseUrl", () => {
+  it("strips a trailing /api segment so request paths do not double the prefix", () => {
+    assert.equal(
+      normalizeApiBaseUrl("https://dxidea.mirai-dx-platform.com/api"),
+      "https://dxidea.mirai-dx-platform.com",
+    );
+    assert.equal(
+      normalizeApiBaseUrl("https://dxidea.mirai-dx-platform.com/api/"),
+      "https://dxidea.mirai-dx-platform.com",
+    );
+    assert.equal(normalizeApiBaseUrl("https://dxidea.mirai-dx-platform.com/API"), "https://dxidea.mirai-dx-platform.com");
+  });
+
+  it("keeps an origin-only base and trailing slashes tidy", () => {
+    assert.equal(
+      normalizeApiBaseUrl("https://dxidea.mirai-dx-platform.com"),
+      "https://dxidea.mirai-dx-platform.com",
+    );
+    assert.equal(
+      normalizeApiBaseUrl("https://dxidea.mirai-dx-platform.com/"),
+      "https://dxidea.mirai-dx-platform.com",
+    );
+  });
+
+  it("keeps empty input empty for same-origin relative requests", () => {
+    assert.equal(normalizeApiBaseUrl(""), "");
+    assert.equal(normalizeApiBaseUrl("  "), "");
+    assert.equal(normalizeApiBaseUrl("/api"), "");
+  });
+
+  it("does not touch /api appearing mid-path", () => {
+    assert.equal(
+      normalizeApiBaseUrl("https://example.net/api/v2"),
+      "https://example.net/api/v2",
+    );
+  });
+});

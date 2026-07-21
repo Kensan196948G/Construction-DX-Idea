@@ -141,3 +141,13 @@ export type DashboardMetrics = {
   securityWarnings: number;
   aiCallsToday: number;
 };
+
+// Request paths in the API client already carry the /api prefix, so the
+// configured base must be an origin without a trailing /api segment.
+// Accepts values like "https://host", "https://host/", "https://host/api",
+// "https://host/api/" and returns the origin form; empty input stays empty
+// (same-origin relative requests).
+export function normalizeApiBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return trimmed.replace(/\/api$/i, "");
+}

@@ -55,6 +55,12 @@ for (const key of frontendRequired) {
   if (!value) missing.push(key);
 }
 
+// The frontend request paths already include the /api prefix; a base URL
+// ending in /api would double the prefix (GET /api/api/... -> 404).
+if (/\/api\/*$/i.test(process.env.VITE_API_BASE_URL || "")) {
+  unsafe.push("VITE_API_BASE_URL must be the origin only (no /api suffix; request paths already include /api)");
+}
+
 if (process.env.ALLOW_LOCAL_AUTH_BYPASS !== "false") {
   unsafe.push("ALLOW_LOCAL_AUTH_BYPASS must be false");
 }
