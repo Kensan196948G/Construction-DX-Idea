@@ -29,12 +29,11 @@ ALLOWED_ORIGINS = "https://dxidea.mirai-dx-platform.com"
 ADMIN_EMAILS = "kensan1969@gmail.com"
 SYSTEM_ADMIN_EMAILS = "kensan1969@gmail.com"
 ALLOW_LOCAL_AUTH_BYPASS = "false"
-# Stage B (Access enabled): fill these three from the Cloudflare Access
-# application (team domain certs URL / Audience tag / issuer), then redeploy.
-# While empty the Worker fails closed: API requests are rejected with 401/503.
-CF_ACCESS_CERTS_URL = ""
-CF_ACCESS_AUD = ""
-CF_ACCESS_ISSUER = ""
+# Cloudflare Access application "Construction-DX-Idea" (team winter-lake-f4c9,
+# created 2026-07-21). These are public verification parameters, not secrets.
+CF_ACCESS_CERTS_URL = "https://winter-lake-f4c9.cloudflareaccess.com/cdn-cgi/access/certs"
+CF_ACCESS_AUD = "547b7a547cff09ea0f341c289986415a5ee2b992a8d98d2df7a3a31ea96d6e73"
+CF_ACCESS_ISSUER = "https://winter-lake-f4c9.cloudflareaccess.com"
 AI_INPUT_COST_PER_1K_TOKENS = "0.003"
 AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 
