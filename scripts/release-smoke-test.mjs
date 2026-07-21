@@ -34,6 +34,18 @@ if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
 
 const isDeployRun = process.env.RELEASE_DEPLOY_CHECK === "1";
 
+// RELEASE_STAGE contract (shared with predeploy-check / release-readiness-monitor):
+//   full (default) : deploy runs require Access JWTs — missing credentials FAIL.
+//   pre-access     : Stage A shell release. Access is not wired yet, so JWT
+//                    checks stay skipped even during release:deploy, and the
+//                    static shell itself is verified instead.
+const releaseStage = process.env.RELEASE_STAGE || "full";
+if (!["full", "pre-access"].includes(releaseStage)) {
+  console.error(`RELEASE_STAGE must be "full" or "pre-access", got: ${releaseStage}`);
+  process.exit(1);
+}
+const isPreAccessStage = releaseStage === "pre-access";
+
 const headersBase = { "Content-Type": "application/json" };
 const results = [];
 
@@ -126,11 +138,11 @@ function section(title) {
 }
 
 function skipOrFail(message, reason) {
-  if (isDeployRun) {
+  if (isDeployRun && !isPreAccessStage) {
     expect(false, message, `${reason} (credentials required for release:deploy gate)`);
     return;
   }
-  console.log(`- Skip: ${reason}`);
+  console.log(`- Skip: ${reason}${isPreAccessStage ? " (stage=pre-access)" : ""}`);
 }
 
 function formatFailure(result) {
@@ -162,6 +174,41 @@ function sanitizeForLog(text) {
   }
   if (userJwt && !userEmail && userJwtSource) {
     console.warn(`${userJwtSource} is set but SMOKE_CF_ACCESS_USER_EMAIL is not set.`);
+  }
+
+  if (isPreAccessStage) {
+    section("フロント外殻 (Stage A)");
+    const originBase = new URL(apiBase).origin;
+    // redirect:"manual" keeps an Access login redirect (302) visible instead of
+    // following it to a 200 page, and the title marker proves the body is the
+    // deployed SPA shell rather than an interstitial HTML page.
+    const appMarker = "<title>Construction-DX-Idea</title>";
+    let shell;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      const response = await fetch(`${originBase}/`, { redirect: "manual", signal: controller.signal });
+      const bodyText = await response.text().catch(() => "");
+      shell = {
+        status: response.status,
+        contentType: response.headers.get("content-type") ?? "",
+        hasAppMarker: bodyText.includes(appMarker),
+      };
+    } catch (error) {
+      shell = {
+        status: 0,
+        contentType: "",
+        hasAppMarker: false,
+        error: error instanceof Error ? error.message : "request failed",
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    expect(
+      shell.status === 200 && shell.contentType.includes("text/html") && shell.hasAppMarker,
+      "GET / serves the SPA shell as HTML 200 with app marker (no redirect followed)",
+      `got status=${shell.status} content-type=${shell.contentType || "n/a"} marker=${shell.hasAppMarker}${shell.error ? ` error=${shell.error}` : ""}`,
+    );
   }
 
   section("認証・公開エンドポイント");

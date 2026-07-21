@@ -20,11 +20,10 @@
     "worker:dev": "wrangler dev worker/index.ts",
     "worker:deploy:dry-run": "wrangler deploy worker/index.ts --dry-run",
     "worker:deploy": "wrangler deploy worker/index.ts",
-    "frontend:deploy": "if [ -z \"$CLOUDFLARE_PAGES_PROJECT\" ]; then echo 'Set CLOUDFLARE_PAGES_PROJECT first'; exit 1; fi; wrangler pages deploy dist --project-name \"$CLOUDFLARE_PAGES_PROJECT\"",
     "release:prepare": "npm run build:production-api && npm run predeploy:check && npm run worker:deploy:dry-run",
     "release:smoke": "node scripts/release-smoke-test.mjs",
     "release:gate": "npm run release:monitor && npm run release:prepare && npm run release:smoke",
-    "release:deploy": "export RELEASE_DEPLOY_CHECK=1 && npm run release:monitor && npm run release:prepare && npm run worker:deploy && npm run build:frontend && npm run frontend:deploy && npm run release:smoke"
+    "release:deploy": "export RELEASE_DEPLOY_CHECK=1 && npm run release:monitor && npm run release:prepare && npm run worker:deploy && npm run release:smoke"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.2",

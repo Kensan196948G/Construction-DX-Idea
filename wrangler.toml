@@ -3,6 +3,18 @@ main = "worker/index.ts"
 compatibility_date = "2026-07-13"
 compatibility_flags = ["nodejs_compat"]
 
+# Same-origin production: this Worker serves both the SPA static assets and
+# the /api/* routes on https://dxidea.mirai-dx-platform.com.
+# Custom Domains take a hostname-only pattern with no zone_name (Cloudflare docs).
+routes = [
+  { pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }
+]
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
 [triggers]
 crons = ["*/10 * * * *"]
 
@@ -12,24 +24,21 @@ AI_MODEL = "claude-sonnet-4-5"
 AI_ENABLED = "false"
 DAILY_AI_LIMIT = "10"
 MAX_INPUT_CHARS = "2000"
-APP_BASE_URL = "https://example.invalid"
-ALLOWED_ORIGINS = "https://example.invalid"
-ADMIN_EMAILS = ""
-SYSTEM_ADMIN_EMAILS = ""
+APP_BASE_URL = "https://dxidea.mirai-dx-platform.com"
+ALLOWED_ORIGINS = "https://dxidea.mirai-dx-platform.com"
+ADMIN_EMAILS = "kensan1969@gmail.com"
+SYSTEM_ADMIN_EMAILS = "kensan1969@gmail.com"
 ALLOW_LOCAL_AUTH_BYPASS = "false"
+# Stage B (Access enabled): fill these three from the Cloudflare Access
+# application (team domain certs URL / Audience tag / issuer), then redeploy.
+# While empty the Worker fails closed: API requests are rejected with 401/503.
 CF_ACCESS_CERTS_URL = ""
 CF_ACCESS_AUD = ""
 CF_ACCESS_ISSUER = ""
 AI_INPUT_COST_PER_1K_TOKENS = "0.003"
 AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 
-# Production sample (set in production account/branch when route is configured)
-# Custom Domains take a hostname-only pattern with no zone_name (see Cloudflare docs).
-# routes = [
-#   { pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }
-# ]
-
-# Required secrets:
+# Secrets (set at Stage B; values are never committed or printed):
 # wrangler secret put DATABASE_URL
-# wrangler secret put ANTHROPIC_API_KEY
-# wrangler secret put SLACK_WEBHOOK_URL
+# wrangler secret put ANTHROPIC_API_KEY   (only when AI is enabled)
+# wrangler secret put SLACK_WEBHOOK_URL   (optional)

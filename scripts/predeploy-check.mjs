@@ -1,14 +1,31 @@
-const required = [
+// RELEASE_STAGE contract (shared with release-readiness-monitor / release-smoke-test):
+//   full (default) : every production value is required.
+//   pre-access     : Stage A shell release. Access/DB/AI are not wired yet, so
+//                    their values may be absent; anything that IS set must
+//                    still pass the placeholder check.
+const releaseStage = process.env.RELEASE_STAGE || "full";
+if (!["full", "pre-access"].includes(releaseStage)) {
+  console.error(`RELEASE_STAGE must be "full" or "pre-access", got: ${releaseStage}`);
+  process.exit(1);
+}
+const isPreAccessStage = releaseStage === "pre-access";
+
+const alwaysRequired = [
   "APP_BASE_URL",
   "ALLOWED_ORIGINS",
   "ADMIN_EMAILS",
   "SYSTEM_ADMIN_EMAILS",
+];
+
+const stageBRequired = [
   "CF_ACCESS_CERTS_URL",
   "CF_ACCESS_AUD",
   "CF_ACCESS_ISSUER",
   "DATABASE_URL",
   "ANTHROPIC_API_KEY",
 ];
+
+const required = isPreAccessStage ? alwaysRequired : [...alwaysRequired, ...stageBRequired];
 
 const frontendRequired = ["VITE_API_BASE_URL"];
 const placeholderPattern = /example\.invalid|localhost|127\.0\.0\.1/i;
@@ -21,6 +38,15 @@ for (const key of required) {
     missing.push(key);
   } else if (placeholderPattern.test(value)) {
     unsafe.push(key);
+  }
+}
+
+if (isPreAccessStage) {
+  for (const key of stageBRequired) {
+    const value = process.env[key];
+    if (value && placeholderPattern.test(value)) {
+      unsafe.push(key);
+    }
   }
 }
 
@@ -43,4 +69,8 @@ if (missing.length > 0 || unsafe.length > 0) {
   process.exit(1);
 }
 
-console.log("Predeploy check passed: required production values are present.");
+console.log(
+  isPreAccessStage
+    ? "Predeploy check passed (stage=pre-access): Access/DB/AI values are deferred to Stage B."
+    : "Predeploy check passed: required production values are present.",
+);
