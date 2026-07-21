@@ -312,8 +312,12 @@ BLOCKED記録）は `docs/24_autonomous_cto_execution_log.md` を参照。
 
 1. 【人間】Cloudflare AccessアプリをダッシュボードでSelf-hostedとして作成
    （対象: `dxidea.mirai-dx-platform.com`、許可ユーザー: `wrangler.toml` の `ADMIN_EMAILS` と同じ管理者メール）
+   → ✅ 2026-07-21完了（team `winter-lake-f4c9`、policy: 管理者メール + `mirai-const.co.jp` ドメイン許可）
 2. 【人間→CTO】Audience Tag（AUD）・チーム名を共有 → CTOが `CF_ACCESS_CERTS_URL` /
    `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER` を `wrangler.toml` へ反映するPRを作成
+   → ✅ 2026-07-21完了（AUD/チームは本番URLのAccessリダイレクトから自動取得。Access有効化後は
+   無認証smoke（pre-access）は302となり使えないため、検証は「302保護確認 + certs疎通 +
+   ログイン後の目視確認」で行う）
 3. 【人間】**先にNeonダッシュボードでロール `neondb_owner` のパスワードをリセット**する
    （プロジェクト作成時にNeon MCPが接続文字列を応答へ含める仕様のため、リセットにより
    セッションログへ出た値を無効化してから使う）。その後Secrets投入（値はCTOに共有しない）:
