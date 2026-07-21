@@ -5,9 +5,9 @@
     "registered_at": "2026-06-17",
     "start_date": "2026-06-17",
     "release_deadline": "2026-12-17",
-    "phase_mode": "development"
+    "phase_mode": "maintenance"
   },
-  "goal": "Stage A本番デプロイ完了（2026-07-21、v0.1.0稼働中）。次GoalはStage B: Cloudflare Accessアプリ作成（人間）→CF_ACCESS_*反映PR→Neonロールパスワードリセット+DATABASE_URL投入（人間）→RELEASE_STAGE=full release:gate/deploy でProduction Readyへ。",
+  "goal": "Production Ready達成（2026-07-21、Stage A+B完了、本番フル稼働）。以後は無期限保守フェーズ: 監視・軽微改善・残Issue（#14 idea永続化、#15 APIキーサーバーサイド化、#16 support.js、#25/#26 改善）の計画的消化。",
   "phase": "Monitor",
   "deploy": {
     "ready": true,
@@ -15,10 +15,12 @@
     "ready_note": "Stage A本番デプロイ実施済み（2026-07-21）。本番URL https://dxidea.mirai-dx-platform.com、Worker construction-dx-idea-api、Version eb7807c5-b93e-451a-af41-c61c9891d9b7（2026-07-21T09:57:47Z、100%）、tag v0.1.0（merge 2da4055、PR #18）。デプロイ後smoke 6チェックPASS・release:gate PASS。",
     "stage_a_deployed_at": "2026-07-21",
     "stage_a_version_id": "eb7807c5-b93e-451a-af41-c61c9891d9b7",
+    "stage_b_completed_at": "2026-07-21",
     "neon_project_id": "twilight-cloud-06040828",
     "neon_region": "aws-us-east-2",
-    "production_ready": false,
-    "production_ready_note": "production_ready=trueはStage B完了（Cloudflare Accessアプリ作成・CF_ACCESS_*反映・Neonロールパスワードリセット後のDATABASE_URL投入・RELEASE_STAGE=fullのrelease:gate成功）時点で更新する。Stage A稼働中はAPIがfail-close 401/503の外殻公開。Accessアプリ作成とSecrets投入は人間作業（docs/23 §12 Stage B参照）。"
+    "production_ready": true,
+    "production_ready_at": "2026-07-21",
+    "production_ready_note": "Stage B完了。Cloudflare Access有効（team winter-lake-f4c9、許可: 管理者メール+mirai-const.co.jpドメイン）、CF_ACCESS_*反映済み（PR #22）、DATABASE_URL投入済み（パスワードリセット後のURL全体、人間実行）。実ユーザー（system_admin）のブラウザE2Eで全API 200・wrangler tailでエラー0件を確認。RELEASE_STAGE=fullのJWT付きrelease:gateは未実行（Access JWT必要）で、実ユーザーE2E確認で代替（JWT提供があれば実行可能）。AI機能はAI_ENABLED=false・ANTHROPIC_API_KEY未投入のまま（有効化は任意の後続作業）。"
   },
   "kpi": {
     "success_rate_target": 0.9,
@@ -27,7 +29,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-07-21",
-    "verified_by": "main 2da4055 (PR #18) 時点: verify/dry-run/npm audit 0件/CI green/独立レビュー+CodeRabbit指摘全対応ののちY承認でsquash merge。Stage A本番デプロイ後、実URLでsmoke 6チェックPASS（GET / HTML200+識別子、/api/health 200、/api/me 401、境界401）、release:gateフル通過"
+    "verified_by": "Stage B完了時点（main 3e354d5 / Worker最新版）: PR #22（CF_ACCESS_*）・PR #24（/api二重付与404修正、test 28/28）をCI green+Y承認でmerge。DATABASE_URL投入後、実ユーザー（system_admin）ブラウザE2Eで /api/me・/api/ideas・/api/admin/ai-settings 全200、wrangler tail 50秒間エラー0件を確認"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -39,15 +41,8 @@
     "auto_issue_generation": true,
     "self_evolution": true
   },
-  "completed_issues": [2, 3, 4, 5, 12],
-  "in_progress_issues": [
-    {
-      "number": 6,
-      "title": "P1: Production deployment settings and real environment validation",
-      "status": "stage_a_deployed_stage_b_pending",
-      "note": "2026-07-21: Stage A本番デプロイ完了（PR #18→2da4055、v0.1.0、Version eb7807c5、Neon twilight-cloud-06040828 us-east-2へmigration適用、smoke/gate PASS）。残りはStage B: 【人間】Accessアプリ作成→AUD共有、【人間】Neonロールパスワードリセット+DATABASE_URL投入、【CTO】CF_ACCESS_*反映PR→RELEASE_STAGE=full gate/deploy。手順はdocs/23 §12。"
-    }
-  ],
+  "completed_issues": [2, 3, 4, 5, 6, 12, 20, 23],
+  "in_progress_issues": [],
   "blocked_issues": [],
   "stale_prs": [],
   "learning": {
@@ -55,7 +50,9 @@
       "tsx --test はUnix domain socketを使うため、Claude Codeのスクラッチパス(長いUUID付きパス)をTMPDIRにするとEINVAL/EPERMで失敗する。短いTMPDIR(例: /tmp/cdx-verify)を指定すれば回避可能。",
       "release:smoke / release:monitor は本番ドメイン dxidea.mirai-dx-platform.com のDNSが未登録のため恒常的にBLOCKED。実運用インフラ未接続が根本原因であり、コード側の問題ではない。",
       "外部インフラ依存でBLOCKEDなIssueに対し、進捗がないまま同一内容の状況報告コメントを繰り返すとIssueが読みにくくなる（Issue #6に1日で20件超の類似コメントが蓄積した）。状態不変ならコメント追加を控え、state.jsonの記録のみで十分。",
-      "wrangler dev（workerd/V8）は本開発機のsandbox環境では『Fatal process out of memory: SegmentedTable::InitializeTable』で起動不可（2026-07-21確認）。ローカル実動確認はworker:deploy:dry-run（assets認識・バインディング検証）とデプロイ後release:smokeで代替する。"
+      "wrangler dev（workerd/V8）は本開発機のsandbox環境では『Fatal process out of memory: SegmentedTable::InitializeTable』で起動不可（2026-07-21確認）。Chrome本体も--versionでSIGTRAPクラッシュ（カーネル6.17とChromium系V8バイナリの非互換、Node.jsは無事）。ローカル実動確認はdry-run+デプロイ後実測、ブラウザ確認はユーザーの実ブラウザで代替する。",
+      "NeonのReset password直後の画面はパスワード単体にもCopyボタンがあり、接続URL全体と取り違えやすい（2026-07-21実発生: npg_...単体がDATABASE_URLに投入され全API 500）。案内時は『postgresql://で始まる長い1行』と見た目で指定する。",
+      "@neondatabase/serverlessのneon()は不正な接続文字列をエラーメッセージに平文で含め、Workerの未処理例外ログ（wrangler tail）にそのまま出る。応答側のsanitizeはログ経路に効かない（Issue #25でトラック）。"
     ],
     "success_patterns": [
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
@@ -64,7 +61,9 @@
       "PR #1（旧・静的サイト+Docker構想、mainとCONFLICTING）は現行アーキテクチャ（React+Cloudflare Workers+Neon、Docker廃止方針）と不一致のため人間確認の上クローズ（2026-07-14）。",
       "gh pr edit がProjects classic廃止起因のGraphQLエラーで失敗する場合、REST API（gh api --method PATCH repos/{repo}/pulls/{n} -F body=@file）で回避できる。-f はリテラル文字列送信なので @file 参照を解決する -F を使うこと。",
       "Workers Static Assets（[assets] + run_worker_first=[\"/api/*\"]）でSPAとAPIを同一オリジン統合すると、Access JWTがクロスオリジンfetchに乗らない問題と、worker/index.tsのCORS allowHeadersにCF-Access-Jwt-Assertionが無い問題を同時に回避できる（2026-07-21採用）。",
-      "リリースゲートの段階緩和は明示オプトイン（RELEASE_STAGE=pre-access）時のみ適用し、未指定デフォルト（full）は従来どおり全必須・未知値はfail-fastにすることで、後方互換と誤用防止を両立できる。"
+      "リリースゲートの段階緩和は明示オプトイン（RELEASE_STAGE=pre-access）時のみ適用し、未指定デフォルト（full）は従来どおり全必須・未知値はfail-fastにすることで、後方互換と誤用防止を両立できる。",
+      "Cloudflare AccessのAUD/チームドメインは、保護URLへの無認証GETの302 Location（kidパラメータ+Cloudflare署名meta JWTのaud）から取得できる。ダッシュボード正値との突合を原則としつつ、実ユーザーのログイン成功がend-to-endの最終検証になる。",
+      "本番のエラー診断はwrangler tailが最速。ブラウザがリトライポーリング中なら、ユーザー操作なしでも数十秒のtailで実エラー（例: 不正な接続文字列）を特定できる。"
     ]
   }
 }
