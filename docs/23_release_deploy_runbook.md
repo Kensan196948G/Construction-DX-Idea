@@ -29,9 +29,16 @@ Cloudflareコマンド実行前提:
 
 - `CF_ACCESS_CERTS_URL` / `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER` / `DATABASE_URL` /
   `ANTHROPIC_API_KEY` を任意化（設定されている値へのplaceholder検査は継続）
-- 本番ホスト名のDNS未解決を許容（初回custom domainデプロイ前は未登録が正常）
+- `release:monitor` は本番ホスト名のDNS未解決を許容（初回custom domainデプロイ前は
+  未登録が正常）
 - smokeのAccess JWT必須チェックをskipに維持し、代わりにSPA外殻（`GET /` が
-  HTML 200）を検証
+  redirect追従なしでHTML 200かつアプリ識別子を含む）を検証
+
+> ⚠️ `release:smoke` 自体は段階に関わらずDNS解決を必須とする（実URLの実測が目的の
+> ため）。したがって**初回デプロイ前に `release:gate` を実行してはならない**
+> （内包するsmokeがDNS未解決で即FAILする）。初回のデプロイ前検証は
+> `release:monitor` + `release:prepare` で行い、smokeは `release:deploy` が
+> デプロイ後に内部実行する。`release:gate` は初回デプロイ完了後から使用できる。
 
 `RELEASE_STAGE` 未指定（または `full`）では従来どおり全値必須・DNS解決必須で、
 未知の値は3スクリプトともfail-fastする。
@@ -78,26 +85,29 @@ npm run release:smoke
 
 `npm run predeploy:check` と `npm run release:smoke` は本番環境値をシェル環境に設定してから実行する。placeholder、ローカルURL、モックAPI有効状態では失敗させる。
 
-Stage Aの実行例（Access/DB/AI値なし）:
+Stage Aの実行例（Access/DB/AI値なし。`<admin-email>` は `wrangler.toml` の
+`ADMIN_EMAILS` と同じ管理者メールを指定する）:
 
 ```bash
 export RELEASE_STAGE=pre-access
 export APP_BASE_URL=https://dxidea.mirai-dx-platform.com
 export ALLOWED_ORIGINS=https://dxidea.mirai-dx-platform.com
-export ADMIN_EMAILS=kensan1969@gmail.com
-export SYSTEM_ADMIN_EMAILS=kensan1969@gmail.com
+export ADMIN_EMAILS=<admin-email>
+export SYSTEM_ADMIN_EMAILS=<admin-email>
 export VITE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
 export SMOKE_API_BASE_URL=https://dxidea.mirai-dx-platform.com/api
 export ALLOW_LOCAL_AUTH_BYPASS=false
 export VITE_USE_MOCK_API=false
-npm run release:gate    # デプロイ前検証
-npm run release:deploy  # デプロイ（Worker+静的アセット、custom domain自動登録）
+npm run release:monitor && npm run release:prepare   # デプロイ前検証（初回はrelease:gate不可、§1.6参照）
+npm run release:deploy   # デプロイ（Worker+静的アセット、custom domain自動登録、デプロイ後smoke内包）
 ```
 
-Stage B（`RELEASE_STAGE` を外すか `full`）では追加で `CF_ACCESS_*`、`DATABASE_URL`、
-`ANTHROPIC_API_KEY` と `release:smoke` 用JWTを設定する:
+Stage Bでは `RELEASE_STAGE=full` を**明示**し（同一シェルにStage Aの
+`pre-access` が残ったまま緩和が効き続ける事故を防ぐ）、追加で `CF_ACCESS_*`、
+`DATABASE_URL`、`ANTHROPIC_API_KEY` と `release:smoke` 用JWTを設定する:
 
 ```bash
+export RELEASE_STAGE=full
 export SMOKE_CF_ACCESS_USER_JWT=<一般利用者JWT>
 export SMOKE_CF_ACCESS_USER_EMAIL=<一般利用者メール>
 export SMOKE_CF_ACCESS_ADMIN_JWT=<システム管理者JWT>
@@ -127,7 +137,7 @@ fail-closeする。
 ## 5. Cloudflare Access（Stage B）
 
 1. WebUIとWorker API（同一オリジン `dxidea.mirai-dx-platform.com`）をAccess保護対象にする。
-2. 許可ユーザーまたは許可ドメインを設定する（`kensan1969@gmail.com`）。
+2. 許可ユーザーまたは許可ドメインを設定する（`wrangler.toml` の `ADMIN_EMAILS` と同じ管理者メール）。
 3. Audience Tag、JWK URL、issuerをWorker変数（`wrangler.toml` の `CF_ACCESS_*`）へ設定し再デプロイする。
 4. JWTなし、期限切れJWT、issuer不一致、audience不一致が401になることを確認する。
 
@@ -195,7 +205,7 @@ API呼び出しに乗らず、CORS許可ヘッダの追加も必要になるた�
 | 11 | Slack | sent/skipped/failedがUIへ反映 | −（Stage B） |
 | 12 | Slack再送 | failed OutboxがCron後に再試行される | −（Stage B） |
 | 13 | 本番公開先 | `https://dxidea.mirai-dx-platform.com` が閲覧できる | ✅ 対象（Access保護はStage B） |
-| 14 | リリースゲート | `npm run release:gate` が 0 exit で完了 | ✅ `RELEASE_STAGE=pre-access` |
+| 14 | リリースゲート | `npm run release:gate` が 0 exit で完了 | ✅ `RELEASE_STAGE=pre-access`（**初回デプロイ完了後**から。デプロイ前は§1.6のとおりmonitor+prepareで代替） |
 
 ## 9. ロールバック
 
@@ -269,16 +279,18 @@ BLOCKED記録）は `docs/24_autonomous_cto_execution_log.md` を参照。
 
 1. Neonプロジェクト `Construction-DX-Idea` 作成（region `aws-ap-southeast-1`）
    → `migrations/001_initial_schema.sql` 適用 → テーブル作成確認
-2. §3のStage A環境値を設定し `RELEASE_STAGE=pre-access npm run release:gate` を実行
+2. §3のStage A環境値を設定し `npm run release:monitor && npm run release:prepare` で
+   デプロイ前検証を行う（初回は `release:gate` を使わない。§1.6参照）
 3. `RELEASE_STAGE=pre-access npm run release:deploy` を実行
    （初回 `wrangler deploy` がWorker作成・静的アセットアップロード・
-   `dxidea.mirai-dx-platform.com` のDNS/TLS自動登録を行う）
-4. デプロイ後smoke（`GET /` HTML 200、`/api/health` 200、`/api/me` 401）を確認
+   `dxidea.mirai-dx-platform.com` のDNS/TLS自動登録を行い、デプロイ後smokeまで内包）
+4. smoke結果（`GET /` HTML 200＋アプリ識別子、`/api/health` 200、`/api/me` 401）を確認。
+   DNS伝播直後にsmokeが失敗した場合は数分待って `RELEASE_STAGE=pre-access npm run release:smoke` を単独再実行
 
 ### Stage B: Access / DB / AI 有効化（人間作業を含む）
 
 1. 【人間】Cloudflare AccessアプリをダッシュボードでSelf-hostedとして作成
-   （対象: `dxidea.mirai-dx-platform.com`、許可ユーザー: `kensan1969@gmail.com`）
+   （対象: `dxidea.mirai-dx-platform.com`、許可ユーザー: `wrangler.toml` の `ADMIN_EMAILS` と同じ管理者メール）
 2. 【人間→CTO】Audience Tag（AUD）・チーム名を共有 → CTOが `CF_ACCESS_CERTS_URL` /
    `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER` を `wrangler.toml` へ反映するPRを作成
 3. 【人間】Secrets投入（値はCTOに共有しない）:

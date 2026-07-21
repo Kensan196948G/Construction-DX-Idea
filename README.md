@@ -101,7 +101,7 @@ npm run dev
 | `npm run release:smoke` | 実環境URL向け API E2E スモーク確認 |
 | `npm run release:gate` | `release:monitor` + `release:prepare` + `release:smoke`（本番環境前提の事前ゲート） |
 | `npm run release:prepare` | 本番向けprepare（ビルド+predeploy+dry-run） |
-| `npm run release:deploy` | デプロイ（monitor + prepare）→ `wrangler deploy`（Worker+SPA静的アセットを同一オリジンで反映）→ `release:smoke` |
+| `npm run release:deploy` | デプロイ（monitor + prepare）→ `wrangler deploy`（Worker+SPA静的アセットを同一オリジンで反映）→ `release:smoke`。Stage A（Access未設定の外殻公開）は `RELEASE_STAGE=pre-access npm run release:deploy` で実行 |
 
 ---
 

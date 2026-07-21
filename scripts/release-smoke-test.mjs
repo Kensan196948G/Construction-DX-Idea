@@ -179,23 +179,35 @@ function sanitizeForLog(text) {
   if (isPreAccessStage) {
     section("フロント外殻 (Stage A)");
     const originBase = new URL(apiBase).origin;
+    // redirect:"manual" keeps an Access login redirect (302) visible instead of
+    // following it to a 200 page, and the title marker proves the body is the
+    // deployed SPA shell rather than an interstitial HTML page.
+    const appMarker = "<title>Construction-DX-Idea</title>";
     let shell;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
-      const response = await fetch(`${originBase}/`, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      const response = await fetch(`${originBase}/`, { redirect: "manual", signal: controller.signal });
+      const bodyText = await response.text().catch(() => "");
       shell = {
         status: response.status,
         contentType: response.headers.get("content-type") ?? "",
+        hasAppMarker: bodyText.includes(appMarker),
       };
     } catch (error) {
-      shell = { status: 0, contentType: "", error: error instanceof Error ? error.message : "request failed" };
+      shell = {
+        status: 0,
+        contentType: "",
+        hasAppMarker: false,
+        error: error instanceof Error ? error.message : "request failed",
+      };
+    } finally {
+      clearTimeout(timeoutId);
     }
     expect(
-      shell.status === 200 && shell.contentType.includes("text/html"),
-      "GET / serves the SPA shell as HTML 200",
-      `got status=${shell.status} content-type=${shell.contentType || "n/a"}${shell.error ? ` error=${shell.error}` : ""}`,
+      shell.status === 200 && shell.contentType.includes("text/html") && shell.hasAppMarker,
+      "GET / serves the SPA shell as HTML 200 with app marker (no redirect followed)",
+      `got status=${shell.status} content-type=${shell.contentType || "n/a"} marker=${shell.hasAppMarker}${shell.error ? ` error=${shell.error}` : ""}`,
     );
   }
 
