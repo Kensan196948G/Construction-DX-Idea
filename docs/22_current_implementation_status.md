@@ -2,7 +2,13 @@
 
 ## 1. 現在の状態
 
-2026-07-21（最新）:
+🚀 **2026-07-21: Stage A本番デプロイ完了**。本番URL `https://dxidea.mirai-dx-platform.com`
+（v0.1.0、Worker `construction-dx-idea-api`、Version `eb7807c5`）。SPA外殻+APIが同一オリジンで
+稼働し、APIはfail-close（401/503）。Neonプロジェクト `twilight-cloud-06040828`（us-east-2、
+`neondb`）へmigration適用済み。デプロイ後smoke・`release:gate` PASS。残りはStage B
+（Access/DB Secret/AI有効化、`docs/23_release_deploy_runbook.md` §12）。
+
+2026-07-21（Stage A準備）:
 
 - wrangler認証が `CLOUDFLARE_API_TOKEN` 設定により解消。`release:monitor` の wrangler auth チェックがPASS。
 - 配信構成を同一オリジンへ統合: 1つのWorker（`construction-dx-idea-api`）が `[assets]`（Workers Static Assets、SPA fallback、`run_worker_first=["/api/*"]`）でSPAと `/api/*` を `https://dxidea.mirai-dx-platform.com` 上で配信する。Cloudflare Pages分離配信（`frontend:deploy` / `CLOUDFLARE_PAGES_PROJECT`）は廃止。

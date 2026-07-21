@@ -24,7 +24,7 @@
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
 | 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
-| 🌐 Release | **Stage Aデプロイ準備完了**（2026-07-21） | wrangler認証（`CLOUDFLARE_API_TOKEN`）が解消され、同一オリジン構成（WorkerがSPA+APIを `dxidea.mirai-dx-platform.com` で配信）と段階リリース（`RELEASE_STAGE=pre-access`）を実装。Stage A（外殻公開、APIはfail-close 401/503）はマージY承認後にCTOが自律実行、Stage B（Access/DB/AI有効化）は人間作業を含む。手順は `docs/23_release_deploy_runbook.md` §1.6・§12参照。 |
+| 🌐 Release | 🚀 **Stage A本番稼働中**（2026-07-21） | 本番URL: **https://dxidea.mirai-dx-platform.com**（v0.1.0、PR #18 → `2da4055`）。同一オリジン構成でWorkerがSPA+APIを配信。Stage A中のAPIはfail-close（401/503）で認証・データ・AIは未接続。Neonプロジェクト作成+migration適用済み。デプロイ後smoke・release:gate PASS。次はStage B（Access/DB/AI有効化、`docs/23_release_deploy_runbook.md` §12） |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -53,6 +53,8 @@ flowchart TD
 | 2026-07-21 | `RELEASE_STAGE` 段階モード検証 | ✅ PASS（pre-access緩和 / full従来動作 / 不正値fail-fast / placeholder拒否） |
 | 2026-07-21 | `RELEASE_STAGE=pre-access npm run release:monitor` | ✅ PASS 9チェック（DNS未解決は初回デプロイ前の想定内として許容） |
 | 2026-07-21 | `wrangler dev` ローカル実動 | 🚫 BLOCKED（workerdが開発機sandboxで起動不可。dry-run＋デプロイ後smokeで代替） |
+| 2026-07-21 | **Stage A本番デプロイ** | 🚀 完了。PR #18 merge（`2da4055`）→ tag `v0.1.0` → Neon作成+migration（11テーブル）→ `release:deploy`（Version `eb7807c5`、custom domain自動登録） |
+| 2026-07-21 | デプロイ後smoke / `release:gate` | ✅ PASS（`GET /` HTML 200+識別子、`/api/health` 200、`/api/me` 401、境界401。gateフル通過） |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>

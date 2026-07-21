@@ -7,14 +7,18 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "development"
   },
-  "goal": "Stage A本番デプロイ（同一オリジン外殻公開）の実施。PR（issue-6/stage-a-same-origin-deploy）のマージY承認後、Neonプロジェクト作成・migration適用・RELEASE_STAGE=pre-access release:deploy・デプロイ後smokeまでCTOが自律実行する。Stage B（Access/DB/AI有効化）は人間作業を含む後続フェーズ。",
-  "phase": "Review",
+  "goal": "Stage A本番デプロイ完了（2026-07-21、v0.1.0稼働中）。次GoalはStage B: Cloudflare Accessアプリ作成（人間）→CF_ACCESS_*反映PR→Neonロールパスワードリセット+DATABASE_URL投入（人間）→RELEASE_STAGE=full release:gate/deploy でProduction Readyへ。",
+  "phase": "Monitor",
   "deploy": {
     "ready": true,
     "ready_at": "2026-07-14",
-    "ready_note": "2026-07-21更新: wrangler認証（CLOUDFLARE_API_TOKEN）解消を確認し、同一オリジン構成（Worker assets+API）と段階リリース（RELEASE_STAGE=pre-access/full）を実装。Stage Aデプロイはverify・dry-run・段階モード検証まで完了しマージY承認待ち。手順はdocs/23_release_deploy_runbook.md §1.6・§12参照。",
+    "ready_note": "Stage A本番デプロイ実施済み（2026-07-21）。本番URL https://dxidea.mirai-dx-platform.com、Worker construction-dx-idea-api、Version eb7807c5-b93e-451a-af41-c61c9891d9b7（2026-07-21T09:57:47Z、100%）、tag v0.1.0（merge 2da4055、PR #18）。デプロイ後smoke 6チェックPASS・release:gate PASS。",
+    "stage_a_deployed_at": "2026-07-21",
+    "stage_a_version_id": "eb7807c5-b93e-451a-af41-c61c9891d9b7",
+    "neon_project_id": "twilight-cloud-06040828",
+    "neon_region": "aws-us-east-2",
     "production_ready": false,
-    "production_ready_note": "production_ready=trueはStage B完了（Cloudflare Accessアプリ作成・CF_ACCESS_*反映・DATABASE_URL投入・RELEASE_STAGE未指定のrelease:gate成功）時点で更新する。Stage A完了時点は外殻公開（APIはfail-close 401/503）でありproduction_readyではない。Accessアプリ作成は現APIトークンの権限外のため人間のダッシュボード作業（ユーザー決裁2026-07-21: 初回はAccessなし公開を承認済み）。"
+    "production_ready_note": "production_ready=trueはStage B完了（Cloudflare Accessアプリ作成・CF_ACCESS_*反映・Neonロールパスワードリセット後のDATABASE_URL投入・RELEASE_STAGE=fullのrelease:gate成功）時点で更新する。Stage A稼働中はAPIがfail-close 401/503の外殻公開。Accessアプリ作成とSecrets投入は人間作業（docs/23 §12 Stage B参照）。"
   },
   "kpi": {
     "success_rate_target": 0.9,
@@ -23,7 +27,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-07-21",
-    "verified_by": "branch issue-6/stage-a-same-origin-deploy: 同一オリジン構成+RELEASE_STAGE実装後に npm run verify（lint/test fail0/build/production build/security scan）PASS、worker:deploy:dry-run PASS（assets 7ファイル認識）、段階モード6ケース実機検証PASS、release:monitor（pre-access）9チェックPASS（wrangler auth authenticated含む）"
+    "verified_by": "main 2da4055 (PR #18) 時点: verify/dry-run/npm audit 0件/CI green/独立レビュー+CodeRabbit指摘全対応ののちY承認でsquash merge。Stage A本番デプロイ後、実URLでsmoke 6チェックPASS（GET / HTML200+識別子、/api/health 200、/api/me 401、境界401）、release:gateフル通過"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -40,8 +44,8 @@
     {
       "number": 6,
       "title": "P1: Production deployment settings and real environment validation",
-      "status": "stage_a_pr_pending_merge_approval",
-      "note": "2026-07-21: wrangler認証解消を確認。ユーザー決裁（Neon作成承認ap-southeast-1/同一オリジン統合/初回Accessなし公開/管理者メール）に基づきStage A構成PR（issue-6/stage-a-same-origin-deploy）を作成。マージY承認後にNeon作成→migration→RELEASE_STAGE=pre-access release:deploy→smokeをCTOが自律実行。Stage B（Access/Secrets）はdocs/23 §12参照。"
+      "status": "stage_a_deployed_stage_b_pending",
+      "note": "2026-07-21: Stage A本番デプロイ完了（PR #18→2da4055、v0.1.0、Version eb7807c5、Neon twilight-cloud-06040828 us-east-2へmigration適用、smoke/gate PASS）。残りはStage B: 【人間】Accessアプリ作成→AUD共有、【人間】Neonロールパスワードリセット+DATABASE_URL投入、【CTO】CF_ACCESS_*反映PR→RELEASE_STAGE=full gate/deploy。手順はdocs/23 §12。"
     }
   ],
   "blocked_issues": [],
