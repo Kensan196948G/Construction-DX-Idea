@@ -672,7 +672,7 @@ a:hover { text-decoration: underline; }
           </div>
           <div style="display:flex;flex-direction:column;gap:5px;">
             <label style="font-size:12px;font-weight:600;color:#5A6678;">月間利用上限(回)</label>
-            <input type="number" min="0" step="1" value="{{ adminSettings.monthlyCap }}" onChange="{{ onCapChange }}" style="font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;width:100%;outline:none;box-sizing:border-box;"></input>
+            <input type="text" inputmode="numeric" pattern="[0-9]*" value="{{ adminSettings.monthlyCap }}" onChange="{{ onCapChange }}" style="font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;width:100%;outline:none;box-sizing:border-box;"></input>
           </div>
           <div>
             <div style="display:flex;justify-content:space-between;font-size:11.5px;color:#5A6678;margin-bottom:6px;"><span>今月の利用状況</span><span style="font-family:'IBM Plex Mono',monospace;">{{ adminSettings.used }} / {{ adminSettings.monthlyCap }}回 ({{ usagePercent }}%)</span></div>

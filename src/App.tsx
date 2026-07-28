@@ -18,6 +18,10 @@ import type { IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
 
 const designPath = "/design/construction-dx-idea.html";
 const workflowBindIntervalMs = 700;
+// Initial-data retry: 5s, 10s, 20s, 40s, 80s, then stop — an unreachable API
+// must not poll forever (#26 flooded the console at a fixed 5s interval).
+const initialDataMaxRetries = 5;
+const initialDataRetryBaseMs = 5000;
 
 type StandaloneComponent = {
   state: StandaloneState;
@@ -43,6 +47,7 @@ type StandaloneComponent = {
   __bridgeRoles?: string[];
   __bridgeBusy?: Record<string, boolean>;
   __bridgeDailyLimit?: number;
+  __bridgeRetryCount?: number;
 };
 
 export function App() {
@@ -182,10 +187,22 @@ async function loadInitialData(component: StandaloneComponent) {
   }
 
   if (shouldRetry) {
+    const attempt = (component.__bridgeRetryCount ?? 0) + 1;
+    component.__bridgeRetryCount = attempt;
+    if (attempt > initialDataMaxRetries) {
+      showToast(
+        component,
+        "サーバーへの接続に繰り返し失敗したため、自動再試行を停止しました。ページを再読み込みしてください。",
+      );
+      return;
+    }
+    const delayMs = initialDataRetryBaseMs * 2 ** (attempt - 1);
     window.setTimeout(() => {
       component.__hostDataLoaded = false;
       void loadInitialData(component);
-    }, 5000);
+    }, delayMs);
+  } else {
+    component.__bridgeRetryCount = 0;
   }
 }
 
