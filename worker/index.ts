@@ -368,7 +368,26 @@ function getDb(env: Env) {
   if (!env.DATABASE_URL) {
     throw new ApiError("DATABASE_NOT_CONFIGURED", "DATABASE_URL is not configured.", 503);
   }
+  // Malformed values must never reach neon(): its error message echoes the raw
+  // input, and a malformed value is exactly the case where that input may be a
+  // bare password instead of a URL (production incident, 2026-07-21 / #25).
+  if (!isValidDatabaseUrl(env.DATABASE_URL)) {
+    throw new ApiError(
+      "DATABASE_MISCONFIGURED",
+      "DATABASE_URLの形式が不正です。Secretの値を確認してください。",
+      503,
+    );
+  }
   return neon(env.DATABASE_URL);
+}
+
+function isValidDatabaseUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "postgres:" || url.protocol === "postgresql:";
+  } catch {
+    return false;
+  }
 }
 
 function resolveCorsOrigin(origin: string, env: Env): string | undefined {
@@ -1166,6 +1185,7 @@ function sanitizeLog(error: unknown) {
     .replace(/xox[baprs]-[A-Za-z0-9-]+/g, "[SLACK_TOKEN]")
     .replace(/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+/g, "[SLACK_WEBHOOK_URL]")
     .replace(/\bpostgres(?:ql)?:\/\/[^\s"'<>]+/gi, "[DATABASE_URL]")
+    .replace(/\bnpg_[A-Za-z0-9]+/g, "[NEON_PASSWORD]")
     .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [TOKEN]")
     .replace(
       /\b(api[-_ ]?key|token|secret|password|passwd|pwd)[=:]\s*[^\s"',;]+/gi,
@@ -1186,6 +1206,7 @@ class ApiError extends Error {
 export const workerSecurityTestHooks = {
   estimateAiCost,
   inferRoles,
+  isValidDatabaseUrl,
   resolveCorsOrigin,
   sanitizeLog,
   verifyAccessJwt,
@@ -1200,6 +1221,12 @@ type MinimalExecutionContext = {
 export default {
   fetch: (request: Request, env: Env, ctx: MinimalExecutionContext) => app.fetch(request, env, ctx),
   scheduled: (_controller: unknown, env: Env, ctx: MinimalExecutionContext) => {
-    ctx.waitUntil(retrySlackNotifications(env));
+    // A rejection escaping waitUntil is logged raw by the runtime, bypassing
+    // sanitizeLog — keep this catch even though the retry has its own.
+    ctx.waitUntil(
+      retrySlackNotifications(env).catch((error: unknown) => {
+        console.error("Scheduled retry failed", sanitizeLog(error));
+      }),
+    );
   },
 };

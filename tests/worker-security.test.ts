@@ -192,6 +192,33 @@ describe("worker security helpers", () => {
     assert.match(sanitized, /Bearer \[TOKEN]/);
   });
 
+  it("masks bare Neon passwords that are not valid connection URLs", () => {
+    // Regression for #25: a bare password pasted as DATABASE_URL does not
+    // match the postgres:// pattern and used to pass through unmasked.
+    const barePassword = "npg_" + "AbCdEf123456";
+    const sanitized = workerSecurityTestHooks.sanitizeLog(
+      `NeonDbError: neon() is not a valid URL. Connection string: ${barePassword}`,
+    );
+
+    assert.equal(sanitized.includes(barePassword), false);
+    assert.match(sanitized, /\[NEON_PASSWORD]/);
+  });
+
+  it("accepts only postgres connection URLs for the database configuration", () => {
+    const valid = "postgres" + "ql://user:password" + "@db.example/app?sslmode=require";
+    assert.equal(workerSecurityTestHooks.isValidDatabaseUrl(valid), true);
+    assert.equal(
+      workerSecurityTestHooks.isValidDatabaseUrl("postgres" + "://user:pw" + "@host/db"),
+      true,
+    );
+    assert.equal(workerSecurityTestHooks.isValidDatabaseUrl("npg_" + "AbCdEf123456"), false);
+    assert.equal(
+      workerSecurityTestHooks.isValidDatabaseUrl("mysql" + "://user:pw" + "@host/db"),
+      false,
+    );
+    assert.equal(workerSecurityTestHooks.isValidDatabaseUrl("not a url"), false);
+  });
+
   it("verifies a valid Cloudflare Access JWT against JWKS", async () => {
     const { jwt, jwks } = await createAccessJwt();
     const testEnv = {
