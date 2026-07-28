@@ -100,3 +100,37 @@ MVPでは手動登録を推奨する。
   Worker本体と同一デプロイ（`wrangler deploy`）で `https://dxidea.mirai-dx-platform.com` から配信される。
 - 旧構成（Cloudflare Pages分離配信、`CLOUDFLARE_PAGES_PROJECT`）は2026-07-21に廃止した。
   詳細は `docs/23_release_deploy_runbook.md` §7 を参照。
+
+## 8. 現行本番構成（as-built、2026-07-28時点）
+
+Secret値は記載しない。名前と所在のみを正とする。
+
+### Cloudflare
+
+| 項目 | 値 |
+|---|---|
+| Worker | `construction-dx-idea-api`（SPA静的資産を同梱、同一オリジン配信） |
+| Custom Domain | `dxidea.mirai-dx-platform.com`（zone: `mirai-dx-platform.com`、deploy時自動登録） |
+| Access | team `winter-lake-f4c9.cloudflareaccess.com`、アプリ「dxidea」全パス保護。Allow: `SYSTEM_ADMIN_EMAILS` のメール + `mirai-const.co.jp` ドメイン |
+| Access検証vars | `CF_ACCESS_CERTS_URL` / `CF_ACCESS_AUD` / `CF_ACCESS_ISSUER`（公開検証パラメータ、wrangler.toml管理） |
+| Secrets（名前のみ） | `DATABASE_URL`（必須）、`ANTHROPIC_API_KEY`（AI利用時必須・登録済み）、`SLACK_WEBHOOK_URL`（任意・未登録） |
+| AI設定vars | `AI_ENABLED=true`、`AI_MODEL=claude-sonnet-5`（許可リスト: claude-sonnet-5 / claude-opus-5） |
+| cron | `*/10 * * * *`（Slack通知outboxの再送。SLACK_WEBHOOK_URL未設定時は即return） |
+| 監視 | `npx wrangler tail construction-dx-idea-api --format pretty`（診断の定石）。ログはsanitizeLogで秘密値マスク |
+
+### Neon
+
+| 項目 | 値 |
+|---|---|
+| Project | `twilight-cloud-06040828`（region: aws-us-east-2） |
+| Database / Branch | `neondb` / デフォルトbranch（本番正本） |
+| スキーマ | migration 001適用済み・11テーブル（ideas, ai_settings, audit_logs, notification_outbox, usage_limits ほか） |
+| 接続 | Worker Secretの `DATABASE_URL` のみ（ローカル・リポジトリへは保持しない設計。release:monitorのローカル実行でDATABASE_URL未設定FAILが出るのは想定内） |
+| 整合性確認（2026-07-28） | ai_settings最新行 model=claude-sonnet-5/enabled/connected、notification_outbox failed=0、DBサイズ約8MB |
+
+### 環境境界
+
+| 環境 | 実体 |
+|---|---|
+| local | `npm run dev`（モックAPI・system_admin自動付与、`http://<LAN-IP>:5173-5174`） |
+| production | 上記Worker＋Neon（唯一の本番。preview環境は未使用、必要時はWorkers Preview URLを検討） |

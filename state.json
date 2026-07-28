@@ -7,7 +7,7 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "Production Ready達成（2026-07-21、Stage A+B完了、本番フル稼働）。以後は無期限保守フェーズ: 監視・軽微改善・残Issue（#14 idea永続化、#15 APIキーサーバーサイド化、#16 support.js、#25/#26 改善）の計画的消化。",
+  "goal": "保守フェーズ: 2026-07-28保守サイクル完了（AI機能有効化、AI設定UI改善#28、モデルID統一#30、securityログ露出遮断#25、フロント堅牢化#26、依存監査0件化）。残Issue: #14（idea永続化、次回最優先）・#15（APIキーサーバーサイド化）・#16（support.js上流・保留）。",
   "phase": "Monitor",
   "deploy": {
     "ready": true,
@@ -20,7 +20,11 @@
     "neon_region": "aws-us-east-2",
     "production_ready": true,
     "production_ready_at": "2026-07-21",
-    "production_ready_note": "Stage B完了。Cloudflare Access有効（team winter-lake-f4c9、許可: 管理者メール+mirai-const.co.jpドメイン）、CF_ACCESS_*反映済み（PR #22）、DATABASE_URL投入済み（パスワードリセット後のURL全体、人間実行）。実ユーザー（system_admin）のブラウザE2Eで全API 200・wrangler tailでエラー0件を確認。RELEASE_STAGE=fullのJWT付きrelease:gateは未実行（Access JWT必要）で、実ユーザーE2E確認で代替（JWT提供があれば実行可能）。AI機能はAI_ENABLED=false・ANTHROPIC_API_KEY未投入のまま（有効化は任意の後続作業）。"
+    "production_ready_note": "Stage B完了。Cloudflare Access有効（team winter-lake-f4c9、許可: 管理者メール+mirai-const.co.jpドメイン）、CF_ACCESS_*反映済み（PR #22）、DATABASE_URL投入済み（パスワードリセット後のURL全体、人間実行）。実ユーザー（system_admin）のブラウザE2Eで全API 200・wrangler tailでエラー0件を確認。RELEASE_STAGE=fullのJWT付きrelease:gateは未実行（Access JWT必要）で、実ユーザーE2E確認で代替（JWT提供があれば実行可能）。AI機能はAI_ENABLED=false・ANTHROPIC_API_KEY未投入のまま（有効化は任意の後続作業）。",
+    "ai_enabled_at": "2026-07-28",
+    "ai_enabled_note": "PR #29でAI_ENABLED=true（Version d433ecf6）→ ユーザーがANTHROPIC_API_KEYをwrangler secret putで登録（Version 3828f822自動発行）→ PR #31でモデルIDをclaude-sonnet-5へ統一（Version a5f0b1b8）。本番で接続テスト成功・ai_settings最新行connected。",
+    "latest_version_id": "475f4c50-e5df-4689-9d8f-c94efcbdd929",
+    "maintenance_2026_07_28": "PR #29/#31/#32/#33を全てY承認・CI green・squash mergeで本番反映（最終Version 475f4c50）。PR #34は文書・依存同期（デプロイ不要）。Observability直近3hエラー0件。"
   },
   "kpi": {
     "success_rate_target": 0.9,
@@ -28,8 +32,8 @@
     "test_pass_rate": 1.0,
     "security_critical": 0,
     "blocker_count": 0,
-    "verified_at": "2026-07-21",
-    "verified_by": "Stage B完了時点（main 3e354d5 / Worker最新版）: PR #22（CF_ACCESS_*）・PR #24（/api二重付与404修正、test 28/28）をCI green+Y承認でmerge。DATABASE_URL投入後、実ユーザー（system_admin）ブラウザE2Eで /api/me・/api/ideas・/api/admin/ai-settings 全200、wrangler tail 50秒間エラー0件を確認"
+    "verified_at": "2026-07-28",
+    "verified_by": "保守サイクル完了（main bcd8c66 + PR #34）: PR #29/#31/#32/#33をCI green+Y承認でmerge・本番デプロイ（最終Version 475f4c50）。Neon整合性PASS、release:monitor 13/14 PASS（DATABASE_URLローカル未設定は設計どおり）、Cloudflare Observability直近3hエラー0件、npm audit 0件（dev含む）"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -41,7 +45,20 @@
     "auto_issue_generation": true,
     "self_evolution": true
   },
-  "completed_issues": [2, 3, 4, 5, 6, 12, 20, 23],
+  "completed_issues": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    12,
+    20,
+    23,
+    28,
+    30,
+    25,
+    26
+  ],
   "in_progress_issues": [],
   "blocked_issues": [],
   "stale_prs": [],
@@ -52,7 +69,8 @@
       "外部インフラ依存でBLOCKEDなIssueに対し、進捗がないまま同一内容の状況報告コメントを繰り返すとIssueが読みにくくなる（Issue #6に1日で20件超の類似コメントが蓄積した）。状態不変ならコメント追加を控え、state.jsonの記録のみで十分。",
       "wrangler dev（workerd/V8）は本開発機のsandbox環境では『Fatal process out of memory: SegmentedTable::InitializeTable』で起動不可（2026-07-21確認）。Chrome本体も--versionでSIGTRAPクラッシュ（カーネル6.17とChromium系V8バイナリの非互換、Node.jsは無事）。ローカル実動確認はdry-run+デプロイ後実測、ブラウザ確認はユーザーの実ブラウザで代替する。",
       "NeonのReset password直後の画面はパスワード単体にもCopyボタンがあり、接続URL全体と取り違えやすい（2026-07-21実発生: npg_...単体がDATABASE_URLに投入され全API 500）。案内時は『postgresql://で始まる長い1行』と見た目で指定する。",
-      "@neondatabase/serverlessのneon()は不正な接続文字列をエラーメッセージに平文で含め、Workerの未処理例外ログ（wrangler tail）にそのまま出る。応答側のsanitizeはログ経路に効かない（Issue #25でトラック）。"
+      "@neondatabase/serverlessのneon()は不正な接続文字列をエラーメッセージに平文で含め、Workerの未処理例外ログ（wrangler tail）にそのまま出る。応答側のsanitizeはログ経路に効かない（Issue #25でトラック）。",
+      "sanitizeLogのマスクは『正しい形式』のパターンだけでは不十分。壊れた形式の秘密値（npg_パスワード単体等）はpostgres://パターンに一致せず素通りする。発生源での形式検証（getDbのURL検証）と個別トークンパターンの両方が必要（Issue #25/PR #32）。"
     ],
     "success_patterns": [
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
@@ -63,7 +81,37 @@
       "Workers Static Assets（[assets] + run_worker_first=[\"/api/*\"]）でSPAとAPIを同一オリジン統合すると、Access JWTがクロスオリジンfetchに乗らない問題と、worker/index.tsのCORS allowHeadersにCF-Access-Jwt-Assertionが無い問題を同時に回避できる（2026-07-21採用）。",
       "リリースゲートの段階緩和は明示オプトイン（RELEASE_STAGE=pre-access）時のみ適用し、未指定デフォルト（full）は従来どおり全必須・未知値はfail-fastにすることで、後方互換と誤用防止を両立できる。",
       "Cloudflare AccessのAUD/チームドメインは、保護URLへの無認証GETの302 Location（kidパラメータ+Cloudflare署名meta JWTのaud）から取得できる。ダッシュボード正値との突合を原則としつつ、実ユーザーのログイン成功がend-to-endの最終検証になる。",
-      "本番のエラー診断はwrangler tailが最速。ブラウザがリトライポーリング中なら、ユーザー操作なしでも数十秒のtailで実エラー（例: 不正な接続文字列）を特定できる。"
+      "本番のエラー診断はwrangler tailが最速。ブラウザがリトライポーリング中なら、ユーザー操作なしでも数十秒のtailで実エラー（例: 不正な接続文字列）を特定できる。",
+      "wrangler secret putはコード再デプロイなしで新Versionを自動発行する（既存コード+新Secret）。AI有効化はvars切替PR→secret put→画面確認の順で、キー未登録間はfail-close(503)のため課金リスクなく段階投入できる（2026-07-28実証）。",
+      "standalone HTMLテンプレートはブラウザが素のHTMLを先にパースするため、number inputのvalueプレースホルダーはパース警告になる。text+inputmode=numericで根絶できる（Issue #26）。",
+      "npm audit --omit=devで本番依存を先に確認すると、dev限定脆弱性の対応緊急度を正しく判定できる。eslint 9→10はflat config済みなら小さな更新で、audit 0件を達成（2026-07-28）。"
     ]
+  },
+  "open_issues_triage": {
+    "25": {
+      "severity": "High(security)",
+      "impact": "解消済み",
+      "plan": "PR #32マージ・本番反映済み（2026-07-28）"
+    },
+    "26": {
+      "severity": "Medium",
+      "impact": "解消済み",
+      "plan": "PR #33マージ・本番反映済み（2026-07-28）"
+    },
+    "14": {
+      "severity": "Medium(bug)",
+      "impact": "idea登録の追加フィールドが保存されない（機能ギャップ）",
+      "plan": "次回セッションでDB永続化を実装。additive migration+Codex対抗レビュー必須"
+    },
+    "15": {
+      "severity": "Medium(security)",
+      "impact": "入力〜保存間にAPIキーがクライアントstateに滞在",
+      "plan": "即時POSTフロー+configured真偽のみ返す設計へ。PR #29でテスト専用であることを明示済み（暫定緩和）"
+    },
+    "16": {
+      "severity": "Low",
+      "impact": "dc-runtime生成物のタイムアウト再試行不可（稀）",
+      "plan": "上流生成物のため保留。再発時に評価"
+    }
   }
 }

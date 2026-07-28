@@ -244,6 +244,16 @@ Stage B以降:
 
 ## 11. 実行結果履歴
 
+### 2026-07-28（保守: AI機能有効化＋UI改善＋モデルID統一）
+
+| 項目 | 結果 |
+|---|---|
+| PR #29（Issue #28） | ✅ AI利用設定の接続テストが入力キーを無視するバグ修正、↺リセットボタン追加、サーバー登録キー状態表示、`AI_ENABLED=true` 切替。Version `d433ecf6` |
+| `ANTHROPIC_API_KEY` 投入 | ✅ ユーザーが `wrangler secret put` で実行（Secret登録により新Version `3828f822` 自動発行。再デプロイ不要が実証された） |
+| PR #31（Issue #30） | ✅ モデルIDをClaude 5世代へ統一（サーバーデフォルト`claude-sonnet-5`、選択肢にOpus 5）、Worker許可リスト検証追加、旧ID行の読み出し補正。Version `a5f0b1b8` |
+| 本番検証 | ✅ 接続テスト成功（サーバー登録キー）、AI利用設定保存成功、`wrangler tail` 25分間エラー0件。Neon: `ai_settings` 最新行 model=`claude-sonnet-5`/enabled/connected |
+| 教訓 | Secret登録は新Versionを自動発行するためコード再デプロイ不要。マスク処理は「壊れた形式の秘密値」も想定する（`npg_`単体はpostgres://パターン非一致で素通り→PR #32で恒久対策） |
+
 ### 2026-07-21（Stage B完了 — Production Ready）
 
 | 項目 | 結果 |
