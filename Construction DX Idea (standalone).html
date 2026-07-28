@@ -681,13 +681,16 @@ a:hover { text-decoration: underline; }
           <div style="display:flex;flex-direction:column;gap:5px;">
             <label style="font-size:12px;font-weight:600;color:#5A6678;">APIキー</label>
             <input type="password" autocomplete="off" value="{{ adminSettings.apiKey }}" onChange="{{ onApiKeyChange }}" placeholder="sk-ant-•••••••••••••••••••" style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;width:100%;outline:none;box-sizing:border-box;"></input>
+            <div style="font-size:11px;color:#8A97A8;">入力したキーは接続テストにのみ使用され、この画面からは保存されません。</div>
+            <div style="font-size:11px;color:#5A6678;font-weight:500;">{{ adminKeyStatusLabel }}</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button onClick="{{ saveApiKey }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">💾 API接続を保存</button>
             <button onClick="{{ runConnectionTest }}" disabled="{{ adminSettings.testing }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#5A6678;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">{{ testButtonLabel }}</button>
+            <button onClick="{{ resetApiKeyInput }}" disabled="{{ adminSettings.testing }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#5A6678;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">↺ リセット</button>
           </div>
           <sc-if value="{{ adminApiKeySavedMsg }}" hint-placeholder-val="{{ false }}">
-            <div style="background:#E4F3EC;color:#1F8255;padding:9px 13px;border-radius:8px;font-size:12.5px;font-weight:500;">✅ APIキーを保存しました</div>
+            <div style="background:#E4F3EC;color:#1F8255;padding:9px 13px;border-radius:8px;font-size:12.5px;font-weight:500;">✅ AI利用設定を保存しました（キー本体はCloudflare Secretで管理されます）</div>
           </sc-if>
           <sc-if value="{{ adminTestSuccess }}" hint-placeholder-val="{{ false }}">
             <div style="background:#E4F3EC;color:#1F8255;padding:9px 13px;border-radius:8px;font-size:12.5px;font-weight:500;">✅ 接続成功: Claude API に到達できました</div>
@@ -888,7 +891,7 @@ class Component extends DCLogic {
     },
     wizard: { questions: [], answers: [], draftAnswer: '', thinking: false, sourceIntake: null },
     reviewDraft: null,
-    adminSettings: { model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false },
+    adminSettings: { model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false, keyLast4: '', keyStatus: 'not_configured' },
     commentDraft: '',
     users: this.makeSeedUsers(),
     integrations: this.makeSeedIntegrations(),
@@ -992,6 +995,10 @@ class Component extends DCLogic {
     this.setState((s) => ({ adminSettings: { ...s.adminSettings, apiKeySaved: true, apiKeySavedMsg: true } }));
     this.pushAudit('設定変更', 'Claude APIキーを更新');
     setTimeout(() => this.setState((s) => ({ adminSettings: { ...s.adminSettings, apiKeySavedMsg: false } })), 3200);
+  };
+
+  resetApiKeyInput = () => {
+    this.setState((s) => ({ adminSettings: { ...s.adminSettings, apiKey: '', testing: false, testResult: null, apiKeySaved: false, apiKeySavedMsg: false } }));
   };
 
   generateQuestions(intake) {
@@ -1409,6 +1416,9 @@ class Component extends DCLogic {
       : 'position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.2);';
     const adminEnabledLabel = a.enabled ? '有効: AIによる整理・壁打ちが利用できます' : '停止中: AI機能は現在利用できません';
     const testButtonLabel = a.testing ? '接続確認中…' : '🔌 接続テスト';
+    const adminKeyStatusLabel = a.keyLast4
+      ? `サーバー登録キー: ••••${a.keyLast4}（状態: ${a.keyStatus === 'connected' ? '接続確認済み' : a.keyStatus === 'error' ? 'エラー' : a.keyStatus === 'disabled' ? '停止中' : '未確認'}）`
+      : 'サーバー登録キー: 未登録（実際のAI利用にはCloudflare Secretへの登録が必要です）';
     const adminTestSuccess = a.testResult === 'success' && !a.testing;
 
     const auditRows = s.auditLog.map((e) => {
@@ -1475,6 +1485,7 @@ class Component extends DCLogic {
       onModelChange: this.updateAdmin('model'), onCapChange: this.updateAdmin('monthlyCap'),
       onApiKeyChange: this.updateAdmin('apiKey'), saveApiKey: this.saveApiKey,
       toggleAiEnabled: this.toggleAiEnabled, runConnectionTest: this.runConnectionTest,
+      resetApiKeyInput: this.resetApiKeyInput, adminKeyStatusLabel,
 
       userRows, integrationRows,
 

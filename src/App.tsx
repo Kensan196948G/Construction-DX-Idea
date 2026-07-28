@@ -33,6 +33,7 @@ type StandaloneComponent = {
   advanceStage?: (id: string | number) => void;
   goTo?: (view: string) => void;
   runConnectionTest?: () => void;
+  resetApiKeyInput?: () => void;
   pushAudit?: (action: string, detail: string) => void;
   __hostWorkflowBound?: boolean;
   __hostDataLoaded?: boolean;
@@ -116,6 +117,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   };
   component.runConnectionTest = () => {
     void testSavedAiConnectionThroughApi(component);
+  };
+  component.resetApiKeyInput = () => {
+    void resetApiKeyInputThroughApi(component);
   };
   component.goTo = (view: string) => {
     if (["adminSettings", "auditLog"].includes(view) && !hasRole(component, "system_admin")) {
@@ -399,44 +403,55 @@ async function advanceStageThroughApi(component: StandaloneComponent, id: string
 }
 
 async function testSavedAiConnectionThroughApi(component: StandaloneComponent) {
-  if (!startBridgeAction(component, "runConnectionTest")) return;
+  if (!startBridgeAction(component, "aiSettings")) return;
   if (!hasRole(component, "system_admin")) {
     showToast(component, "AI接続テストにはシステム管理者権限が必要です。");
-    finishBridgeAction(component, "runConnectionTest");
+    finishBridgeAction(component, "aiSettings");
     return;
   }
 
   const model = component.state.adminSettings.model;
+  const typedKey = component.state.adminSettings.apiKey?.trim() || undefined;
+  const keySourceLabel = typedKey ? "入力中のキー" : "サーバー登録キー";
   component.setState((state) => ({
     adminSettings: { ...state.adminSettings, testing: true, testResult: null },
   }));
 
   try {
-    const result = await api.testAiSettings(undefined, model);
+    const result = await api.testAiSettings(typedKey, model);
     component.setState((state) => ({
       adminSettings: {
         ...state.adminSettings,
         testing: false,
         testResult: result.ok ? "success" : "error",
       },
-      toast: { message: result.ok ? `接続成功: ${result.message}` : `接続失敗: ${result.message}` },
+      toast: {
+        message: result.ok
+          ? `接続成功（${keySourceLabel}）: ${result.message}`
+          : `接続失敗（${keySourceLabel}）: ${result.message}`,
+      },
     }));
-    component.pushAudit?.("AI接続テスト", result.ok ? "Claude API接続テスト成功" : "Claude API接続テスト失敗");
+    component.pushAudit?.(
+      "AI接続テスト",
+      result.ok
+        ? `Claude API接続テスト成功（${keySourceLabel}）`
+        : `Claude API接続テスト失敗（${keySourceLabel}）`,
+    );
   } catch (error) {
     component.setState((state) => ({
       adminSettings: { ...state.adminSettings, testing: false, testResult: "error" },
       toast: { message: toErrorMessage(error) },
     }));
   } finally {
-    finishBridgeAction(component, "runConnectionTest");
+    finishBridgeAction(component, "aiSettings");
   }
 }
 
 async function saveApiKeyThroughApi(component: StandaloneComponent) {
-  if (!startBridgeAction(component, "saveApiKey")) return;
+  if (!startBridgeAction(component, "aiSettings")) return;
   if (!hasRole(component, "system_admin")) {
     showToast(component, "AI設定の変更にはシステム管理者権限が必要です。");
-    finishBridgeAction(component, "saveApiKey");
+    finishBridgeAction(component, "aiSettings");
     return;
   }
 
@@ -444,7 +459,7 @@ async function saveApiKeyThroughApi(component: StandaloneComponent) {
   const monthlyBudget = Number(monthlyCapRaw);
   if (monthlyCapRaw === "" || !Number.isFinite(monthlyBudget) || monthlyBudget < 0) {
     showToast(component, "月間利用上限には0以上の数値を入力してください。");
-    finishBridgeAction(component, "saveApiKey");
+    finishBridgeAction(component, "aiSettings");
     return;
   }
 
@@ -473,7 +488,11 @@ async function saveApiKeyThroughApi(component: StandaloneComponent) {
         apiKeySaved: true,
         apiKeySavedMsg: true,
       },
-      toast: { message: `AI利用設定を保存しました: ${settings.model}` },
+      toast: {
+        message: apiKey
+          ? `AI利用設定を保存しました: ${settings.model}（入力キーは接続確認のみに使用。実際の利用キーはCloudflare Secretで管理されます）`
+          : `AI利用設定を保存しました: ${settings.model}`,
+      },
     }));
     component.pushAudit?.("設定変更", "Claude APIキーを更新");
     window.setTimeout(() => {
@@ -484,7 +503,43 @@ async function saveApiKeyThroughApi(component: StandaloneComponent) {
   } catch (error) {
     showToast(component, toErrorMessage(error));
   } finally {
-    finishBridgeAction(component, "saveApiKey");
+    finishBridgeAction(component, "aiSettings");
+  }
+}
+
+async function resetApiKeyInputThroughApi(component: StandaloneComponent) {
+  if (!startBridgeAction(component, "aiSettings")) return;
+
+  component.setState((state) => ({
+    adminSettings: {
+      ...state.adminSettings,
+      apiKey: "",
+      testing: false,
+      testResult: null,
+      apiKeySaved: false,
+      apiKeySavedMsg: false,
+    },
+  }));
+
+  try {
+    if (hasRole(component, "system_admin")) {
+      const settings = await api.getAiSettings();
+      component.__bridgeDailyLimit = settings.dailyLimit;
+      component.setState((state) => ({
+        adminSettings: {
+          ...mapAiSettingsToStandalone(settings, state.adminSettings),
+          apiKey: "",
+          testResult: null,
+        },
+        toast: { message: "入力をリセットし、サーバーのAI利用設定を再取得しました。" },
+      }));
+    } else {
+      showToast(component, "入力をリセットしました。");
+    }
+  } catch (error) {
+    showToast(component, `入力はリセットしましたが、設定の再取得に失敗しました: ${toErrorMessage(error)}`);
+  } finally {
+    finishBridgeAction(component, "aiSettings");
   }
 }
 

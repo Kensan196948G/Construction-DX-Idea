@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildManualStructuredIdea,
   fromReviewDraft,
+  mapAiSettingsToStandalone,
   mapApiIdeaToStandalone,
   splitList,
   toAnswerRecord,
@@ -11,7 +12,8 @@ import {
   toReviewDraft,
   validateIssueInput,
 } from "../src/lib/standaloneBridge";
-import type { Idea } from "../src/lib/shared";
+import type { StandaloneState } from "../src/lib/standaloneBridge";
+import type { AiSettings, Idea } from "../src/lib/shared";
 
 describe("standalone WebUI bridge helpers", () => {
   it("keeps the free-text issue body in the API input", () => {
@@ -129,5 +131,69 @@ describe("standalone WebUI bridge helpers", () => {
     assert.equal(mapped.stage, "企画");
     assert.equal(mapped.apiStage, "draft");
     assert.equal(toApiStage("MVP"), "mvp");
+  });
+
+  it("maps server key state (keyLast4 / status) into admin settings", () => {
+    const current: StandaloneState["adminSettings"] = {
+      model: "claude-sonnet-5",
+      enabled: false,
+      monthlyCap: 100,
+      used: 0,
+      testing: false,
+      testResult: null,
+      apiKey: "typed-key",
+      apiKeySaved: false,
+      apiKeySavedMsg: false,
+      keyLast4: "",
+      keyStatus: "not_configured",
+    };
+    const settings: AiSettings = {
+      provider: "anthropic",
+      model: "claude-opus-4.8",
+      enabled: true,
+      status: "connected",
+      keyLast4: "ab12",
+      dailyLimit: 10,
+      monthlyBudget: 500,
+    };
+
+    const mapped = mapAiSettingsToStandalone(settings, current);
+    assert.equal(mapped.model, "claude-opus-4.8");
+    assert.equal(mapped.enabled, true);
+    assert.equal(mapped.monthlyCap, 500);
+    assert.equal(mapped.keyLast4, "ab12");
+    assert.equal(mapped.keyStatus, "connected");
+    assert.equal(mapped.testResult, "success");
+    // The typed key is carried through untouched — clearing it is the caller's decision.
+    assert.equal(mapped.apiKey, "typed-key");
+  });
+
+  it("defaults keyLast4 to empty and keeps prior test result when key is not configured", () => {
+    const current: StandaloneState["adminSettings"] = {
+      model: "claude-sonnet-5",
+      enabled: true,
+      monthlyCap: 100,
+      used: 3,
+      testing: false,
+      testResult: "error",
+      apiKey: "",
+      apiKeySaved: false,
+      apiKeySavedMsg: false,
+      keyLast4: "ab12",
+      keyStatus: "connected",
+    };
+    const settings: AiSettings = {
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+      enabled: false,
+      status: "not_configured",
+      dailyLimit: 10,
+      monthlyBudget: 100,
+    };
+
+    const mapped = mapAiSettingsToStandalone(settings, current);
+    assert.equal(mapped.keyLast4, "");
+    assert.equal(mapped.keyStatus, "not_configured");
+    assert.equal(mapped.testResult, "error");
   });
 });

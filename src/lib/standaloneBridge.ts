@@ -99,6 +99,8 @@ export type StandaloneState = {
     apiKey: string;
     apiKeySaved: boolean;
     apiKeySavedMsg: boolean;
+    keyLast4: string;
+    keyStatus: string;
   };
 };
 
@@ -328,6 +330,8 @@ export function mapAiSettingsToStandalone(
     enabled: settings.enabled,
     monthlyCap: settings.monthlyBudget,
     testResult: settings.status === "connected" ? "success" : current.testResult,
+    keyLast4: settings.keyLast4 ?? "",
+    keyStatus: settings.status,
   };
 }
 

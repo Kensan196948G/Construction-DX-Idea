@@ -21,7 +21,7 @@ crons = ["*/10 * * * *"]
 [vars]
 AI_PROVIDER = "claude"
 AI_MODEL = "claude-sonnet-4-5"
-AI_ENABLED = "false"
+AI_ENABLED = "true"
 DAILY_AI_LIMIT = "10"
 MAX_INPUT_CHARS = "2000"
 APP_BASE_URL = "https://dxidea.mirai-dx-platform.com"
