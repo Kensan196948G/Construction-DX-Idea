@@ -252,6 +252,9 @@ Stage B以降:
 | `ANTHROPIC_API_KEY` 投入 | ✅ ユーザーが `wrangler secret put` で実行（Secret登録により新Version `3828f822` 自動発行。再デプロイ不要が実証された） |
 | PR #31（Issue #30） | ✅ モデルIDをClaude 5世代へ統一（サーバーデフォルト`claude-sonnet-5`、選択肢にOpus 5）、Worker許可リスト検証追加、旧ID行の読み出し補正。Version `a5f0b1b8` |
 | 本番検証 | ✅ 接続テスト成功（サーバー登録キー）、AI利用設定保存成功、`wrangler tail` 25分間エラー0件。Neon: `ai_settings` 最新行 model=`claude-sonnet-5`/enabled/connected |
+| PR #32（Issue #25 security） | ✅ DB接続文字列・Neonパスワードのログ露出遮断（getDbのURL検証＋`npg_`マスク＋scheduledのsanitize catch）。回帰テスト3件追加 |
+| PR #33（Issue #26） | ✅ 初期データ取得を最大5回・指数バックオフ化＋number inputテンプレート警告解消 |
+| 最終デプロイ | ✅ PR #32/#33反映の本番デプロイ完了。**最終Version `475f4c50-e5df-4689-9d8f-c94efcbdd929`**（rollback先の直前Versionは `a5f0b1b8`）。Cloudflare Observability直近3hエラー0件 |
 | 教訓 | Secret登録は新Versionを自動発行するためコード再デプロイ不要。マスク処理は「壊れた形式の秘密値」も想定する（`npg_`単体はpostgres://パターン非一致で素通り→PR #32で恒久対策） |
 
 ### 2026-07-21（Stage B完了 — Production Ready）

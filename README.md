@@ -66,7 +66,7 @@ flowchart TD
 
 </details>
 
-> 💡 外部インフラ（Cloudflare DNS/Access、Neon本番接続、Secrets投入、wrangler認証）が未設定である限り `release:smoke`/`release:gate` はBLOCKEDのままです。これはコード側の問題ではなく、人間による外部アカウント操作が必要な領域です（詳細は [Issue #6](https://github.com/Kensan196948G/Construction-DX-Idea/issues/6)）。
+> ✅ 上記のBLOCKED（2026-07-14時点の外部インフラ未設定）は、2026-07-21のStage A/Bデプロイで全て解消済みです（履歴として保持。経緯は [Issue #6](https://github.com/Kensan196948G/Construction-DX-Idea/issues/6)）。
 
 ## 4. 付随ゲート（補足）
 
