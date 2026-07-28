@@ -248,12 +248,16 @@ app.get("/api/admin/ai-settings", async (c) => {
   return c.json(await getAiSettings(c.env));
 });
 
+// Model IDs this deployment is allowed to call on the Anthropic API. The UI
+// dropdown must stay in sync with this list (standalone HTML AI設定 screen).
+const allowedAiModels = ["claude-sonnet-5", "claude-opus-5"] as const;
+
 app.patch(
   "/api/admin/ai-settings",
   zValidator(
     "json",
     z.object({
-      model: z.string().min(1).max(120),
+      model: z.enum(allowedAiModels),
       enabled: z.boolean(),
       dailyLimit: z.number().int().min(0).max(10000),
       monthlyBudget: z.number().min(0).max(100000000),
@@ -297,7 +301,7 @@ app.patch(
 
 app.post(
   "/api/admin/ai-settings/test",
-  zValidator("json", z.object({ apiKey: z.string().optional(), model: z.string().optional() })),
+  zValidator("json", z.object({ apiKey: z.string().optional(), model: z.enum(allowedAiModels).optional() })),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
     requireSystemAdmin(user, c.env);
@@ -1124,9 +1128,15 @@ function toIsoString(value: unknown): string {
 
 function mapAiSettingsRow(row: Record<string, unknown>, env: Env): AiSettings {
   const enabled = Boolean(row.enabled) && env.AI_ENABLED === "true";
+  // Rows saved before the allowlist existed may hold retired model IDs;
+  // coerce them to the deployment default instead of calling the API with them.
+  const storedModel = String(row.model ?? env.AI_MODEL);
+  const model = (allowedAiModels as readonly string[]).includes(storedModel)
+    ? storedModel
+    : env.AI_MODEL;
   return {
     provider: String(row.provider ?? env.AI_PROVIDER),
-    model: String(row.model ?? env.AI_MODEL),
+    model,
     enabled,
     status: enabled && row.status === "connected" ? "connected" : enabled ? "error" : "disabled",
     keyLast4: row.key_last4 ? String(row.key_last4) : undefined,

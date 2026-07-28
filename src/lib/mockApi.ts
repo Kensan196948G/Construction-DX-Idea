@@ -67,7 +67,7 @@ const seedIdeas: Idea[] = [
 let ideas = [...seedIdeas];
 let mockSettings: AiSettings = {
   provider: "claude",
-  model: "claude-sonnet-4-5",
+  model: "claude-sonnet-5",
   enabled: false,
   status: "disabled",
   dailyLimit: 10,

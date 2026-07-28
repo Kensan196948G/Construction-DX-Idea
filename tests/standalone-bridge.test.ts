@@ -149,7 +149,7 @@ describe("standalone WebUI bridge helpers", () => {
     };
     const settings: AiSettings = {
       provider: "anthropic",
-      model: "claude-opus-4.8",
+      model: "claude-opus-5",
       enabled: true,
       status: "connected",
       keyLast4: "ab12",
@@ -158,7 +158,7 @@ describe("standalone WebUI bridge helpers", () => {
     };
 
     const mapped = mapAiSettingsToStandalone(settings, current);
-    assert.equal(mapped.model, "claude-opus-4.8");
+    assert.equal(mapped.model, "claude-opus-5");
     assert.equal(mapped.enabled, true);
     assert.equal(mapped.monthlyCap, 500);
     assert.equal(mapped.keyLast4, "ab12");

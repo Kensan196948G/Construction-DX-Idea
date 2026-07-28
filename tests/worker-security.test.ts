@@ -7,7 +7,7 @@ const env = {
   ANTHROPIC_API_KEY: "",
   SLACK_WEBHOOK_URL: "",
   AI_PROVIDER: "claude",
-  AI_MODEL: "claude-sonnet-4-5",
+  AI_MODEL: "claude-sonnet-5",
   AI_ENABLED: "false",
   DAILY_AI_LIMIT: "10",
   MAX_INPUT_CHARS: "2000",

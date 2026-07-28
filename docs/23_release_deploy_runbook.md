@@ -117,7 +117,7 @@ export SMOKE_CF_ACCESS_ADMIN_EMAIL=<システム管理者メール>
 任意:
 
 ```bash
-export SMOKE_ADMIN_TEST_MODEL=claude-sonnet-4-5
+export SMOKE_ADMIN_TEST_MODEL=claude-sonnet-5
 export SMOKE_ADMIN_TEST_API_KEY=<接続テストキー>
 export SMOKE_SLACK_WEBHOOK_TEST=<通知確認用Webhook>
 export SMOKE_REQUEST_TIMEOUT_MS=12000
