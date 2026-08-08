@@ -6,6 +6,7 @@ import type {
   AiSettingsPatch,
   DashboardMetrics,
   Idea,
+  IdeaHistory,
   IdeaStage,
   IssueInput,
   PrivacyFinding,
@@ -36,6 +37,10 @@ const seedIdeas: Idea[] = [
     stage: "mvp",
     createdBy: "demo.user@example.com",
     ownerId: "dx-team",
+    department: "土木工事部",
+    submitterName: "デモ太郎",
+    submitterEmail: "demo.user@example.com",
+    coordinationNeeded: "写真管理ルール調整が必要",
     createdAt: "2026-07-01T09:00:00.000Z",
     updatedAt: "2026-07-10T09:00:00.000Z",
     aiUsageCount: 3,
@@ -58,6 +63,10 @@ const seedIdeas: Idea[] = [
     mvpDoneDefinition: "1週間分の日報を紙転記なしで集計できること。",
     stage: "planning",
     createdBy: "demo.user@example.com",
+    department: "土木工事部",
+    submitterName: "デモ太郎",
+    submitterEmail: "demo.user@example.com",
+    coordinationNeeded: "",
     createdAt: "2026-07-05T09:00:00.000Z",
     updatedAt: "2026-07-09T09:00:00.000Z",
     aiUsageCount: 2,
@@ -86,17 +95,85 @@ export const mockApi = {
   },
 
   async getMetrics(): Promise<DashboardMetrics> {
+    const stageCounts: Record<string, number> = {};
+    for (const idea of ideas) {
+      stageCounts[idea.stage] = (stageCounts[idea.stage] ?? 0) + 1;
+    }
+    const activeIdeas = ideas.filter((idea) => !["rejected", "archived"].includes(idea.stage));
+    const sevenDaysAgo = Date.now() - 7 * 864e5;
     return {
       totalIdeas: ideas.length,
-      activeIdeas: ideas.filter((idea) => !["rejected", "archived"].includes(idea.stage)).length,
+      activeIdeas: activeIdeas.length,
       mvpIdeas: ideas.filter((idea) => idea.stage === "mvp").length,
       securityWarnings: ideas.reduce((count, idea) => count + idea.securityNotes.length, 0),
       aiCallsToday: 7,
+      stageCounts,
+      submittedLast7Days: ideas.filter((idea) => Date.parse(idea.createdAt) >= sevenDaysAgo).length,
+      rejectedCount: ideas.filter((idea) => idea.stage === "rejected").length,
+      avgPriorityScore: 0,
     };
   },
 
-  async listIdeas(): Promise<Idea[]> {
-    return [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  async listIdeas(params: {
+    q?: string;
+    stage?: string;
+    limit?: number;
+  } = {}): Promise<Idea[]> {
+    let filtered = [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const q = (params.q ?? "").trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter(
+        (idea) =>
+          idea.title.toLowerCase().includes(q) ||
+          idea.targetBusiness.toLowerCase().includes(q) ||
+          idea.improvementIdea.toLowerCase().includes(q),
+      );
+    }
+    if (params.stage) {
+      filtered = filtered.filter((idea) => idea.stage === params.stage);
+    }
+    const limit = params.limit ? Math.min(Math.max(1, Math.trunc(params.limit)), 200) : 100;
+    return filtered.slice(0, limit);
+  },
+
+  async getEvaluationBoard(): Promise<{ items: Array<Idea & { priorityScore: number; reasons: string[] }> }> {
+    const items = ideas
+      .filter((idea) => !["rejected", "archived"].includes(idea.stage))
+      .map((idea) => ({
+        ...idea,
+        priorityScore: Math.min(10, idea.securityNotes.length * 2 + (idea.mvpCandidate ? 2 : 0) + (idea.openQuestions.length === 0 ? 1 : 0)),
+        reasons: ["モック評価"],
+      }))
+      .sort((a, b) => b.priorityScore - a.priorityScore);
+    return { items };
+  },
+
+  async exportIdeasCsv(): Promise<Response> {
+    const rows = ideas
+      .slice()
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map(
+        (idea) =>
+          [idea.id, idea.title, idea.stage, idea.targetBusiness, idea.targetUsers, idea.mvpCandidate, String(idea.securityNotes.length), idea.createdBy, idea.createdAt, idea.updatedAt]
+            .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
+            .join(","),
+      );
+    const body = "\uFEFF" + ["id,title,stage,target_business,target_users,mvp_candidate,security_notes_count,created_by,created_at,updated_at", ...rows].join("\r\n") + "\r\n";
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="dx-ideas-${now().slice(0, 10)}.csv"`,
+      },
+    });
+  },
+
+  async getIdeaHistory(id: string): Promise<IdeaHistory> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    return {
+      history: [{ fromStage: undefined, toStage: idea.stage, changedBy: idea.createdBy, reason: "", changedAt: idea.updatedAt }],
+      decisions: [],
+    };
   },
 
   async inspectInput(input: IssueInput): Promise<PrivacyFinding[]> {
@@ -162,6 +239,10 @@ export const mockApi = {
       openQuestions: ["対象部署の範囲", "既存システムとの重複", "MVP検証期間"],
       mvpCandidate: "対象業務を1部署または1現場に限定し、入力・一覧・CSV出力・Slack通知までを検証する。",
       mvpDoneDefinition: "実利用者が1週間以上使い、手戻り削減または確認時間削減を確認できること。",
+      department: "土木工事部",
+      submitterName: "デモ太郎",
+      submitterEmail: "demo.user@example.com",
+      coordinationNeeded: "調整必要",
     };
   },
 
@@ -179,7 +260,7 @@ export const mockApi = {
     return { ...idea, notificationStatus: stage === "submitted" ? "sent" : undefined };
   },
 
-  async updateStage(id: string, stage: IdeaStage): Promise<Idea> {
+  async updateStage(id: string, stage: IdeaStage, _reason?: string): Promise<Idea> {
     const found = ideas.find((idea) => idea.id === id);
     if (!found) {
       throw new Error("Idea not found");
