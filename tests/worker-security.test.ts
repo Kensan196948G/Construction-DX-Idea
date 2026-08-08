@@ -264,4 +264,97 @@ describe("worker security helpers", () => {
       keys: jwks.keys.map((key) => ({ ...key, kid: "different-kid" })),
     }));
   });
+
+  it("scores ideas on the construction-specific evaluation axes", () => {
+    const baseIdea = {
+      id: "IDEA-1",
+      title: "テスト",
+      currentIssue: "課題",
+      targetBusiness: "業務",
+      targetUsers: "利用者",
+      currentWorkflow: "現行",
+      improvementIdea: "改善",
+      expectedEffects: "効果",
+      requiredData: [],
+      relatedSystems: [],
+      implementationOptions: [],
+      securityNotes: [],
+      openQuestions: [],
+      mvpCandidate: "",
+      mvpDoneDefinition: "",
+      department: "",
+      submitterName: "",
+      submitterEmail: "",
+      coordinationNeeded: "",
+      stage: "draft" as const,
+      createdBy: "user@example.jp",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      aiUsageCount: 0,
+    };
+
+    const bare = workerSecurityTestHooks.evaluationScore(baseIdea);
+    assert.ok(bare.score >= 1 && bare.score <= 10);
+    assert.ok(bare.reasons.some((reason) => reason.includes("ステージ")));
+
+    const strong = workerSecurityTestHooks.evaluationScore({
+      ...baseIdea,
+      stage: "mvp",
+      securityNotes: ["要検討"],
+      mvpCandidate: "1現場で検証",
+      implementationOptions: ["Web入力"],
+      openQuestions: [],
+    });
+    assert.ok(strong.score > bare.score);
+    assert.equal(strong.score <= 10, true);
+  });
+
+  it("decays the freshness bonus for old ideas and caps the total at 10", () => {
+    const oldIdea = {
+      id: "IDEA-OLD",
+      title: "古い案件",
+      currentIssue: "課題",
+      targetBusiness: "業務",
+      targetUsers: "利用者",
+      currentWorkflow: "現行",
+      improvementIdea: "改善",
+      expectedEffects: "効果",
+      requiredData: [],
+      relatedSystems: [],
+      implementationOptions: [],
+      securityNotes: [],
+      openQuestions: [],
+      mvpCandidate: "",
+      mvpDoneDefinition: "",
+      department: "",
+      submitterName: "",
+      submitterEmail: "",
+      coordinationNeeded: "",
+      stage: "mvp" as const,
+      createdBy: "user@example.jp",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      aiUsageCount: 0,
+    };
+    const now = Date.parse("2026-07-01T00:00:00.000Z");
+    const scored = workerSecurityTestHooks.evaluationScore(oldIdea, now);
+    assert.ok(!scored.reasons.some((reason) => reason.includes("新しさ")));
+    assert.equal(scored.score <= 10, true);
+  });
+
+  it("escapes CSV cells against formula injection and separators", () => {
+    const hooks = workerSecurityTestHooks;
+    assert.equal(hooks.csvCell("plain"), "plain");
+    assert.equal(hooks.csvCell("a,b"), '"a,b"');
+    assert.equal(hooks.csvCell('say "hi"'), '"say ""hi"""');
+    assert.equal(hooks.csvCell("=SUM(A1)"), '"\'=SUM(A1)"');
+    assert.equal(hooks.csvCell("+123"), '"\'+123"');
+    assert.equal(hooks.csvCell("-cmd"), '"\'-cmd"');
+    assert.equal(hooks.csvCell("@ref"), '"\'@ref"');
+    assert.equal(hooks.csvCell("\t=1+1"), `"'\t=1+1"`);
+    assert.equal(hooks.csvCell(" \t@SUM(A1)"), `"' \t@SUM(A1)"`);
+    assert.equal(hooks.csvCell(null), "");
+    assert.equal(hooks.csvCell(undefined), "");
+    assert.equal(hooks.csvCell(0), "0");
+  });
 });

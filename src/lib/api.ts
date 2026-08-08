@@ -6,7 +6,10 @@ import type {
   AiSettings,
   AiSettingsPatch,
   DashboardMetrics,
+  EvaluationItem,
   Idea,
+  IdeaHistory,
+  IdeaListParams,
   IdeaStage,
   IssueInput,
   PrivacyFinding,
@@ -80,7 +83,17 @@ export const api = useMock
   : {
       getMe: () => request<UserProfile>("/api/me"),
       getMetrics: () => request<DashboardMetrics>("/api/metrics"),
-      listIdeas: () => request<Idea[]>("/api/ideas"),
+      listIdeas: (params: IdeaListParams = {}) => {
+        const query = new URLSearchParams();
+        if (params.q) query.set("q", params.q);
+        if (params.stage) query.set("stage", params.stage);
+        if (params.limit) query.set("limit", String(params.limit));
+        const suffix = query.toString() ? `?${query.toString()}` : "";
+        return request<Idea[]>(`/api/ideas${suffix}`);
+      },
+      getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
+      exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
+      getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),
       inspectInput: (input: IssueInput) =>
         request<PrivacyFinding[]>("/api/privacy/inspect", {
           method: "POST",
@@ -101,10 +114,10 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify({ structured }),
         }),
-      updateStage: (id: string, stage: IdeaStage) =>
+      updateStage: (id: string, stage: IdeaStage, reason?: string) =>
         request<Idea>(`/api/ideas/${id}/stage`, {
           method: "POST",
-          body: JSON.stringify({ stage }),
+          body: JSON.stringify(reason ? { stage, reason } : { stage }),
         }),
       getAiSettings: () => request<AiSettings>("/api/admin/ai-settings"),
       updateAiSettings: (settings: AiSettingsPatch) =>

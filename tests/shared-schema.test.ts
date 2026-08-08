@@ -57,6 +57,47 @@ describe("shared API schemas", () => {
       false,
     );
   });
+
+  it("accepts and defaults the submitter context fields (#14)", () => {
+    const parsed = structuredIdeaSchema.safeParse({
+      ...validStructuredIdea(),
+      department: "土木工事部",
+      submitterName: "山田太郎",
+      submitterEmail: "yamada@example.jp",
+      coordinationNeeded: "情報システム部との調整が必要",
+    });
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.data.department, "土木工事部");
+    assert.equal(parsed.data.submitterName, "山田太郎");
+    assert.equal(parsed.data.submitterEmail, "yamada@example.jp");
+    assert.equal(parsed.data.coordinationNeeded, "情報システム部との調整が必要");
+  });
+
+  it("defaults missing submitter context fields to empty strings (#14)", () => {
+    const parsed = structuredIdeaSchema.safeParse(validStructuredIdea());
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.data.department, "");
+    assert.equal(parsed.data.submitterName, "");
+    assert.equal(parsed.data.submitterEmail, "");
+    assert.equal(parsed.data.coordinationNeeded, "");
+  });
+
+  it("rejects oversized submitter context fields (#14)", () => {
+    assert.equal(
+      structuredIdeaSchema.safeParse({
+        ...validStructuredIdea(),
+        submitterEmail: "a".repeat(321) + "@example.jp",
+      }).success,
+      false,
+    );
+    assert.equal(
+      structuredIdeaSchema.safeParse({
+        ...validStructuredIdea(),
+        department: "a".repeat(201),
+      }).success,
+      false,
+    );
+  });
 });
 
 function validStructuredIdea() {

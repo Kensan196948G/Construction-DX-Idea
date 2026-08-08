@@ -56,6 +56,12 @@ export const structuredIdeaSchema = z.object({
   openQuestions: structuredListSchema.default([]),
   mvpCandidate: z.string().max(4000),
   mvpDoneDefinition: z.string().max(4000),
+  // Submitter context collected on the intake form (Issue #14). Kept
+  // optional so older clients and direct API callers remain compatible.
+  department: z.string().max(200).optional().default(""),
+  submitterName: z.string().max(200).optional().default(""),
+  submitterEmail: z.string().max(320).optional().default(""),
+  coordinationNeeded: z.string().max(1000).optional().default(""),
 }).strict();
 
 export type StructuredIdea = z.infer<typeof structuredIdeaSchema>;
@@ -68,6 +74,8 @@ export const ideaSchema = structuredIdeaSchema.extend({
   createdAt: z.string(),
   updatedAt: z.string(),
   aiUsageCount: z.number().int().nonnegative().default(0),
+  priorityScore: z.number().optional(),
+  reasons: z.array(z.string()).optional(),
 });
 
 export type Idea = z.infer<typeof ideaSchema>;
@@ -140,6 +148,41 @@ export type DashboardMetrics = {
   mvpIdeas: number;
   securityWarnings: number;
   aiCallsToday: number;
+  stageCounts: Record<string, number>;
+  submittedLast7Days: number;
+  rejectedCount: number;
+  avgPriorityScore: number;
+};
+
+export type EvaluationItem = Idea & {
+  priorityScore: number;
+  reasons: string[];
+};
+
+export type StageHistoryEntry = {
+  fromStage?: string;
+  toStage: string;
+  changedBy: string;
+  reason: string;
+  changedAt: string;
+};
+
+export type IdeaDecisionEntry = {
+  decision: string;
+  reason: string;
+  decidedBy: string;
+  decidedAt: string;
+};
+
+export type IdeaHistory = {
+  history: StageHistoryEntry[];
+  decisions: IdeaDecisionEntry[];
+};
+
+export type IdeaListParams = {
+  q?: string;
+  stage?: IdeaStage;
+  limit?: number;
 };
 
 // Request paths in the API client already carry the /api prefix, so the

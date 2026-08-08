@@ -64,6 +64,30 @@
 
 システム管理者がAIモデル、有効・無効、日次上限、月額予算を更新する。APIキー本体は保存しない。
 
+### GET `/api/ideas/:id/history`
+
+ステージ変更履歴と決定履歴を返す。
+
+### GET `/api/ideas/evaluation`
+
+管理者向け評価ボード。アクティブアイデア（rejected/archived除く）へ優先度スコア
+（0〜10点: ステージ・セキュリティ要検討・MVP案・実装方式候補・懸念事項なし・新しさ）を
+付与し、スコア降順で返す。
+
+### GET `/api/ideas/export.csv`
+
+全アイデアをCSV（BOM付きUTF-8）で出力する。CSVインジェクション対策済み。
+
+### GET `/api/ideas`
+
+一覧取得。クエリパラメータで `q`（タイトル/対象業務/改善案の部分一致）、
+`stage`（ステージ絞り込み）、`limit`（1〜200、デフォルト100）に対応。
+
+### POST `/api/ideas/:id/stage`
+
+管理者によるステージ変更。`reason`（任意・500文字以内）を受け付け、ステージ履歴と
+決定履歴（mvp/production=approve、rejected=reject、archived=archive）へ記録する。
+
 ## 4. 権限
 
 | API種別 | 一般利用者 | 管理者 | システム管理者 |

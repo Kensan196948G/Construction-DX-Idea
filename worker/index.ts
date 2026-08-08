@@ -105,25 +105,192 @@ app.get("/api/metrics", async (c) => {
     from idea_ai_sessions
     where created_at >= date_trunc('day', now())
   `;
+  const stageRows = await db`
+    select stage, count(*)::int as n
+    from ideas
+    group by stage
+  `;
+  const recentRows = await db`
+    select count(*)::int as n
+    from ideas
+    where created_at >= now() - interval '7 days'
+  `;
+  const rejectedRows = await db`
+    select count(*)::int as n
+    from ideas
+    where stage = 'rejected'
+  `;
+  const ideaRows = await db`
+    select * from ideas
+    where stage not in ('rejected', 'archived')
+    limit 200
+  `;
+  const scored = ideaRows.map((row) => evaluationScore(mapIdeaRow(row)).score);
+  const avgPriorityScore = scored.length
+    ? Number((scored.reduce((sum, value) => sum + value, 0) / scored.length).toFixed(2))
+    : 0;
   const metrics: DashboardMetrics = {
     totalIdeas: rows[0]?.total_ideas ?? 0,
     activeIdeas: rows[0]?.active_ideas ?? 0,
     mvpIdeas: rows[0]?.mvp_ideas ?? 0,
     securityWarnings: rows[0]?.security_warnings ?? 0,
     aiCallsToday: aiRows[0]?.ai_calls_today ?? 0,
+    stageCounts: Object.fromEntries(
+      stageRows.map((row) => [String(row.stage), Number(row.n ?? 0)]),
+    ),
+    submittedLast7Days: Number(recentRows[0]?.n ?? 0),
+    rejectedCount: Number(rejectedRows[0]?.n ?? 0),
+    avgPriorityScore,
   };
   return c.json(metrics);
 });
 
-app.get("/api/ideas", async (c) => {
+app.get("/api/ideas/export.csv", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  requireAdmin(user, c.env);
   const db = getDb(c.env);
   const rows = await db`
-    select *
-    from ideas
+    select * from ideas
     order by updated_at desc
-    limit 100
+    limit 5000
   `;
+  const ideas = rows.map(mapIdeaRow);
+  const header = [
+    "id",
+    "title",
+    "stage",
+    "target_business",
+    "target_users",
+    "mvp_candidate",
+    "security_notes_count",
+    "created_by",
+    "created_at",
+    "updated_at",
+  ];
+  const lines = [
+    header.join(","),
+    ...ideas.map((idea) =>
+      [
+        csvCell(idea.id),
+        csvCell(idea.title),
+        csvCell(idea.stage),
+        csvCell(idea.targetBusiness),
+        csvCell(idea.targetUsers),
+        csvCell(idea.mvpCandidate),
+        csvCell(String(idea.securityNotes.length)),
+        csvCell(idea.createdBy),
+        csvCell(idea.createdAt),
+        csvCell(idea.updatedAt),
+      ].join(","),
+    ),
+  ];
+  await audit(c.env, user, "idea.export.csv", "idea", "all", { rows: ideas.length });
+  return new Response("\uFEFF" + lines.join("\r\n") + "\r\n", {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="dx-ideas-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Cache-Control": "no-store",
+    },
+  });
+});
+
+app.get("/api/ideas", async (c) => {
+  const db = getDb(c.env);
+  const q = (c.req.query("q") ?? "").trim().slice(0, 100);
+  const stage = c.req.query("stage") ?? "";
+  const rawLimit = Number(c.req.query("limit") ?? 100);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), 200) : 100;
+  const validStage = (ideaStages as readonly string[]).includes(stage);
+  const like = `%${q}%`;
+  let rows;
+  if (q && validStage) {
+    rows = await db`
+      select * from ideas
+      where (title ilike ${like} or target_business ilike ${like} or improvement_idea ilike ${like})
+        and stage = ${stage}
+      order by updated_at desc
+      limit ${limit}
+    `;
+  } else if (q) {
+    rows = await db`
+      select * from ideas
+      where (title ilike ${like} or target_business ilike ${like} or improvement_idea ilike ${like})
+      order by updated_at desc
+      limit ${limit}
+    `;
+  } else if (validStage) {
+    rows = await db`
+      select * from ideas
+      where stage = ${stage}
+      order by updated_at desc
+      limit ${limit}
+    `;
+  } else {
+    rows = await db`
+      select * from ideas
+      order by updated_at desc
+      limit ${limit}
+    `;
+  }
   return c.json(rows.map(mapIdeaRow));
+});
+
+app.get("/api/ideas/evaluation", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  requireAdmin(user, c.env);
+  const db = getDb(c.env);
+  const rows = await db`
+    select * from ideas
+    where stage not in ('rejected', 'archived')
+    order by updated_at desc
+    limit 200
+  `;
+  const items = rows
+    .map((row) => mapIdeaRow(row))
+    .map((idea) => {
+      const { score, reasons } = evaluationScore(idea);
+      return { ...idea, priorityScore: score, reasons };
+    })
+    .sort(
+      (a, b) =>
+        b.priorityScore - a.priorityScore || b.updatedAt.localeCompare(a.updatedAt),
+    );
+  return c.json({ items });
+});
+
+app.get("/api/ideas/:id/history", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const histories = await db`
+    select idea_id, from_stage, to_stage, changed_by, reason, changed_at
+    from idea_stage_histories
+    where idea_id = ${id}
+    order by changed_at desc
+    limit 50
+  `;
+  const decisions = await db`
+    select idea_id, decision, reason, decided_by, decided_at
+    from idea_decisions
+    where idea_id = ${id}
+    order by decided_at desc
+    limit 50
+  `;
+  const history = histories.map((row) => ({
+    fromStage: row.from_stage ? String(row.from_stage) : undefined,
+    toStage: String(row.to_stage),
+    changedBy: String(row.changed_by),
+    reason: String(row.reason ?? ""),
+    changedAt: toIsoString(row.changed_at),
+  }));
+  const decisionsOut = decisions.map((row) => ({
+    decision: String(row.decision),
+    reason: String(row.reason ?? ""),
+    decidedBy: String(row.decided_by),
+    decidedAt: toIsoString(row.decided_at),
+  }));
+  await audit(c.env, user, "idea.history.read", "idea", id, { histories: history.length });
+  return c.json({ history, decisions: decisionsOut });
 });
 
 app.post(
@@ -207,13 +374,20 @@ app.post(
 
 app.post(
   "/api/ideas/:id/stage",
-  zValidator("json", z.object({ stage: z.enum(ideaStages) })),
+  zValidator(
+    "json",
+    z.object({
+      stage: z.enum(ideaStages),
+      reason: z.string().min(1).max(500).optional(),
+    }),
+  ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
     requireAdmin(user, c.env);
     const db = getDb(c.env);
     const id = c.req.param("id");
-    const { stage } = c.req.valid("json");
+    const { stage, reason: rawReason } = c.req.valid("json");
+    const reason = (rawReason ?? "").trim() || "（理由未記載）";
     const rows = await db`
       with locked as (
         select id, stage as from_stage
@@ -229,15 +403,29 @@ app.post(
         returning ideas.*, locked.from_stage
       ),
       history as (
-        insert into idea_stage_histories (idea_id, from_stage, to_stage, changed_by)
-        select id, from_stage, stage, ${user}
+        insert into idea_stage_histories (idea_id, from_stage, to_stage, changed_by, reason)
+        select id, from_stage, stage, ${user}, ${reason}
         from updated
       )
       select *
       from updated
     `;
     if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
-    await audit(c.env, user, "stage.update", "idea", id, { stage });
+    const decision =
+      stage === "mvp" || stage === "production"
+        ? "approve"
+        : stage === "rejected"
+          ? "reject"
+          : stage === "archived"
+            ? "archive"
+            : undefined;
+    if (decision) {
+      await db`
+        insert into idea_decisions (idea_id, decision, reason, decided_by)
+        values (${id}, ${decision}, ${reason}, ${user})
+      `;
+    }
+    await audit(c.env, user, "stage.update", "idea", id, { stage, reason });
     return c.json(mapIdeaRow(rows[0]));
   },
 );
@@ -343,7 +531,8 @@ async function insertIdea(
       title, current_issue, target_business, target_users, current_workflow,
       improvement_idea, expected_effects, required_data, related_systems,
       implementation_options, security_notes, open_questions, mvp_candidate,
-      mvp_done_definition, stage, created_by
+      mvp_done_definition, department, submitter_name, submitter_email,
+      coordination_needed, stage, created_by
     )
     values (
       ${structured.title}, ${structured.currentIssue}, ${structured.targetBusiness},
@@ -353,7 +542,10 @@ async function insertIdea(
       ${JSON.stringify(structured.implementationOptions)}::jsonb,
       ${JSON.stringify(structured.securityNotes)}::jsonb,
       ${JSON.stringify(structured.openQuestions)}::jsonb,
-      ${structured.mvpCandidate}, ${structured.mvpDoneDefinition}, ${stage}, ${user}
+      ${structured.mvpCandidate}, ${structured.mvpDoneDefinition},
+      ${structured.department ?? ""}, ${structured.submitterName ?? ""},
+      ${structured.submitterEmail ?? ""}, ${structured.coordinationNeeded ?? ""},
+      ${stage}, ${user}
     )
     returning *
   `;
@@ -933,6 +1125,60 @@ function estimateAiCost(env: Env, inputChars: number, outputChars: number): numb
   return Number(cost.toFixed(6));
 }
 
+// Deterministic scoring over an Idea plus wall-clock time (injected for tests).
+function evaluationScore(idea: Idea, now: number = Date.now()): { score: number; reasons: string[] } {
+  const stageRank: Record<IdeaStage, number> = {
+    mvp: 5,
+    verification: 4,
+    production_candidate: 4,
+    planning: 3,
+    production: 3,
+    submitted: 2,
+    draft: 1,
+    rejected: 0,
+    archived: 0,
+  };
+  let score = stageRank[idea.stage] ?? 1;
+  const reasons = [`ステージ:${idea.stage}`];
+  if (idea.securityNotes.length > 0) {
+    score += 2;
+    reasons.push(`セキュリティ要検討 ${idea.securityNotes.length}件`);
+  }
+  if (idea.mvpCandidate.trim()) {
+    score += 2;
+    reasons.push("MVP案あり");
+  }
+  if (idea.implementationOptions.length > 0) {
+    score += 1;
+    reasons.push(`実装方式候補 ${idea.implementationOptions.length}件`);
+  }
+  if (idea.openQuestions.length === 0) {
+    score += 1;
+    reasons.push("懸念事項なし");
+  }
+  const ageDays = Math.max(0, (now - Date.parse(idea.createdAt)) / 864e5);
+  const freshness = Math.max(0, Math.min(2, Math.round((30 - ageDays) / 15)));
+  if (freshness > 0) {
+    score += freshness;
+    reasons.push(`新しさ+${freshness}`);
+  }
+  return { score: Math.min(10, score), reasons };
+}
+
+// CSV cell escaping: formula-injection guard (=, +, -, @, incl. leading
+// whitespace to block the tab bypass) plus standard quoting for separators,
+// quotes and line breaks.
+function csvCell(value: unknown): string {
+  const text = value == null ? "" : String(value);
+  if (/^\s*[=+\-@]/.test(text)) {
+    return `"'${text.replaceAll('"', '""')}"`;
+  }
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+}
+
 async function audit(
   env: Env,
   actor: string,
@@ -1131,6 +1377,10 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     openQuestions: arrayFromJson(row.open_questions),
     mvpCandidate: String(row.mvp_candidate),
     mvpDoneDefinition: String(row.mvp_done_definition),
+    department: row.department ? String(row.department) : "",
+    submitterName: row.submitter_name ? String(row.submitter_name) : "",
+    submitterEmail: row.submitter_email ? String(row.submitter_email) : "",
+    coordinationNeeded: row.coordination_needed ? String(row.coordination_needed) : "",
     stage: String(row.stage) as IdeaStage,
     createdBy: String(row.created_by),
     ownerId: row.owner_id ? String(row.owner_id) : undefined,
@@ -1205,6 +1455,8 @@ class ApiError extends Error {
 
 export const workerSecurityTestHooks = {
   estimateAiCost,
+  csvCell,
+  evaluationScore,
   inferRoles,
   isValidDatabaseUrl,
   resolveCorsOrigin,

@@ -172,3 +172,49 @@
 5. `npm run release:smoke`（必要なら JWT付き）
 6. `npm run release:gate` を PASS に遷移
 7. Issue #6 を Done に更新
+
+---
+
+## 6. 2026-08-09 自律CTOサイクル（ソース正本復元 + Issue #14永続化）
+
+### Monitor
+- **重大発見1（GitHubリポジトリ消失）**: `Kensan196948G/Construction-DX-Idea` がGitHub上で404。
+  ユーザーの全リポジトリ（53件）に存在せず。ローカルgit履歴（44コミット・29ブランチ・tag v0.1.0）と
+  本番（Cloudflare/Neon/Access）は健全。リポジトリ再作成はユーザー資産への永続的書き込みのため
+  自律実行せず、最終報告で承認を求める方針。
+- **重大発見2（ソース正本喪失）**: 本番Worker（2026-08-07デプロイ、Version c6a5a17b）に、
+  ローカルgit HEADに存在しない新機能がデプロイ済みであることを確認。
+  評価ボード（#36）/CSVエクスポート（#40）/一覧検索（#37）/履歴API/ステージ変更reason/decision/metrics拡張。
+  この機能のソースがローカルgit・全コミット・worktree・/tmpに存在しない（bundledコードが唯一の正本）。
+- 本番状態: Worker稼働・Access保護（AUD一致）・Neon 11テーブル・Observability直近72hエラー0件。
+
+### Assessment（実装済み/部分/未実装の判定）
+| 領域 | 判定 | 根拠 |
+|---|---|---|
+| 本番Worker新機能（evaluation/CSV/検索/history/reason） | 本番のみ実装・ソース喪失 | bundledコードに存在、ローカルHEADに無し |
+| Issue #14（idea追加フィールド永続化） | 未実装 | department等4フィールドが全経路で欠落（8箇所確認） |
+| 既存MVP機能（入力/AI/登録/通知/ステージ） | 実装済み | verify PASS・本番稼働 |
+| セキュリティ（JWT/CORS/sanitize/秘匿） | 実装済み | テスト28件・Access検証 |
+| フロントUI（評価ボード画面等） | 未実装 | standaloneデザイン正本に画面なし（#36のUI部分） |
+
+### Development
+- **Development-A（ソース復元）**: デプロイ済みbundledコードを正本として、evaluationScore/csvCell関数と
+  3新規ルート＋3拡張ルートをworker/index.tsへ再実装。ルート完全一致（11ルート）を検証。
+- **Development-B（#14）**: `migrations/002_add_idea_submitter_fields.sql`（additive、IF NOT EXISTS、
+  NOT NULL DEFAULT ''）を作成。shared/worker/standaloneBridge/api/mockApiを更新。
+  Neonの一時ブランチでmigration検証後、本番へ適用（ideas 0件で安全）。
+- セキュリティレビュー（Oracle）指摘3件対応: csvCellタブバイパス修正、export.csvにrequireAdmin追加、
+  evaluationScoreのnow注入（テスト容易性）。
+
+### Verify
+- `npm run verify` PASS（lint / test 40件 / build / build:production-api / security:scan）
+- `worker:deploy:dry-run` PASS
+- 本番デプロイ2回: Version 26c92c09 → セキュリティ修正後 Version 4068e12e（最新）
+- デプロイ後: ルート一致・8フック確認・Observabilityエラー0件・Access保護継続
+- 本番Neon: migration 002適用済み（department等4カラム確認）
+
+### Improvement / 残課題
+- #36評価ボードUI・#37検索UI・#40ダウンロード導線は、standaloneデザイン正本の画面改修を伴うため
+  APIは本番反映済み・UIはバックログ（state.jsonのtriageに記録）
+- #15（APIキーサーバーサイド化）・#16（support.js上流）は従来どおり保留
+- GitHubリポジトリ復旧（再作成+push）はユーザー承認待ち

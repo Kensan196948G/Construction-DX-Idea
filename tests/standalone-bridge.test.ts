@@ -103,6 +103,65 @@ describe("standalone WebUI bridge helpers", () => {
     assert.deepEqual(splitList("写真、Excel\nCSV"), ["写真", "Excel", "CSV"]);
   });
 
+  it("persists intake submitter context through the review round-trip (#14)", () => {
+    const intake = {
+      type: "issue" as const,
+      department: "土木工事部",
+      submitterName: "山田太郎",
+      email: "yamada@example.jp",
+      work: "写真整理",
+      who: "現場代理人",
+      currentMethod: "手作業",
+      desiredState: "自動化",
+      freeText: "",
+      currentProcess: "",
+      ideaProcess: "",
+      isNewIdea: "yes" as const,
+      requiredResources: "",
+      coordinationNeeded: "情報システム部と調整",
+    };
+    const input = toIssueInput(intake);
+    const manual = buildManualStructuredIdea(input, {});
+    const draft = toReviewDraft(manual, intake);
+    const structured = fromReviewDraft(draft, manual);
+
+    assert.equal(draft.department, "土木工事部");
+    assert.equal(draft.submitterName, "山田太郎");
+    assert.equal(draft.email, "yamada@example.jp");
+    assert.equal(draft.coordinationNeeded, "情報システム部と調整");
+    assert.equal(structured.department, "土木工事部");
+    assert.equal(structured.submitterName, "山田太郎");
+    assert.equal(structured.submitterEmail, "yamada@example.jp");
+    assert.equal(structured.coordinationNeeded, "情報システム部と調整");
+  });
+
+  it("falls back to structured values when the intake form is absent (#14)", () => {
+    const manual = buildManualStructuredIdea(
+      {
+        workType: "写真整理",
+        affectedRole: "現場代理人",
+        currentWorkflow: "手作業",
+        desiredState: "自動化",
+        usedData: "",
+        relatedSystems: "",
+        confidentiality: "none",
+      },
+      {},
+    );
+    const structured = {
+      ...manual,
+      department: "測量部",
+      submitterName: "佐藤",
+      submitterEmail: "sato@example.jp",
+      coordinationNeeded: "承認フロー確認",
+    };
+    const draft = toReviewDraft(structured);
+    assert.equal(draft.department, "測量部");
+    assert.equal(draft.submitterName, "佐藤");
+    assert.equal(draft.email, "sato@example.jp");
+    assert.equal(draft.coordinationNeeded, "承認フロー確認");
+  });
+
   it("preserves API stage while mapping to the compact standalone stage labels", () => {
     const idea: Idea = {
       id: "IDEA-100",
@@ -120,6 +179,10 @@ describe("standalone WebUI bridge helpers", () => {
       openQuestions: [],
       mvpCandidate: "MVP",
       mvpDoneDefinition: "完了",
+      department: "土木工事部",
+      submitterName: "テスト太郎",
+      submitterEmail: "user@example.com",
+      coordinationNeeded: "",
       stage: "draft",
       createdBy: "user@example.com",
       createdAt: "2026-07-13T00:00:00.000Z",
@@ -131,6 +194,9 @@ describe("standalone WebUI bridge helpers", () => {
     assert.equal(mapped.stage, "企画");
     assert.equal(mapped.apiStage, "draft");
     assert.equal(toApiStage("MVP"), "mvp");
+    assert.equal(mapped.department, "土木工事部");
+    assert.equal(mapped.submitterName, "テスト太郎");
+    assert.equal(mapped.email, "user@example.com");
   });
 
   it("maps server key state (keyLast4 / status) into admin settings", () => {

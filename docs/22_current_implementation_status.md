@@ -1,5 +1,23 @@
 # 現在の実装・検証ステータス
 
+## 0. 最新（2026-08-09: ソース正本復元 + Issue #14永続化）
+
+- 本番Worker（2026-08-07デプロイ）にのみ存在し、ローカルgit HEADから失われていた新機能の
+  ソースを、デプロイ済みbundledコードを正本として再実装し、ローカルと完全一致させた。
+  - 評価ボードAPI `GET /api/ideas/evaluation`（#36、管理者限定、evaluationScore 0-10点）
+  - CSVエクスポート `GET /api/ideas/export.csv`（#40、CSVインジェクション対策 csvCell）
+  - 一覧検索・絞り込み `GET /api/ideas?q=&stage=&limit=`（#37）
+  - 履歴API `GET /api/ideas/:id/history`（stage履歴 + decision履歴）
+  - ステージ変更時の `reason` 記録と `idea_decisions` 条件付き書き込み（#38準備）
+  - metrics拡張（stageCounts / submittedLast7Days / rejectedCount / avgPriorityScore）
+- **Issue #14**: `ideas` テーブルへ `department` / `submitter_name` / `submitter_email` /
+  `coordination_needed` を追加（`migrations/002_add_idea_submitter_fields.sql`、additive）。
+  UI入力フォームの提出者情報がDBへ永続化される（保存→読出しラウンドトリップ）。本番Neon適用済み。
+- 検証: `npm run verify` PASS（lint / test 39件 / build / build:production-api / security:scan）、
+  `worker:deploy:dry-run` PASS。
+- 本番デプロイ: `wrangler deploy` 成功（Version 26c92c09）。デプロイ後Observabilityエラー0件。
+- 判定: ソース正本がローカルに復元されたため、次回以降のデプロイで本番機能が消えるリスクは解消。
+
 ## 1. 現在の状態
 
 🚀 **2026-07-21: Stage A本番デプロイ完了**。本番URL `https://dxidea.mirai-dx-platform.com`
