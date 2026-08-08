@@ -155,7 +155,7 @@ export const mockApi = {
       .map(
         (idea) =>
           [idea.id, idea.title, idea.stage, idea.targetBusiness, idea.targetUsers, idea.mvpCandidate, String(idea.securityNotes.length), idea.createdBy, idea.createdAt, idea.updatedAt]
-            .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
+            .map((cell) => csvCell(cell))
             .join(","),
       );
     const body = "\uFEFF" + ["id,title,stage,target_business,target_users,mvp_candidate,security_notes_count,created_by,created_at,updated_at", ...rows].join("\r\n") + "\r\n";
@@ -305,4 +305,15 @@ function splitList(value: string): string[] {
     .split(/[,、\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function csvCell(value: unknown): string {
+  const text = value == null ? "" : String(value);
+  if (/^\s*[=+\-@]/.test(text)) {
+    return `"'${text.replaceAll('"', '""')}"`;
+  }
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
 }

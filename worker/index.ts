@@ -147,6 +147,7 @@ app.get("/api/metrics", async (c) => {
 
 app.get("/api/ideas/export.csv", async (c) => {
   const user = await getUser(c.req.raw, c.env);
+  requireAdmin(user, c.env);
   const db = getDb(c.env);
   const rows = await db`
     select * from ideas
@@ -1124,9 +1125,8 @@ function estimateAiCost(env: Env, inputChars: number, outputChars: number): numb
   return Number(cost.toFixed(6));
 }
 
-// Construction-specific priority scoring for the evaluation board. Pure
-// function over an Idea so it can be unit-tested via workerSecurityTestHooks.
-function evaluationScore(idea: Idea): { score: number; reasons: string[] } {
+// Deterministic scoring over an Idea plus wall-clock time (injected for tests).
+function evaluationScore(idea: Idea, now: number = Date.now()): { score: number; reasons: string[] } {
   const stageRank: Record<IdeaStage, number> = {
     mvp: 5,
     verification: 4,
@@ -1156,7 +1156,7 @@ function evaluationScore(idea: Idea): { score: number; reasons: string[] } {
     score += 1;
     reasons.push("懸念事項なし");
   }
-  const ageDays = Math.max(0, (Date.now() - Date.parse(idea.createdAt)) / 864e5);
+  const ageDays = Math.max(0, (now - Date.parse(idea.createdAt)) / 864e5);
   const freshness = Math.max(0, Math.min(2, Math.round((30 - ageDays) / 15)));
   if (freshness > 0) {
     score += freshness;
@@ -1165,11 +1165,12 @@ function evaluationScore(idea: Idea): { score: number; reasons: string[] } {
   return { score: Math.min(10, score), reasons };
 }
 
-// CSV cell escaping: formula-injection guard (=, +, -, @) plus standard
-// quoting for separators, quotes and line breaks (CSV injection / #40).
+// CSV cell escaping: formula-injection guard (=, +, -, @, incl. leading
+// whitespace to block the tab bypass) plus standard quoting for separators,
+// quotes and line breaks.
 function csvCell(value: unknown): string {
   const text = value == null ? "" : String(value);
-  if (/^[=+\-@]/.test(text)) {
+  if (/^\s*[=+\-@]/.test(text)) {
     return `"'${text.replaceAll('"', '""')}"`;
   }
   if (/[",\r\n]/.test(text)) {
