@@ -26,6 +26,10 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | stage | text | ステージ |
 | created_by | text | 登録者 |
 | owner_id | text | 担当者 |
+| department | text | 所属部署（#14） |
+| submitter_name | text | 提出者名（#14） |
+| submitter_email | text | 提出者メール（#14） |
+| coordination_needed | text | 関連部署との調整要否（#14） |
 | created_at | timestamptz | 登録日時 |
 | updated_at | timestamptz | 更新日時 |
 

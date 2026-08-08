@@ -7,7 +7,7 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "保守フェーズ: 2026-07-28保守サイクル完了（AI機能有効化、AI設定UI改善#28、モデルID統一#30、securityログ露出遮断#25、フロント堅牢化#26、依存監査0件化）。残Issue: #14（idea永続化、次回最優先）・#15（APIキーサーバーサイド化）・#16（support.js上流・保留）。",
+  "goal": "保守フェーズ: 2026-08-09サイクル完了（ソース正本復元 + Issue #14永続化）。本番Worker（8/7デプロイ）にのみ存在した新機能（評価ボード#36/CSV#40/検索#37/履歴API/ステージreason）のソースをbundledコード正本から再実装しローカルと一致。Issue #14（idea追加フィールド永続化）をmigration 002で本番反映。残Issue: #36〜#44のUI接続（評価ボード画面等はデザイン正本改修が必要）・#15（APIキーサーバーサイド化）・#16（support.js上流・保留）。",
   "phase": "Monitor",
   "deploy": {
     "ready": true,
@@ -24,7 +24,8 @@
     "ai_enabled_at": "2026-07-28",
     "ai_enabled_note": "PR #29でAI_ENABLED=true（Version d433ecf6）→ ユーザーがANTHROPIC_API_KEYをwrangler secret putで登録（Version 3828f822自動発行）→ PR #31でモデルIDをclaude-sonnet-5へ統一（Version a5f0b1b8）。本番で接続テスト成功・ai_settings最新行connected。",
     "latest_version_id": "475f4c50-e5df-4689-9d8f-c94efcbdd929",
-    "maintenance_2026_07_28": "PR #29/#31/#32/#33を全てY承認・CI green・squash mergeで本番反映（最終Version 475f4c50）。PR #34は文書・依存同期（デプロイ不要）。Observability直近3hエラー0件。"
+    "maintenance_2026_07_28": "PR #29/#31/#32/#33を全てY承認・CI green・squash mergeで本番反映（最終Version 475f4c50）。PR #34は文書・依存同期（デプロイ不要）。Observability直近3hエラー0件。",
+    "maintenance_2026_08_09": "ソース正本復元 + Issue #14。Version 26c92c09（Version 16）をデプロイし、デプロイ済みbundledの新機能（evaluation/csvCell等8フック）とローカルソースの完全一致を確認。本番Neonへmigration 002適用（ideasにdepartment等4カラム追加）。verify PASS（test 39件）。Observabilityデプロイ後エラー0件。GitHubリポジトリ消失のためpush/PRは未実施（復旧はユーザー判断）。"
   },
   "kpi": {
     "success_rate_target": 0.9,
@@ -57,10 +58,13 @@
     28,
     30,
     25,
-    26
+    26,
+    14
   ],
   "in_progress_issues": [],
-  "blocked_issues": [],
+  "blocked_issues": [
+    "github_repo_missing"
+  ],
   "stale_prs": [],
   "learning": {
     "failure_patterns": [
@@ -88,6 +92,11 @@
     ]
   },
   "open_issues_triage": {
+    "github_repo_missing": {
+      "severity": "High(infra)",
+      "impact": "GitHubリポジトリ Kensan196948G/Construction-DX-Idea が404（削除済みまたはリネーム）。Issue/PR/CI/Projectsが利用不能。ローカルgit履歴（44コミット・29ブランチ・tag v0.1.0）と本番（Cloudflare/Neon/Access）は健全",
+      "plan": "ユーザー確認: リポジトリ再作成（gh repo create --private + push --all）または別名リポジトリへ移行。ユーザー判断待ち（外部への永続的書き込みのため自律実行しない）"
+    },
     "25": {
       "severity": "High(security)",
       "impact": "解消済み",
@@ -100,8 +109,8 @@
     },
     "14": {
       "severity": "Medium(bug)",
-      "impact": "idea登録の追加フィールドが保存されない（機能ギャップ）",
-      "plan": "次回セッションでDB永続化を実装。additive migration+Codex対抗レビュー必須"
+      "impact": "解消済み（2026-08-09）",
+      "plan": "migration 002でdepartment等4フィールドを本番DBへ適用。worker/API/ブリッジ/モック/テストを更新。verify PASS"
     },
     "15": {
       "severity": "Medium(security)",
@@ -112,6 +121,21 @@
       "severity": "Low",
       "impact": "dc-runtime生成物のタイムアウト再試行不可（稀）",
       "plan": "上流生成物のため保留。再発時に評価"
+    },
+    "36": {
+      "severity": "P1(feature)",
+      "impact": "評価ボードAPIは実装・本番反映済みだが、standaloneデザイン正本に評価ボード画面がなくUI未接続",
+      "plan": "デザイン正本の画面追加を伴うため、UIは将来のデザイン改修で対応（APIは利用可能）"
+    },
+    "37": {
+      "severity": "P1(feature)",
+      "impact": "API検索は実装済み。フロントはクライアントサイド検索で代替中",
+      "plan": "UIのサーバーサイド検索連携はデザイン改修時に実施"
+    },
+    "40": {
+      "severity": "P2(feature)",
+      "impact": "CSVエクスポートAPIは実装・本番反映済み（CSVインジェクション対策済み）",
+      "plan": "一覧画面からのダウンロード導線はデザイン改修時に実施"
     }
   }
 }

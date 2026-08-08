@@ -132,7 +132,8 @@ export SMOKE_REQUEST_TIMEOUT_MS=12000
 1. Neonプロジェクトを作成する（プロジェクト名 `Construction-DX-Idea`）。
 2. `migrations/001_initial_schema.sql` を適用する。
 3. `ideas`、`idea_ai_sessions`、`audit_logs`、`ai_usage_counters`、`ai_monthly_usage_counters`、`notification_outbox` が作成されたことを確認する。
-4. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
+4. `migrations/002_add_idea_submitter_fields.sql` を適用する（#14。additive、`IF NOT EXISTS`、既存行はDEFAULT ''。2026-08-09本番適用済み）。
+5. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
 
 Stage Aではプロジェクト作成とmigration適用（スキーマ準備）まで行い、`DATABASE_URL` の
 Secret投入はStage Bで行ってよい。Workerは `DATABASE_URL` 未設定の間、DB依存APIを503で
