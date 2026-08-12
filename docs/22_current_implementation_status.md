@@ -6,7 +6,8 @@
   プロバイダー対応で有効化。キーはCloudflare Secret（`DEEPSEEK_API_KEY`）で管理。
 - ログインユーザー管理: 新規追加・編集（氏名/部署/ロール/ステータス）・削除・一覧をAPI/UI実装（migration 005）。
 - 監査ログ: CSV・Excel（SpreadsheetML）・HTMLエクスポートを追加。
-- 検証: `npm run verify` PASS（test 56件）。migration 005は本番適用待ち（本PRマージ後）。
+- 検証: `npm run verify` PASS（test 56件）。PR #22 merge → 本番デプロイ（Version `d1edb3c4`）→ migration 005本番適用済み。
+- 残: `DEEPSEEK_API_KEY` のCloudflare Secret登録（ユーザー操作）、会社ドメイン管理者複数化。
 
 ## 0.3 最新（2026-08-12: 本番反映完了）
 

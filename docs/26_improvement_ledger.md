@@ -57,6 +57,7 @@
 | IMP-34 | 監査 | 監査ログのCSV/Excel/HTMLエクスポートAPIとUIボタン | `worker/index.ts` `src/lib/*` HTML | verify |
 | IMP-35 | UI | ユーザー管理画面（追加/編集/削除/ロール/有効無効）とAI設定のプロバイダー切替 | HTML `src/App.tsx` | HTML script構文OK |
 | IMP-36 | 文書 | docs/06/07/09/22/26/27・README・state.json更新 | 各docs | レビュー |
+| IMP-37 | 本番反映 | PR #22 merge→`wrangler deploy`（Version `d1edb3c4`）→migration 005（app_users）本番適用 | 本番 | deploy出力・psql検証 |
 
 ## 2. 検証証跡（2026-08-12）
 

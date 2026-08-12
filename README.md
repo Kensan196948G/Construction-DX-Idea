@@ -64,7 +64,7 @@ flowchart TD
 | 2026-08-12 | 総合評価・改善サイクル | ✅ `npm run verify` PASS（test 49件）、`worker:deploy:dry-run` PASS（assets 12）、`npm audit` 0件、`release:monitor` 9/9 PASS。AI予約解放・監査API/UI・冪等化・PII・プロンプト対策・CDN自己ホスト化を実装。本番デプロイは承認待ち |
 | 2026-08-12 | 最優先10件対応 | ✅ `npm run verify` PASS（test 52件）。承認フローAPI・コメント/詳細/編集・ステージ/承認Slack通知・評価ボードUI/CSV・毎時アラート・監査ハッシュチェーン・PWA・バックアップ演習スクリプト・Dependabot・Issue 10件復元。PR #2へ反映、本番デプロイは承認待ち |
 | 2026-08-12 | **本番反映完了** | ✅ PR #2 merge → `wrangler deploy`（Version `0f311cb8`）→ migration 003/004本番適用 → バックアップ演習実施（`backup-20260812`）。承認UI・Excel出力・検索API連携・オフラインキューを追加し `npm run verify` PASS（test 54件） |
-| 2026-08-12 | DeepSeek・ユーザー管理・監査エクスポート | ✅ `npm run verify` PASS（test 56件）。DeepSeek対応（接続テスト/保存/リセット）、ユーザー管理CRUD＋ロール、監査CSV/Excel/HTML出力を実装。PR #22にてマージ・デプロイ予定 |
+| 2026-08-12 | DeepSeek・ユーザー管理・監査エクスポート | ✅ `npm run verify` PASS（test 56件）→ PR #22 merge → 本番デプロイ（Version `d1edb3c4`）→ migration 005適用。DeepSeek対応・ユーザー管理CRUD/ロール・監査CSV/Excel/HTML出力が本番稼働。`DEEPSEEK_API_KEY` Secret登録はユーザー操作待ち |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>
