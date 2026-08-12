@@ -25,6 +25,7 @@
     "ai_enabled_note": "PR #29でAI_ENABLED=true（Version d433ecf6）→ ユーザーがANTHROPIC_API_KEYをwrangler secret putで登録（Version 3828f822自動発行）→ PR #31でモデルIDをclaude-sonnet-5へ統一（Version a5f0b1b8）。本番で接続テスト成功・ai_settings最新行connected。",
     "latest_version_id": "475f4c50-e5df-4689-9d8f-c94efcbdd929",
     "production_2026_08_12": "PR #2 merge（86d216c）→ wrangler deploy 成功（Version 0f311cb8-219c-4287-bb31-896bd4a3befc、cron2本: 10分再送+毎時アラート）。migration 003/004 本番適用済み（idempotency_key・approval_status等・audit_logs prev_hash/entry_hash・制約・索引確認）。バックアップ演習: branch backup-20260812 で整合性確認（ideas 0 / audit_logs 19 / outbox 0 / counters 0）。",
+    "production_2026_08_12_b": "PR #22 merge（77bcb75）→ wrangler deploy 成功（Version d1edb3c4-5079-4444-bf78-cdb0a040a9ca）。migration 005（app_users）本番適用済み。DeepSeek・ユーザー管理API・監査エクスポート稼働。DEEPSEEK_API_KEY Secret登録はユーザー操作待ち。",
     "maintenance_2026_07_28": "PR #29/#31/#32/#33を全てY承認・CI green・squash mergeで本番反映（最終Version 475f4c50）。PR #34は文書・依存同期（デプロイ不要）。Observability直近3hエラー0件。",
     "maintenance_2026_08_09": "ソース正本復元 + Issue #14。Version 26c92c09（Version 16）をデプロイし、デプロイ済みbundledの新機能（evaluation/csvCell等8フック）とローカルソースの完全一致を確認。本番Neonへmigration 002適用（ideasにdepartment等4カラム追加）。verify PASS（test 39件）。Observabilityデプロイ後エラー0件。GitHubリポジトリ消失のためpush/PRは未実施（復旧はユーザー判断）。"
   },
@@ -35,7 +36,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-08-12",
-    "verified_by": "第2サイクル完了+本番反映: npm run verify PASS（lint / test 54件 / build x2 / security:scan）。PR #2 merge→本番デプロイ（Version 0f311cb8）→migration 003/004適用→バックアップ演習実施。承認UI・Excel・検索API連携・オフラインキューを実装。残: 会社ドメイン管理者複数化・CodeRabbit指摘対応・次期機能の本番確認"
+    "verified_by": "第4サイクル完了+本番反映: npm run verify PASS（lint / test 56件 / build x2 / security:scan）。PR #22 merge→本番デプロイ（Version d1edb3c4）→migration 005適用。DeepSeek対応・ユーザー管理CRUD/ロール・監査CSV/Excel/HTMLエクスポート稼働。残: DEEPSEEK_API_KEY Secret登録・会社ドメイン管理者複数化"
   },
   "execution": {
     "max_duration_minutes": 300,

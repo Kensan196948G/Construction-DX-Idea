@@ -28,7 +28,8 @@ test 54件・CI green。残る人間作業は会社ドメイン管理者複数�
   キーはCloudflare Secret（DEEPSEEK_API_KEY）で管理（DB・Git・UIに保存しない）。
 - ログインユーザー管理（新規追加・編集・削除・ロール）とmigration 005（app_users）を実装。DBロールはAPI権限へ反映。
 - 監査ログのCSV・Excel・HTMLエクスポートを実装。
-- test 56件・verify PASS。migration 005適用と本番デプロイは本PRマージ後に実施。
+- test 56件・verify PASS。PR #22マージ→本番デプロイ（Version `d1edb3c4`）→migration 005適用まで完了。
+- 残: `DEEPSEEK_API_KEY` Secret登録（ユーザー操作）、会社ドメイン管理者複数化。
 
 ## 2. 改善前後スコア
 
