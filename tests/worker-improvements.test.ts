@@ -11,6 +11,7 @@ const {
   isValidIdempotencyKey,
   redactIdeaForUser,
   verifyAuditChain,
+  xmlCell,
 } = workerSecurityTestHooks;
 
 const env = {
@@ -205,5 +206,18 @@ describe("failure alert message", () => {
     const text = formatAlertMessage({ aiFailures: 2, notifyFailures: 1 });
     assert.match(text, /AI処理失敗: 2件/);
     assert.match(text, /Slack通知失敗: 1件/);
+  });
+});
+
+describe("excel cell escaping", () => {
+  it("escapes XML entities and strips invalid control characters", () => {
+    assert.equal(xmlCell("A&B <tag> \"quoted\" 'apos'"), "A&amp;B &lt;tag&gt; &quot;quoted&quot; &apos;apos&apos;");
+    assert.equal(xmlCell("safe\tline\n"), "safe\tline\n");
+    assert.equal(xmlCell("bad\u0000char"), "badchar");
+  });
+
+  it("guards formula-like cells with a leading apostrophe", () => {
+    assert.equal(xmlCell("=SUM(A1)"), "&apos;=SUM(A1)");
+    assert.equal(xmlCell("  -1"), "&apos;  -1");
   });
 });

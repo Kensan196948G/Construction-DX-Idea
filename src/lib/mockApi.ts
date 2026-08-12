@@ -175,6 +175,20 @@ export const mockApi = {
     });
   },
 
+  async exportIdeasXls(): Promise<Response> {
+    const body =
+      '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">' +
+      '<Worksheet ss:Name="DX Ideas"><Table><Row><Cell><Data ss:Type="String">id</Data></Cell>' +
+      "<Cell><Data ss:Type=\"String\">title</Data></Cell></Row></Table></Worksheet></Workbook>";
+    return new Response(body, {
+      headers: {
+        "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+        "Content-Disposition": `attachment; filename="dx-ideas-${now().slice(0, 10)}.xls"`,
+      },
+    });
+  },
+
   async getIdeaHistory(id: string): Promise<IdeaHistory> {
     const idea = ideas.find((candidate) => candidate.id === id);
     if (!idea) throw new Error("Idea not found");

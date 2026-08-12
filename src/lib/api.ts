@@ -122,6 +122,7 @@ export const api = useMock
         }),
       getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
+      exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),
       inspectInput: (input: IssueInput) =>
         request<PrivacyFinding[]>("/api/privacy/inspect", {

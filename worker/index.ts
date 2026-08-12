@@ -212,6 +212,83 @@ app.get("/api/ideas/export.csv", async (c) => {
   });
 });
 
+app.get("/api/ideas/export.xls", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  requireAdmin(user, c.env);
+  const db = getDb(c.env);
+  const rows = await db`
+    select * from ideas
+    order by updated_at desc
+    limit 5000
+  `;
+  const ideas = rows.map(mapIdeaRow);
+  const header = [
+    "id",
+    "title",
+    "stage",
+    "target_business",
+    "target_users",
+    "mvp_candidate",
+    "expected_effects",
+    "department",
+    "submitter_name",
+    "coordination_needed",
+    "security_notes_count",
+    "implementation_options_count",
+    "open_questions_count",
+    "created_by",
+    "created_at",
+    "updated_at",
+  ];
+  const lines = [
+    header,
+    ...ideas.map((idea) => [
+      String(idea.id),
+      idea.title,
+      idea.stage,
+      idea.targetBusiness,
+      idea.targetUsers,
+      idea.mvpCandidate,
+      idea.expectedEffects,
+      idea.department,
+      idea.submitterName,
+      idea.coordinationNeeded,
+      String(idea.securityNotes.length),
+      String(idea.implementationOptions.length),
+      String(idea.openQuestions.length),
+      idea.createdBy,
+      idea.createdAt,
+      idea.updatedAt,
+    ]),
+  ];
+  const sheetRows = lines
+    .map((cells, rowIndex) =>
+      [
+        `<Row ss:Index="${rowIndex + 1}">`,
+        ...cells.map(
+          (cell, columnIndex) =>
+            `<Cell ss:Index="${columnIndex + 1}"><Data ss:Type="String">${xmlCell(cell)}</Data></Cell>`,
+        ),
+        "</Row>",
+      ].join(""),
+    )
+    .join("");
+  const workbook =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<?mso-application progid="Excel.Sheet"?>\n` +
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ` +
+    `xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">` +
+    `<Worksheet ss:Name="DX Ideas"><Table>${sheetRows}</Table></Worksheet></Workbook>`;
+  await audit(c.env, user, "idea.export.xls", "idea", "all", { rows: ideas.length });
+  return new Response("\uFEFF" + workbook, {
+    headers: {
+      "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+      "Content-Disposition": `attachment; filename="dx-ideas-${new Date().toISOString().slice(0, 10)}.xls"`,
+      "Cache-Control": "no-store",
+    },
+  });
+});
+
 app.get("/api/ideas", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   const db = getDb(c.env);
@@ -1831,6 +1908,24 @@ function csvCell(value: unknown): string {
   return text;
 }
 
+function xmlCell(value: unknown): string {
+  const text = value == null ? "" : String(value);
+  const guarded = /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
+  const escaped = guarded
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+  let result = "";
+  for (const ch of escaped) {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) continue;
+    result += ch;
+  }
+  return result;
+}
+
 async function audit(
   env: Env,
   actor: string,
@@ -2256,6 +2351,7 @@ export const workerSecurityTestHooks = {
   formatAlertMessage,
   estimateAiCost,
   csvCell,
+  xmlCell,
   evaluationScore,
   inferRoles,
   isAllowedStageTransition,

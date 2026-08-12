@@ -35,6 +35,8 @@ export type StandaloneIdea = {
   comments: Array<{ author: string; time: string; text: string }>;
   history: Array<{ date: string; stage: string; note: string }>;
   apiStage?: IdeaStage;
+  approvalStatus?: string;
+  approverEmail?: string;
 };
 
 export type StandaloneReviewDraft = {
@@ -98,6 +100,9 @@ export type StandaloneState = {
   };
   reviewDraft: StandaloneReviewDraft | null;
   commentDraft: string;
+  searchQueryIssue: string;
+  searchQueryIdea: string;
+  approvalDraft: { approverEmail: string; reason: string };
   adminSettings: {
     model: string;
     enabled: boolean;
@@ -309,6 +314,8 @@ export function mapApiIdeaToStandalone(idea: Idea): StandaloneIdea {
     comments: [],
     history: [{ date: idea.updatedAt.slice(0, 10), stage: stageLabel, note: "APIデータから表示" }],
     apiStage: idea.stage,
+    approvalStatus: idea.approvalStatus ?? "none",
+    approverEmail: idea.approverEmail ?? "",
   };
 }
 
