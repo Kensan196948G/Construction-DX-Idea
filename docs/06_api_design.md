@@ -82,11 +82,31 @@
 
 一覧取得。クエリパラメータで `q`（タイトル/対象業務/改善案の部分一致）、
 `stage`（ステージ絞り込み）、`limit`（1〜200、デフォルト100）に対応。
+管理者以外・提出者本人以外には `submitter_email` を空文字で返す（PII最小化）。
 
 ### POST `/api/ideas/:id/stage`
 
-管理者によるステージ変更。`reason`（任意・500文字以内）を受け付け、ステージ履歴と
+管理者によるステージ変更。`reason`（500文字以内）を受け付け、ステージ履歴と
 決定履歴（mvp/production=approve、rejected=reject、archived=archive）へ記録する。
+定義済み遷移（draft→submitted、submitted→planning等）以外は `INVALID_STAGE_TRANSITION` で拒否し、
+rejected/archived への変更は理由が必須（`STAGE_REASON_REQUIRED`）。
+
+### POST `/api/ideas/drafts` / POST `/api/ideas`
+
+`Idempotency-Key` ヘッダー（8〜128文字の `[A-Za-z0-9_-]`）で冪等登録に対応。
+同一キーによる再送は既存レコードを返す（重複登録防止）。
+
+### GET `/api/admin/audit-logs`
+
+システム管理者のみ。`limit`（1〜500、デフォルト100）と `action` で監査ログを取得できる。
+
+### GET `/api/admin/ai-usage`
+
+システム管理者のみ。当月のAI呼び出し数・成功/失敗・概算費用と直近50件の利用明細を返す。
+
+### GET `/api/admin/usage-limits` / PUT `/api/admin/usage-limits`
+
+システム管理者のみ。利用者別・全体のAI利用制限（日次回数・月次予算・有効/無効）を参照・更新できる。
 
 ## 4. 権限
 

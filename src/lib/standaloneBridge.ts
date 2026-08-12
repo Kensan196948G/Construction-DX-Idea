@@ -79,6 +79,7 @@ export type StandaloneState = {
   view: string;
   selectedIdeaId: string | number | null;
   ideas: StandaloneIdea[];
+  auditLog: Array<{ time: string; actor: string; action: string; detail: string }>;
   toast: { message: string } | null;
   intakeForm: StandaloneIntakeForm;
   wizard: {

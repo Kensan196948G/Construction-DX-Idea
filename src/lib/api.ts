@@ -5,6 +5,8 @@ import type {
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiUsageSummary,
+  AuditLogEntry,
   DashboardMetrics,
   EvaluationItem,
   Idea,
@@ -109,9 +111,10 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify({ input, answers }),
         }),
-      saveIdea: (structured: StructuredIdea, stage: IdeaStage) =>
+      saveIdea: (structured: StructuredIdea, stage: IdeaStage, idempotencyKey?: string) =>
         request<SaveIdeaResult>(stage === "draft" ? "/api/ideas/drafts" : "/api/ideas", {
           method: "POST",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
           body: JSON.stringify({ structured }),
         }),
       updateStage: (id: string, stage: IdeaStage, reason?: string) =>
@@ -130,4 +133,7 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify({ apiKey, model }),
         }),
+      getAuditLogs: (limit = 100) =>
+        request<{ items: AuditLogEntry[] }>(`/api/admin/audit-logs?limit=${limit}`),
+      getAiUsage: () => request<AiUsageSummary>("/api/admin/ai-usage"),
     };

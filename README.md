@@ -22,8 +22,9 @@
 | ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Access JWT検証、AI利用制御、監査ログ、Slack通知・再送 |
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
 | 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
-| 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン |
-| 🧪 Verify | 通過 | `npm run verify`、`npm run worker:deploy:dry-run`、CORS/ロール判定テスト、Secretスキャン |
+| 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン、プロンプトインジェクション対策、PII最小化、冪等登録、React/ReactDOM自己ホスト化 |
+| 🧪 Verify | 通過 | `npm run verify`（lint / test 49件 / build / build:production-api / security:scan）、`worker:deploy:dry-run`、`npm audit` 0件、CORS/ロール判定テスト、Secretスキャン |
+| 📋 評価・改善 | 実施済み（2026-08-12） | 改善前55.5点→改善後62.4点、代替率54.5%→61.0%。詳細は `docs/25`〜`docs/27` |
 | 🌐 Release | 🎉 **Production Ready — 本番フル稼働＋AI有効**（2026-07-28更新） | 本番URL: **https://dxidea.mirai-dx-platform.com**。Cloudflare Access認証（管理者メール+`mirai-const.co.jp`ドメイン許可）、Neon DB接続、管理者ロール判定まで全部動作。**AI機能有効化済み**（`AI_ENABLED=true`、`ANTHROPIC_API_KEY` Secret登録済み、モデル `claude-sonnet-5`、接続テスト成功）。保守フェーズ（`phase_mode=maintenance`） |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
@@ -58,6 +59,7 @@ flowchart TD
 | 2026-07-21 | **Stage B完了（Production Ready）** | 🎉 Access有効化（PR #22）→ フロント404バグ修正（PR #24、Issue #23）→ `DATABASE_URL`投入 → 実ユーザーE2Eで全API 200・`wrangler tail`エラー0件 |
 | 2026-07-28 | **AI利用設定の修正＋AI機能有効化** | 🚀 PR #29（接続テスト修正・リセットボタン・キー状態表示、Issue #28）→ `ANTHROPIC_API_KEY` Secret登録（人間実行）→ PR #31（モデルIDをClaude 5世代へ統一、Issue #30）。本番で接続テスト成功・保存成功を`wrangler tail`で確認（エラー0件） |
 | 2026-07-28 | 保守サイクル（security/堅牢化） | ✅ Neon整合性確認（ideas 0件・ai_settings connected・通知失敗0件）。`release:monitor` 13/14 PASS（DATABASE_URLはSecret非保持設計のためローカル未設定=想定内）。`npm audit` 本番依存0件、eslint 10更新でdev含め0件達成 |
+| 2026-08-12 | 総合評価・改善サイクル | ✅ `npm run verify` PASS（test 49件）、`worker:deploy:dry-run` PASS（assets 12）、`npm audit` 0件、`release:monitor` 9/9 PASS。AI予約解放・監査API/UI・冪等化・PII・プロンプト対策・CDN自己ホスト化を実装。本番デプロイは承認待ち |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>

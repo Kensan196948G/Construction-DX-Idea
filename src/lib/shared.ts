@@ -154,6 +154,37 @@ export type DashboardMetrics = {
   avgPriorityScore: number;
 };
 
+export type AuditLogEntry = {
+  id: string;
+  actor: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  result: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type AiUsageSummary = {
+  summary: {
+    totalCalls: number;
+    successCalls: number;
+    failedCalls: number;
+    totalCostEstimate: number;
+  };
+  recent: Array<{
+    executedBy: string;
+    processType: string;
+    model: string;
+    inputChars: number;
+    outputChars: number;
+    result: string;
+    usageCostEstimate: number;
+    promptVersion: string;
+    createdAt: string;
+  }>;
+};
+
 export type EvaluationItem = Idea & {
   priorityScore: number;
   reasons: string[];

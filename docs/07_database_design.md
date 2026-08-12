@@ -30,6 +30,7 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | submitter_name | text | 提出者名（#14） |
 | submitter_email | text | 提出者メール（#14） |
 | coordination_needed | text | 関連部署との調整要否（#14） |
+| idempotency_key | text | 冪等登録キー（#追加、null許容・部分ユニーク索引） |
 | created_at | timestamptz | 登録日時 |
 | updated_at | timestamptz | 更新日時 |
 

@@ -4,6 +4,8 @@ import type {
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiUsageSummary,
+  AuditLogEntry,
   DashboardMetrics,
   Idea,
   IdeaHistory,
@@ -246,7 +248,7 @@ export const mockApi = {
     };
   },
 
-  async saveIdea(structured: StructuredIdea, stage: IdeaStage): Promise<SaveIdeaResult> {
+  async saveIdea(structured: StructuredIdea, stage: IdeaStage, _idempotencyKey?: string): Promise<SaveIdeaResult> {
     const idea: Idea = {
       ...structured,
       id: `IDEA-${String(ideas.length + 1).padStart(3, "0")}`,
@@ -296,6 +298,55 @@ export const mockApi = {
       message: "モック接続テストに成功しました。",
       keyLast4: "mock",
       checkedAt: now(),
+    };
+  },
+
+  async getAuditLogs(limit = 100): Promise<{ items: AuditLogEntry[] }> {
+    const seed: AuditLogEntry[] = [
+      {
+        id: "log-001",
+        actor: "demo.user@example.com",
+        action: "idea.submit",
+        resourceType: "idea",
+        resourceId: "IDEA-001",
+        result: "success",
+        metadata: { stage: "submitted", duplicated: false },
+        createdAt: now(),
+      },
+      {
+        id: "log-002",
+        actor: "admin@example.com",
+        action: "ai_settings.update",
+        resourceType: "ai_settings",
+        result: "success",
+        metadata: { model: "claude-sonnet-5", enabled: true },
+        createdAt: now(),
+      },
+    ];
+    return { items: seed.slice(0, limit) };
+  },
+
+  async getAiUsage(): Promise<AiUsageSummary> {
+    return {
+      summary: {
+        totalCalls: 7,
+        successCalls: 7,
+        failedCalls: 0,
+        totalCostEstimate: 0.42,
+      },
+      recent: [
+        {
+          executedBy: "demo.user@example.com",
+          processType: "questions",
+          model: "claude-sonnet-5",
+          inputChars: 480,
+          outputChars: 220,
+          result: "success",
+          usageCostEstimate: 0.02,
+          promptVersion: "questions_v2",
+          createdAt: now(),
+        },
+      ],
     };
   },
 };

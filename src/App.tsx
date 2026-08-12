@@ -7,14 +7,14 @@ import {
   fromReviewDraft,
   mapAiSettingsToStandalone,
   mapApiIdeaToStandalone,
+  toStandaloneStage,
   toAnswerRecord,
-  toApiStage,
   toIssueInput,
   toReviewDraft,
   validateIssueInput,
 } from "./lib/standaloneBridge";
 import type { StandaloneState } from "./lib/standaloneBridge";
-import type { IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
+import type { AuditLogEntry, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
 
 const designPath = "/design/construction-dx-idea.html";
 const workflowBindIntervalMs = 700;
@@ -48,6 +48,7 @@ type StandaloneComponent = {
   __bridgeBusy?: Record<string, boolean>;
   __bridgeDailyLimit?: number;
   __bridgeRetryCount?: number;
+  __bridgeSubmitKey?: string;
 };
 
 export function App() {
@@ -184,6 +185,24 @@ async function loadInitialData(component: StandaloneComponent) {
   } else if (settingsResult.status === "rejected" && hasRole(component, "system_admin")) {
     shouldRetry = true;
     showToast(component, `AI利用設定を取得できませんでした: ${toErrorMessage(settingsResult.reason)}`);
+  }
+
+  if (hasRole(component, "system_admin")) {
+    const [auditResult, usageResult] = await Promise.allSettled([api.getAuditLogs(200), api.getAiUsage()]);
+    if (auditResult.status === "fulfilled") {
+      component.setState({ auditLog: auditResult.value.items.map(mapAuditEntryToStandalone) });
+    } else {
+      shouldRetry = true;
+      showToast(component, `監査ログを取得できませんでした: ${toErrorMessage(auditResult.reason)}`);
+    }
+    if (usageResult.status === "fulfilled") {
+      component.setState((state) => ({
+        adminSettings: { ...state.adminSettings, used: usageResult.value.summary.totalCalls },
+      }));
+    } else {
+      shouldRetry = true;
+      showToast(component, `AI利用量を取得できませんでした: ${toErrorMessage(usageResult.reason)}`);
+    }
   }
 
   if (shouldRetry) {
@@ -340,9 +359,12 @@ async function saveReviewDraftThroughApi(component: StandaloneComponent, stage: 
     component.__bridgeStructuredDraft,
   );
   component.__bridgeStructuredDraft = structured;
+  const idempotencyKey = component.__bridgeSubmitKey ?? crypto.randomUUID();
+  component.__bridgeSubmitKey = idempotencyKey;
 
   try {
-    const result = await api.saveIdea(structured, stage);
+    const result = await api.saveIdea(structured, stage, idempotencyKey);
+    component.__bridgeSubmitKey = undefined;
     const savedIdea = mapApiIdeaToStandalone(result);
     component.setState((state) => ({
       ideas: [savedIdea, ...state.ideas.filter((idea) => idea.id !== savedIdea.id)],
@@ -394,24 +416,28 @@ async function advanceStageThroughApi(component: StandaloneComponent, id: string
     return;
   }
 
-  const order = ["企画", "MVP", "検証", "本番化"];
-  const currentIndex = order.indexOf(idea.stage);
-  if (currentIndex < 0 || currentIndex >= order.length - 1) {
+  const nextByApiStage: Partial<Record<IdeaStage, IdeaStage>> = {
+    submitted: "planning",
+    planning: "mvp",
+    mvp: "verification",
+    verification: "production_candidate",
+    production_candidate: "production",
+  };
+  const nextStage = idea.apiStage ? nextByApiStage[idea.apiStage] : undefined;
+  if (!nextStage) {
     finishBridgeAction(component, actionKey);
     return;
   }
 
-  const nextStageLabel = order[currentIndex + 1];
-  const nextStage = toApiStage(nextStageLabel);
   try {
     const updated = await api.updateStage(String(id), nextStage);
     const updatedIdea = mapApiIdeaToStandalone(updated);
     component.setState((state) => ({
       ideas: state.ideas.map((candidate) => (candidate.id === id ? updatedIdea : candidate)),
       selectedIdeaId: updatedIdea.id,
-      toast: { message: `ステージを${nextStageLabel}へ変更しました:「${updatedIdea.title}」` },
+      toast: { message: `ステージを${toStandaloneStage(nextStage)}へ変更しました:「${updatedIdea.title}」` },
     }));
-    component.pushAudit?.("ステージ変更", `「${updatedIdea.title}」のステージを${nextStageLabel}へ変更`);
+    component.pushAudit?.("ステージ変更", `「${updatedIdea.title}」のステージを${toStandaloneStage(nextStage)}へ変更`);
   } catch (error) {
     showToast(component, toErrorMessage(error));
   } finally {
@@ -589,4 +615,36 @@ function toErrorMessage(error: unknown) {
     return `${error.message}（request_id: ${error.requestId}）`;
   }
   return error instanceof Error ? error.message : "処理に失敗しました。";
+}
+
+const auditActionLabels: Record<string, string> = {
+  "ai_usage.read": "AI利用量閲覧",
+  "ai.quality.blocked": "AI品質ブロック",
+  "ai_settings.test": "AI接続テスト",
+  "ai_settings.update": "設定変更",
+  "audit_logs.read": "監査ログ閲覧",
+  "idea.draft": "下書き保存",
+  "idea.draft.duplicate": "重複下書き検知",
+  "idea.export.csv": "CSVエクスポート",
+  "idea.history.read": "履歴閲覧",
+  "idea.submit": "新規登録",
+  "idea.submit.duplicate": "重複登録検知",
+  "slack.notify.failed": "Slack通知失敗",
+  "stage.update": "ステージ変更",
+  "usage_limits.read": "利用制限閲覧",
+  "usage_limits.update": "利用制限更新",
+};
+
+function mapAuditEntryToStandalone(entry: AuditLogEntry) {
+  const metadataText = JSON.stringify(entry.metadata ?? {});
+  const detail = [entry.resourceType, entry.resourceId, metadataText]
+    .filter(Boolean)
+    .join(" / ")
+    .slice(0, 160);
+  return {
+    time: entry.createdAt.replace("T", " ").slice(0, 16),
+    actor: entry.actor,
+    action: auditActionLabels[entry.action] ?? entry.action,
+    detail,
+  };
 }
