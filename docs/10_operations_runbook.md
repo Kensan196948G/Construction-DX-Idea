@@ -75,3 +75,15 @@ psql "$TEMPORARY_URL" -c "select count(*) from ideas; select count(*) from audit
 - RTO目標: 4時間 / RPO目標: 5分（Neon PITR前提。運用開始前にユーザー承認で確定する）。
 - 復旧演習（リストア→スモーク→利用者確認）は本番を汚さないよう一時ブランチで行う。
 - ロールバック手順は `docs/23_release_deploy_runbook.md` §ロールバックを参照。
+
+## 7. 障害アラート（2026-08-12追加）
+
+- Worker cron（毎時 `0 * * * *`）が直近1時間のAI処理失敗・Slack通知失敗を集計し、
+  0件超の場合はSlackへアラートを送信し、`alert.failure.notified` を監査ログへ記録する。
+- アラートのしきい値変更・停止はシステム管理者が判断する（現状は失敗1件以上で通知）。
+
+## 8. 監査ログの改ざん検知
+
+- `GET /api/admin/audit-logs/verify` でSHA-256チェーンを検証する（システム管理者限定）。
+- `valid=false` の場合は `firstBrokenId` を確認し、原因（DB改変・スクリプト直接更新等）を調査する。
+- 既存レガシー行は `legacyRows` として報告される（チェーン化前の行）。

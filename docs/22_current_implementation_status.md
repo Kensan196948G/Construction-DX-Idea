@@ -1,5 +1,17 @@
 # 現在の実装・検証ステータス
 
+## 0.2 最新（2026-08-12: 最優先改善10件対応）
+
+- 承認フローAPI（依頼・判定・承認ゲート・理由必須）とmigration 004。
+- コメント・詳細・編集APIと、詳細画面のコメントAPI接続。
+- ステージ変更・承認依頼/判定のSlack通知（Outbox再送対応）。
+- 評価ボード画面（優先度スコア順）とCSV出力ボタンをstandaloneデザインへ追加し、APIデータ接続。
+- 毎時障害アラート（AI処理失敗・Slack通知失敗）と監査ログSHA-256ハッシュチェーン＋verify API。
+- PWA（manifest/SW）とバックアップ演習スクリプト、管理者個人ドメイン警告、Dependabot。
+- GitHub Issue 10件復元（#3〜#12）。
+- 検証: `npm run verify` PASS（test 52件）、HTMLデザインscript構文チェックOK、`worker:deploy:dry-run` PASS。
+- 未実施: 本番デプロイ・migration 004本番適用・承認フローUI・オフライン下書きキュー（人間承認/次期）。
+
 ## 0.1 最新（2026-08-12: 総合評価・改善サイクル）
 
 - 統合評価（`docs/25_baseline_evaluation.md`）: 18カテゴリ平均55.5点 / 総合判定「条件付き利用可」。

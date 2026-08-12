@@ -38,6 +38,8 @@ type StandaloneComponent = {
   goTo?: (view: string) => void;
   runConnectionTest?: () => void;
   resetApiKeyInput?: () => void;
+  submitComment?: () => void;
+  exportCsv?: () => void;
   pushAudit?: (action: string, detail: string) => void;
   __hostWorkflowBound?: boolean;
   __hostDataLoaded?: boolean;
@@ -127,12 +129,28 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.resetApiKeyInput = () => {
     void resetApiKeyInputThroughApi(component);
   };
+  component.submitComment = () => {
+    void submitCommentThroughApi(component);
+  };
+  component.exportCsv = () => {
+    void exportCsvThroughApi(component);
+  };
   component.goTo = (view: string) => {
-    if (["adminSettings", "auditLog"].includes(view) && !hasRole(component, "system_admin")) {
+    if (
+      ["adminSettings", "auditLog", "userManagement", "integrations"].includes(view) &&
+      !hasRole(component, "system_admin")
+    ) {
       showToast(component, "システム管理者権限が必要です。");
       return;
     }
+    if (view === "evaluation" && !hasRole(component, "admin")) {
+      showToast(component, "評価ボードには管理者権限が必要です。");
+      return;
+    }
     component.setState({ view });
+    if (view === "detail") {
+      void loadCommentsForSelected(component);
+    }
   };
 
   component.setState((state) => ({ ...state }));
@@ -202,6 +220,23 @@ async function loadInitialData(component: StandaloneComponent) {
     } else {
       shouldRetry = true;
       showToast(component, `AI利用量を取得できませんでした: ${toErrorMessage(usageResult.reason)}`);
+    }
+  }
+
+  if (hasRole(component, "admin")) {
+    try {
+      const evaluationResult = await api.getEvaluationBoard();
+      component.setState({
+        evaluationItems: evaluationResult.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          stage: toStandaloneStage(item.stage),
+          score: item.priorityScore,
+          reasons: item.reasons.join("、"),
+        })),
+      });
+    } catch (error) {
+      showToast(component, `評価ボードを取得できませんでした: ${toErrorMessage(error)}`);
     }
   }
 
@@ -615,6 +650,97 @@ function toErrorMessage(error: unknown) {
     return `${error.message}（request_id: ${error.requestId}）`;
   }
   return error instanceof Error ? error.message : "処理に失敗しました。";
+}
+
+async function submitCommentThroughApi(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  if (!idea?.apiStage) {
+    component.submitComment?.();
+    return;
+  }
+  const text = component.state.commentDraft.trim();
+  if (!text) return;
+  try {
+    const created = await api.addComment(String(idea.id), text);
+    component.setState((state) => {
+      const target = state.ideas.find((candidate) => candidate.id === idea.id);
+      if (!target) return {};
+      const updated = {
+        ...target,
+        comments: [
+          ...(target.comments ?? []),
+          {
+            author: created.author,
+            time: created.createdAt.replace("T", " ").slice(0, 16),
+            text: created.body,
+          },
+        ],
+      };
+      return {
+        ideas: state.ideas.map((candidate) => (candidate.id === idea.id ? updated : candidate)),
+        commentDraft: "",
+        toast: { message: "コメントを追加しました。" },
+      };
+    });
+    component.pushAudit?.("コメント", `「${idea.title}」にコメントを追加`);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function loadCommentsForSelected(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  if (!idea?.apiStage) return;
+  try {
+    const { items } = await api.getComments(String(idea.id));
+    component.setState((state) => ({
+      ideas: state.ideas.map((candidate) =>
+        candidate.id === idea.id
+          ? {
+              ...candidate,
+              comments: items.map((comment) => ({
+                author: comment.author,
+                time: comment.createdAt.replace("T", " ").slice(0, 16),
+                text: comment.body,
+              })),
+            }
+          : candidate,
+      ),
+    }));
+  } catch (error) {
+    showToast(component, `コメントを取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function exportCsvThroughApi(component: StandaloneComponent) {
+  if (!hasRole(component, "admin")) {
+    showToast(component, "CSV出力には管理者権限が必要です。");
+    return;
+  }
+  try {
+    const response = await api.exportIdeasCsv();
+    if (!response.ok) {
+      const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
+      showToast(component, `CSV出力に失敗しました: ${errorBody?.message ?? response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `dx-ideas-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    component.pushAudit?.("CSV出力", "DXアイデア一覧をCSV出力");
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
 }
 
 const auditActionLabels: Record<string, string> = {

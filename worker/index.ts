@@ -7,11 +7,15 @@ import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
 import { inspectIssueInput, inspectStructuredIdea, maskSensitiveText } from "../src/lib/privacy";
 import {
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type AuditChainVerifyResult,
   type AiConnectionTestResult,
   type AiQuestion,
   type AiSettings,
   type DashboardMetrics,
   type Idea,
+  type IdeaComment,
   type IdeaStage,
   type IssueInput,
   type StructuredIdea,
@@ -309,6 +313,271 @@ app.get("/api/ideas/:id/history", async (c) => {
   return c.json({ history, decisions: decisionsOut });
 });
 
+app.get("/api/ideas/:id", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const rows = await db`
+    select * from ideas
+    where id = ${id}
+    limit 1
+  `;
+  if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  return c.json(redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+});
+
+app.patch(
+  "/api/ideas/:id",
+  zValidator("json", z.object({ patch: structuredIdeaSchema.partial().strict() })),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const locked = await db`
+      select * from ideas
+      where id = ${id}
+      for update
+    `;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(locked[0]);
+    const isAdmin = inferRoles(user, c.env).includes("admin");
+    const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
+    if (!isAdmin && !isOwner) {
+      throw new ApiError("FORBIDDEN", "編集は提出者本人または管理者のみ可能です。", 403);
+    }
+    const patch = c.req.valid("json").patch;
+    const merged: StructuredIdea = {
+      title: current.title,
+      currentIssue: current.currentIssue,
+      targetBusiness: current.targetBusiness,
+      targetUsers: current.targetUsers,
+      currentWorkflow: current.currentWorkflow,
+      improvementIdea: current.improvementIdea,
+      expectedEffects: current.expectedEffects,
+      requiredData: current.requiredData,
+      relatedSystems: current.relatedSystems,
+      implementationOptions: current.implementationOptions,
+      securityNotes: current.securityNotes,
+      openQuestions: current.openQuestions,
+      mvpCandidate: current.mvpCandidate,
+      mvpDoneDefinition: current.mvpDoneDefinition,
+      department: current.department,
+      submitterName: current.submitterName,
+      submitterEmail: current.submitterEmail,
+      coordinationNeeded: current.coordinationNeeded,
+      ...patch,
+    };
+    assertStructuredIdeaSafe(merged);
+    const rows = await db`
+      update ideas
+      set
+        title = ${merged.title},
+        current_issue = ${merged.currentIssue},
+        target_business = ${merged.targetBusiness},
+        target_users = ${merged.targetUsers},
+        current_workflow = ${merged.currentWorkflow},
+        improvement_idea = ${merged.improvementIdea},
+        expected_effects = ${merged.expectedEffects},
+        required_data = ${JSON.stringify(merged.requiredData)}::jsonb,
+        related_systems = ${JSON.stringify(merged.relatedSystems)}::jsonb,
+        implementation_options = ${JSON.stringify(merged.implementationOptions)}::jsonb,
+        security_notes = ${JSON.stringify(merged.securityNotes)}::jsonb,
+        open_questions = ${JSON.stringify(merged.openQuestions)}::jsonb,
+        mvp_candidate = ${merged.mvpCandidate},
+        mvp_done_definition = ${merged.mvpDoneDefinition},
+        department = ${merged.department ?? ""},
+        submitter_name = ${merged.submitterName ?? ""},
+        submitter_email = ${merged.submitterEmail ?? ""},
+        coordination_needed = ${merged.coordinationNeeded ?? ""}
+      where id = ${id}
+      returning *
+    `;
+    await audit(c.env, user, "idea.update", "idea", id, {
+      updatedFields: Object.keys(patch),
+    });
+    return c.json(redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+  },
+);
+
+app.get("/api/ideas/:id/comments", async (c) => {
+  await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const rows = await db`
+    select id, idea_id, author, body, created_at
+    from idea_comments
+    where idea_id = ${id}
+    order by created_at asc
+    limit 200
+  `;
+  const comments: IdeaComment[] = rows.map((row) => ({
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    author: String(row.author),
+    body: String(row.body),
+    createdAt: toIsoString(row.created_at),
+  }));
+  return c.json({ items: comments });
+});
+
+app.post(
+  "/api/ideas/:id/comments",
+  zValidator("json", z.object({ body: z.string().min(1).max(1000) })),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const existing = await db`select id from ideas where id = ${id} limit 1`;
+    if (!existing[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const { body } = c.req.valid("json");
+    const rows = await db`
+      insert into idea_comments (idea_id, author, body)
+      values (${id}, ${user}, ${body})
+      returning id, idea_id, author, body, created_at
+    `;
+    const comment: IdeaComment = {
+      id: String(rows[0].id),
+      ideaId: String(rows[0].idea_id),
+      author: String(rows[0].author),
+      body: String(rows[0].body),
+      createdAt: toIsoString(rows[0].created_at),
+    };
+    await audit(c.env, user, "idea.comment", "idea", id, { commentId: comment.id });
+    return c.json(comment, 201);
+  },
+);
+
+app.post(
+  "/api/ideas/:id/request-approval",
+  zValidator(
+    "json",
+    z.object({
+      approverEmail: z.string().email().max(320),
+      reason: z.string().max(500).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const request = c.req.valid("json") as ApprovalRequest;
+    const locked = await db`
+      select * from ideas
+      where id = ${id}
+      for update
+    `;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(locked[0]);
+    const isAdmin = inferRoles(user, c.env).includes("admin");
+    const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
+    if (!isAdmin && !isOwner) {
+      throw new ApiError("FORBIDDEN", "承認依頼は提出者本人または管理者のみ可能です。", 403);
+    }
+    if (current.approvalStatus === "approved") {
+      throw new ApiError("APPROVAL_ALREADY_APPROVED", "このアイデアは承認済みです。", 422);
+    }
+    const reason = (request.reason ?? "").trim() || "（理由未記載）";
+    const rows = await db`
+      update ideas
+      set approval_status = 'requested',
+          approver_email = ${request.approverEmail.toLowerCase()},
+          approval_requested_at = now(),
+          approval_acted_at = null,
+          approval_reason = ${reason}
+      where id = ${id}
+      returning *
+    `;
+    const idea = mapIdeaRow(rows[0]);
+    await audit(c.env, user, "idea.approval.requested", "idea", id, {
+      approverEmail: idea.approverEmail,
+    });
+    void notifySlackEvent(
+      c.env,
+      "approval.requested",
+      "idea",
+      id,
+      [
+        `承認依頼: ${idea.title}`,
+        `承認者: ${idea.approverEmail ?? ""}`,
+        `依頼者: ${user}`,
+        `理由: ${reason}`,
+        `${c.env.APP_BASE_URL}/ideas/${id}`,
+      ].join("\n"),
+      `approval.requested:idea:${id}:${idea.approverEmail ?? ""}`,
+    );
+    return c.json(idea);
+  },
+);
+
+app.post(
+  "/api/ideas/:id/approval",
+  zValidator(
+    "json",
+    z.object({
+      decision: z.enum(["approve", "reject", "return"]),
+      reason: z.string().min(1).max(500),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const decision = c.req.valid("json") as ApprovalDecision;
+    const locked = await db`
+      select * from ideas
+      where id = ${id}
+      for update
+    `;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(locked[0]);
+    if (current.approvalStatus !== "requested") {
+      throw new ApiError("APPROVAL_NOT_REQUESTED", "承認依頼中のアイデアのみ判定できます。", 422);
+    }
+    const isApprover =
+      current.approverEmail?.toLowerCase() === user.toLowerCase();
+    const isAdmin = inferRoles(user, c.env).includes("admin");
+    if (!isApprover && !isAdmin) {
+      throw new ApiError("FORBIDDEN", "承認者または管理者のみ判定できます。", 403);
+    }
+    const statusMap = {
+      approve: "approved" as const,
+      reject: "rejected" as const,
+      return: "returned" as const,
+    };
+    const rows = await db`
+      update ideas
+      set approval_status = ${statusMap[decision.decision]},
+          approval_acted_at = now(),
+          approval_reason = ${decision.reason}
+      where id = ${id}
+      returning *
+    `;
+    await db`
+      insert into idea_decisions (idea_id, decision, reason, decided_by)
+      values (${id}, ${decision.decision}, ${decision.reason}, ${user})
+    `;
+    const idea = mapIdeaRow(rows[0]);
+    await audit(c.env, user, "idea.approval.decided", "idea", id, {
+      decision: decision.decision,
+    });
+    void notifySlackEvent(
+      c.env,
+      "approval.decided",
+      "idea",
+      id,
+      [
+        `承認判定: ${idea.title}`,
+        `判定: ${decision.decision}`,
+        `判定者: ${user}`,
+        `理由: ${decision.reason}`,
+        `${c.env.APP_BASE_URL}/ideas/${id}`,
+      ].join("\n"),
+      `approval.decided:idea:${id}:${decision.decision}:${decision.reason}`,
+    );
+    return c.json(idea);
+  },
+);
+
 app.post(
   "/api/privacy/inspect",
   zValidator("json", issueInputSchema),
@@ -436,6 +705,16 @@ app.post(
       422,
     );
   }
+  if (
+    String(locked[0].approval_status ?? "none") === "requested" &&
+    ["mvp", "verification", "production_candidate", "production"].includes(stage)
+  ) {
+    throw new ApiError(
+      "APPROVAL_PENDING",
+      "承認依頼中のアイデアは、承認完了まで次のステージへ進めません。",
+      422,
+    );
+  }
   if ((stage === "rejected" || stage === "archived") && !(rawReason ?? "").trim()) {
     throw new ApiError("STAGE_REASON_REQUIRED", "却下・保管へ変更する場合は理由が必須です。", 422);
   }
@@ -465,7 +744,22 @@ app.post(
       `;
     }
     await audit(c.env, user, "stage.update", "idea", id, { stage, reason });
-    return c.json(mapIdeaRow(rows[0]));
+    const updatedIdea = mapIdeaRow(rows[0]);
+    void notifySlackEvent(
+      c.env,
+      "stage.updated",
+      "idea",
+      id,
+      [
+        `ステージ変更: ${updatedIdea.title}`,
+        `${fromStage} → ${stage}`,
+        `変更者: ${user}`,
+        `理由: ${reason}`,
+        `${c.env.APP_BASE_URL}/ideas/${id}`,
+      ].join("\n"),
+      `stage.updated:idea:${id}:${fromStage}:${stage}`,
+    );
+    return c.json(updatedIdea);
   },
 );
 
@@ -577,6 +871,57 @@ app.get("/api/admin/audit-logs", async (c) => {
   }));
   await audit(c.env, user, "audit_logs.read", "audit_logs", "all", { count: entries.length });
   return c.json({ items: entries });
+});
+
+app.get("/api/admin/audit-logs/verify", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  requireSystemAdmin(user, c.env);
+  const db = getDb(c.env);
+  const rows = await db`
+    select id, actor, action, resource_type, resource_id, result, metadata,
+           prev_hash, entry_hash, created_at
+    from audit_logs
+    order by created_at asc, id asc
+  `;
+  let prevHash = "genesis";
+  let legacyRows = 0;
+  const entries: Array<{
+    id: string;
+    storedPrev: string | null;
+    storedHash: string | null;
+    expectedPrev: string;
+    expectedHash: string;
+  }> = [];
+  for (const row of rows) {
+    if (!row.entry_hash) {
+      legacyRows += 1;
+      continue;
+    }
+    const expectedHash = await computeAuditEntryHash(prevHash, {
+      actor: String(row.actor),
+      action: String(row.action),
+      resourceType: String(row.resource_type),
+      resourceId: row.resource_id ? String(row.resource_id) : undefined,
+      result: String(row.result),
+      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      createdAt: toIsoString(row.created_at),
+    });
+    entries.push({
+      id: String(row.id),
+      storedPrev: row.prev_hash ? String(row.prev_hash) : null,
+      storedHash: row.entry_hash ? String(row.entry_hash) : null,
+      expectedPrev: prevHash,
+      expectedHash,
+    });
+    prevHash = String(row.entry_hash);
+  }
+  const result = verifyAuditChain(entries, legacyRows);
+  await audit(c.env, user, "audit_logs.verify", "audit_logs", "chain", {
+    checked: result.checked,
+    legacyRows: result.legacyRows,
+    valid: result.valid,
+  });
+  return c.json(result);
 });
 
 app.get("/api/admin/ai-usage", async (c) => {
@@ -1495,10 +1840,83 @@ async function audit(
   metadata: Record<string, unknown>,
 ) {
   const db = getDb(env);
-  await db`
-    insert into audit_logs (actor, action, resource_type, resource_id, result, metadata)
-    values (${actor}, ${action}, ${resourceType}, ${resourceId}, 'success', ${JSON.stringify(metadata)}::jsonb)
+  const createdAt = new Date().toISOString();
+  const lastRows = await db`
+    select entry_hash
+    from audit_logs
+    where entry_hash is not null
+    order by created_at desc, id desc
+    limit 1
   `;
+  const prevHash = lastRows[0]?.entry_hash ? String(lastRows[0].entry_hash) : "genesis";
+  const entryHash = await computeAuditEntryHash(prevHash, {
+    actor,
+    action,
+    resourceType,
+    resourceId,
+    result: "success",
+    metadata,
+    createdAt,
+  });
+  await db`
+    insert into audit_logs (
+      actor, action, resource_type, resource_id, result, metadata,
+      prev_hash, entry_hash, created_at
+    )
+    values (
+      ${actor}, ${action}, ${resourceType}, ${resourceId}, 'success',
+      ${JSON.stringify(metadata)}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
+    )
+  `;
+}
+
+async function computeAuditEntryHash(
+  prevHash: string,
+  fields: {
+    actor: string;
+    action: string;
+    resourceType: string;
+    resourceId?: string;
+    result: string;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+  },
+): Promise<string> {
+  const payload = [
+    prevHash,
+    fields.actor,
+    fields.action,
+    fields.resourceType,
+    fields.resourceId ?? "",
+    fields.result,
+    JSON.stringify(fields.metadata ?? {}),
+    fields.createdAt,
+  ].join("\n");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function verifyAuditChain(
+  entries: Array<{
+    id: string;
+    storedPrev: string | null;
+    storedHash: string | null;
+    expectedPrev: string;
+    expectedHash: string;
+  }>,
+  legacyRows: number,
+): AuditChainVerifyResult {
+  let valid = true;
+  let firstBrokenId: string | undefined;
+  for (const entry of entries) {
+    if (entry.storedHash !== entry.expectedHash || entry.storedPrev !== entry.expectedPrev) {
+      valid = false;
+      firstBrokenId ??= entry.id;
+    }
+  }
+  return { valid, checked: entries.length, legacyRows, firstBrokenId };
 }
 
 type NotificationStatus = "sent" | "skipped" | "failed";
@@ -1538,6 +1956,73 @@ async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
     console.error("Slack notification failed", sanitizeLog(error));
     await updateNotificationOutbox(env, outboxId, "failed", String(sanitizeLog(error)));
     return "failed";
+  }
+}
+
+async function notifySlackEvent(
+  env: Env,
+  eventType: string,
+  resourceType: string,
+  resourceId: string,
+  text: string,
+  idempotencyKey: string,
+): Promise<NotificationStatus> {
+  const maskedText = maskSensitiveText(text);
+  const outboxId = await createNotificationOutbox(env, {
+    eventType,
+    resourceType,
+    resourceId,
+    idempotencyKey,
+    payload: { text: maskedText },
+  });
+  if (!env.SLACK_WEBHOOK_URL) {
+    await updateNotificationOutbox(env, outboxId, "skipped");
+    return "skipped";
+  }
+  if (outboxId === "already-sent") return "sent";
+  if (outboxId === "not-claimed" || !outboxId) return "skipped";
+  try {
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, maskedText);
+    const status = response.ok ? "sent" : "failed";
+    await updateNotificationOutbox(env, outboxId, status, response.ok ? undefined : `Slack HTTP ${response.status}`);
+    return status;
+  } catch (error) {
+    console.error("Slack event notification failed", sanitizeLog(error));
+    await updateNotificationOutbox(env, outboxId, "failed", String(sanitizeLog(error)));
+    return "failed";
+  }
+}
+
+function formatAlertMessage(counts: { aiFailures: number; notifyFailures: number }): string {
+  const items = [];
+  if (counts.aiFailures > 0) items.push(`AI処理失敗: ${counts.aiFailures}件`);
+  if (counts.notifyFailures > 0) items.push(`Slack通知失敗: ${counts.notifyFailures}件`);
+  return `⚠️ Construction-DX-Idea 障害アラート（直近1時間）\n${items.join("\n")}`;
+}
+
+async function checkAndAlertFailures(env: Env) {
+  if (!env.SLACK_WEBHOOK_URL) return;
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select
+        (select count(*) from idea_ai_sessions
+          where created_at >= now() - interval '1 hour' and result <> 'success')::int as ai_failures,
+        (select count(*) from notification_outbox
+          where status = 'failed' and updated_at >= now() - interval '1 hour')::int as notify_failures
+    `;
+    const counts = {
+      aiFailures: Number(rows[0]?.ai_failures ?? 0),
+      notifyFailures: Number(rows[0]?.notify_failures ?? 0),
+    };
+    if (counts.aiFailures + counts.notifyFailures === 0) return;
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, formatAlertMessage(counts));
+    await audit(env, "system:alert", "alert.failure.notified", "system", "hourly", {
+      ...counts,
+      delivered: response.ok,
+    }).catch((error: unknown) => console.error("Alert audit failed", sanitizeLog(error)));
+  } catch (error) {
+    console.error("Alert check failed", sanitizeLog(error));
   }
 }
 
@@ -1689,6 +2174,11 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     submitterEmail: row.submitter_email ? String(row.submitter_email) : "",
     coordinationNeeded: row.coordination_needed ? String(row.coordination_needed) : "",
     stage: String(row.stage) as IdeaStage,
+    approvalStatus: (String(row.approval_status ?? "none")) as Idea["approvalStatus"],
+    approverEmail: row.approver_email ? String(row.approver_email) : undefined,
+    approvalRequestedAt: row.approval_requested_at ? toIsoString(row.approval_requested_at) : undefined,
+    approvalActedAt: row.approval_acted_at ? toIsoString(row.approval_acted_at) : undefined,
+    approvalReason: row.approval_reason ? String(row.approval_reason) : undefined,
     createdBy: String(row.created_by),
     ownerId: row.owner_id ? String(row.owner_id) : undefined,
     createdAt: toIsoString(row.created_at),
@@ -1761,7 +2251,9 @@ class ApiError extends Error {
 }
 
 export const workerSecurityTestHooks = {
+  computeAuditEntryHash,
   buildPromptMessages,
+  formatAlertMessage,
   estimateAiCost,
   csvCell,
   evaluationScore,
@@ -1772,6 +2264,7 @@ export const workerSecurityTestHooks = {
   redactIdeaForUser,
   resolveCorsOrigin,
   sanitizeLog,
+  verifyAuditChain,
   verifyAccessJwt,
 };
 
@@ -1783,11 +2276,12 @@ type MinimalExecutionContext = {
 
 export default {
   fetch: (request: Request, env: Env, ctx: MinimalExecutionContext) => app.fetch(request, env, ctx),
-  scheduled: (_controller: unknown, env: Env, ctx: MinimalExecutionContext) => {
+  scheduled: (controller: unknown, env: Env, ctx: MinimalExecutionContext) => {
+    const cron = (controller as { cron?: string } | undefined)?.cron ?? "";
     // A rejection escaping waitUntil is logged raw by the runtime, bypassing
     // sanitizeLog — keep this catch even though the retry has its own.
     ctx.waitUntil(
-      retrySlackNotifications(env).catch((error: unknown) => {
+      (cron === "0 * * * *" ? checkAndAlertFailures(env) : retrySlackNotifications(env)).catch((error: unknown) => {
         console.error("Scheduled retry failed", sanitizeLog(error));
       }),
     );

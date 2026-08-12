@@ -7,7 +7,7 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "2026-08-12評価・改善サイクル完了（ベースライン55.5点→改善後62.4点、代替率54.5%→61.0%）。AI予約解放・監査API/UI・冪等化・PII・プロンプト対策・CDN自己ホスト化・依存0件を実装しverify PASS（test 49件）。次: PRレビュー・本番デプロイ・migration 003適用（人間承認）、承認フローと評価ボードUI。",
+  "goal": "2026-08-12第2サイクル完了（最優先改善10件対応）: 承認フローAPI・コメント/詳細/編集・Slack通知・評価ボードUI/CSV・毎時アラート・監査ハッシュチェーン・PWA・バックアップ演習・Dependabot・GitHub Issue 10件復元。verify PASS（test 52件）。次: PRレビュー・本番デプロイ・migration 003/004適用（人間承認）、承認フローUIとオフラインキュー。",
   "phase": "Verify",
   "deploy": {
     "ready": true,
@@ -34,7 +34,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-08-12",
-    "verified_by": "評価・改善サイクル完了: npm run verify PASS（lint / test 49件 / build x2 / security:scan）、worker:deploy:dry-run PASS（assets 12）、npm audit 0件、release:monitor 9/9 PASS（pre-access）。改善はdocs/26、再評価はdocs/27。本番デプロイ・migration 003・JWT付きsmokeは人間承認待ち"
+    "verified_by": "第2サイクル完了: npm run verify PASS（lint / test 52件 / build x2 / security:scan）、HTMLデザインscript構文OK、npm audit 0件。承認フロー・コメント/編集・通知・評価ボードUI/CSV・アラート・監査チェーン・PWA・バックアップ演習・Dependabot・Issue 10件復元。本番デプロイ・migration 003/004・JWT付きsmokeは人間承認待ち"
   },
   "execution": {
     "max_duration_minutes": 300,

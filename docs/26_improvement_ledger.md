@@ -22,12 +22,27 @@
 | IMP-14 | セキュリティ | 依存脆弱性0件（`npm audit fix` で postcss GHSA-fxqj-rqcc-2cmp 等を解消） | `package.json` `package-lock.json` | `npm audit` 0 vulnerabilities |
 | IMP-15 | 文書/運用 | 評価書・改善台帳・運用手順（監査/利用量/バックアップ）・API/DB/セキュリティ設計・リリースRunbookを更新 | `docs/25` `docs/26` `docs/27` `docs/06` `docs/07` `docs/09` `docs/10` `docs/23` `docs/22` `README.md` `state.json` | レビュー |
 
+## 1.1 2026-08-12 第2サイクル（最優先改善10件対応）
+
+| ID | 分類 | 内容 | 対象ファイル | 検証証跡 |
+|---|---|---|---|---|
+| IMP-16 | 承認フロー | 承認依頼API（`POST /api/ideas/:id/request-approval`）と承認判定API（`POST /api/ideas/:id/approval`）、承認ゲート（依頼中のMVP以降遷移を拒否）、承認状態フィールド | `worker/index.ts` `migrations/004` | verify |
+| IMP-17 | コメント/編集 | 詳細取得 `GET /api/ideas/:id`、編集 `PATCH /api/ideas/:id`（本人・管理者）、コメント `GET/POST /api/ideas/:id/comments`、詳細画面でAPIコメント表示・投稿 | `worker/index.ts` `src/App.tsx` `src/lib/*` | verify |
+| IMP-18 | 通知 | ステージ変更・承認依頼・承認判定のSlack通知（Outbox再送対応 `notifySlackEvent`） | `worker/index.ts` | verify |
+| IMP-19 | 評価ボードUI | 評価ボード画面（優先度スコア順・理由表示）とCSV出力ボタンをstandaloneデザインへ追加、APIデータ接続 | `Construction DX Idea (standalone).html` `src/App.tsx` | HTML script構文チェック+verify |
+| IMP-20 | 監視/アラート | 毎時クロンでAI処理失敗・Slack通知失敗を検知しSlackへアラート（`checkAndAlertFailures`）、`formatAlertMessage` テスト | `worker/index.ts` `wrangler.toml` | 単体テスト2件 |
+| IMP-21 | 監査改ざん耐性 | `audit()` をSHA-256ハッシュチェーン化（prev_hash/entry_hash）、`GET /api/admin/audit-logs/verify`、レガシー行のカウント | `worker/index.ts` `migrations/004` | 単体テスト2件 |
+| IMP-22 | PWA/オフライン | manifest.webmanifest・sw.js（App Shellキャッシュ、APIは非キャッシュ）、本番のみSW登録 | `public/manifest.webmanifest` `public/sw.js` `src/main.tsx` `index.html` | build確認 |
+| IMP-23 | 運用 | バックアップ演習スクリプト（`scripts/neon-backup-drill.sh`）、管理者メールの個人ドメイン警告（predeploy-check）、Dependabot設定 | `scripts/*` `.github/dependabot.yml` | スクリプト存在確認 |
+| IMP-24 | GitHub復元 | バックログIssue 10件を新リポジトリへ起票（#3〜#12） | GitHub Issues | gh issue list 確認 |
+| IMP-25 | 文書 | docs/06/07/10/22/23/26/27・README・state.jsonを更新 | 各docs | レビュー |
+
 ## 2. 検証証跡（2026-08-12）
 
 | 検証 | 結果 |
 |---|---|
-| `npm run verify`（lint / test / build / build:production-api / security:scan） | ✅ PASS（test 49件、suites 9） |
-| 単体テスト追加分 | ✅ 9件（prompt 2 / idempotency 2 / stage 2 / PII 3） |
+| `npm run verify`（lint / test / build / build:production-api / security:scan） | ✅ PASS（test 52件、suites 11） |
+| 単体テスト追加分 | ✅ 12件（prompt 2 / idempotency 2 / stage 2 / PII 3 / 監査チェーン2 / アラート1） |
 | `npx wrangler deploy worker/index.ts --dry-run` | ✅ PASS（assets 12ファイル、891KB / gzip 168.5KB） |
 | `npm audit` | ✅ 0 vulnerabilities |
 | `release:monitor`（pre-access、実DNS） | ✅ PASS 9/9（wrangler認証・DNS解決含む） |

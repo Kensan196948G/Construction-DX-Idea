@@ -108,6 +108,25 @@ rejected/archived への変更は理由が必須（`STAGE_REASON_REQUIRED`）。
 
 システム管理者のみ。利用者別・全体のAI利用制限（日次回数・月次予算・有効/無効）を参照・更新できる。
 
+### GET `/api/ideas/:id` / PATCH `/api/ideas/:id`
+
+詳細取得（PII最小化適用）と編集（提出者本人または管理者のみ、`patch` に部分フィールド）。
+
+### GET/POST `/api/ideas/:id/comments`
+
+コメント取得・投稿（本文1〜1000文字、全認証ユーザー可）。
+
+### POST `/api/ideas/:id/request-approval` / POST `/api/ideas/:id/approval`
+
+承認依頼（提出者本人または管理者、承認者メール必須）と承認判定（approve/reject/return、
+承認者または管理者、理由必須）。承認依頼中のアイデアはMVP以降へ遷移不可（`APPROVAL_PENDING`）。
+依頼・判定はSlack通知（Outbox再送対応）。
+
+### GET `/api/admin/audit-logs/verify`
+
+監査ログのSHA-256ハッシュチェーン整合性を検証する（システム管理者限定）。
+`valid` / `checked` / `legacyRows` / `firstBrokenId` を返す。
+
 ## 4. 権限
 
 | API種別 | 一般利用者 | 管理者 | システム管理者 |

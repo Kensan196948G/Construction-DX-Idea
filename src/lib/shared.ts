@@ -14,6 +14,16 @@ export const ideaStages = [
 
 export type IdeaStage = (typeof ideaStages)[number];
 
+export const approvalStatuses = [
+  "none",
+  "requested",
+  "approved",
+  "rejected",
+  "returned",
+] as const;
+
+export type ApprovalStatus = (typeof approvalStatuses)[number];
+
 export const stageLabels: Record<IdeaStage, string> = {
   draft: "下書き",
   submitted: "正式登録",
@@ -69,6 +79,11 @@ export type StructuredIdea = z.infer<typeof structuredIdeaSchema>;
 export const ideaSchema = structuredIdeaSchema.extend({
   id: z.string(),
   stage: z.enum(ideaStages),
+  approvalStatus: z.enum(approvalStatuses).optional(),
+  approverEmail: z.string().max(320).optional(),
+  approvalRequestedAt: z.string().optional(),
+  approvalActedAt: z.string().optional(),
+  approvalReason: z.string().max(500).optional(),
   createdBy: z.string(),
   ownerId: z.string().optional(),
   createdAt: z.string(),
@@ -84,6 +99,31 @@ export type NotificationStatus = "sent" | "skipped" | "failed";
 
 export type SaveIdeaResult = Idea & {
   notificationStatus?: NotificationStatus;
+};
+
+export type IdeaComment = {
+  id: string;
+  ideaId: string;
+  author: string;
+  body: string;
+  createdAt: string;
+};
+
+export type ApprovalRequest = {
+  approverEmail: string;
+  reason?: string;
+};
+
+export type ApprovalDecision = {
+  decision: "approve" | "reject" | "return";
+  reason: string;
+};
+
+export type AuditChainVerifyResult = {
+  valid: boolean;
+  checked: number;
+  legacyRows: number;
+  firstBrokenId?: string;
 };
 
 export type PrivacyFinding = {

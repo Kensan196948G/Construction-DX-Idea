@@ -79,6 +79,13 @@ export type StandaloneState = {
   view: string;
   selectedIdeaId: string | number | null;
   ideas: StandaloneIdea[];
+  evaluationItems: Array<{
+    id: string | number;
+    title: string;
+    stage: string;
+    score: number;
+    reasons: string;
+  }>;
   auditLog: Array<{ time: string; actor: string; action: string; detail: string }>;
   toast: { message: string } | null;
   intakeForm: StandaloneIntakeForm;
@@ -90,6 +97,7 @@ export type StandaloneState = {
     sourceIntake: StandaloneIntakeForm | null;
   };
   reviewDraft: StandaloneReviewDraft | null;
+  commentDraft: string;
   adminSettings: {
     model: string;
     enabled: boolean;

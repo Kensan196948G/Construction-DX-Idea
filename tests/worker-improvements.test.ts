@@ -5,9 +5,12 @@ import type { Idea } from "../src/lib/shared";
 
 const {
   buildPromptMessages,
+  computeAuditEntryHash,
+  formatAlertMessage,
   isAllowedStageTransition,
   isValidIdempotencyKey,
   redactIdeaForUser,
+  verifyAuditChain,
 } = workerSecurityTestHooks;
 
 const env = {
@@ -129,5 +132,78 @@ describe("idea PII redaction", () => {
     const idea = redactIdeaForUser(baseIdea(), "taro@example.jp", env);
     assert.equal(idea.submitterEmail, "");
     assert.equal(idea.title, "写真整理の自動化");
+  });
+});
+
+describe("audit log hash chain", () => {
+  it("computes deterministic entry hashes that change with prev or content", async () => {
+    const fields = {
+      actor: "user@example.jp",
+      action: "idea.submit",
+      resourceType: "idea",
+      resourceId: "idea-1",
+      result: "success",
+      metadata: { stage: "submitted" },
+      createdAt: "2026-08-12T00:00:00.000Z",
+    };
+    const first = await computeAuditEntryHash("genesis", fields);
+    const second = await computeAuditEntryHash("genesis", fields);
+    const chained = await computeAuditEntryHash(first, fields);
+    assert.equal(first, second);
+    assert.notEqual(chained, first);
+  });
+
+  it("verifies an intact chain and detects a tampered entry", () => {
+    const valid = verifyAuditChain(
+      [
+        {
+          id: "1",
+          storedPrev: "genesis",
+          storedHash: "hash-a",
+          expectedPrev: "genesis",
+          expectedHash: "hash-a",
+        },
+        {
+          id: "2",
+          storedPrev: "hash-a",
+          storedHash: "hash-b",
+          expectedPrev: "hash-a",
+          expectedHash: "hash-b",
+        },
+      ],
+      0,
+    );
+    assert.deepEqual(valid, { valid: true, checked: 2, legacyRows: 0, firstBrokenId: undefined });
+
+    const tampered = verifyAuditChain(
+      [
+        {
+          id: "1",
+          storedPrev: "genesis",
+          storedHash: "hash-a",
+          expectedPrev: "genesis",
+          expectedHash: "hash-a",
+        },
+        {
+          id: "2",
+          storedPrev: "hash-a",
+          storedHash: "tampered",
+          expectedPrev: "hash-a",
+          expectedHash: "hash-b",
+        },
+      ],
+      1,
+    );
+    assert.equal(tampered.valid, false);
+    assert.equal(tampered.firstBrokenId, "2");
+    assert.equal(tampered.legacyRows, 1);
+  });
+});
+
+describe("failure alert message", () => {
+  it("lists AI and notification failures in one message", () => {
+    const text = formatAlertMessage({ aiFailures: 2, notifyFailures: 1 });
+    assert.match(text, /AI処理失敗: 2件/);
+    assert.match(text, /Slack通知失敗: 1件/);
   });
 });

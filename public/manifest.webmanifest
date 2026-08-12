@@ -1,0 +1,19 @@
+{
+  "name": "Construction-DX-Idea",
+  "short_name": "DX-Idea",
+  "description": "土木建設DXアイデア管理システム",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EEF1F5",
+  "theme_color": "#E08A2B",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

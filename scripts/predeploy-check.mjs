@@ -69,6 +69,19 @@ if (process.env.VITE_USE_MOCK_API !== "false") {
   unsafe.push("VITE_USE_MOCK_API must be false");
 }
 
+// Personal-email administrators are a governance risk (single point of
+// failure). Warn rather than block so existing deployments keep working.
+const personalDomains = /@(gmail|yahoo\.co\.jp|icloud|hotmail|live)\./i;
+for (const key of ["ADMIN_EMAILS", "SYSTEM_ADMIN_EMAILS"]) {
+  const value = process.env[key] ?? "";
+  if (value && value.split(",").some((email) => personalDomains.test(email.trim()))) {
+    console.warn(
+      `[WARN] ${key} contains a personal email domain. Use company-domain ` +
+        `addresses and more than one administrator for production governance.`,
+    );
+  }
+}
+
 if (missing.length > 0 || unsafe.length > 0) {
   if (missing.length > 0) console.error(`Missing production values: ${missing.join(", ")}`);
   if (unsafe.length > 0) console.error(`Unsafe production values: ${unsafe.join(", ")}`);

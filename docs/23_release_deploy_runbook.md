@@ -134,7 +134,8 @@ export SMOKE_REQUEST_TIMEOUT_MS=12000
 3. `ideas`、`idea_ai_sessions`、`audit_logs`、`ai_usage_counters`、`ai_monthly_usage_counters`、`notification_outbox` が作成されたことを確認する。
 4. `migrations/002_add_idea_submitter_fields.sql` を適用する（#14。additive、`IF NOT EXISTS`、既存行はDEFAULT ''。2026-08-09本番適用済み）。
 5. `migrations/003_add_idea_idempotency.sql` を適用する（冪等登録キー。additive、null許容・部分ユニーク索引）。
-6. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
+6. `migrations/004_approval_and_audit_chain.sql` を適用する（承認フロー＋監査ハッシュチェーン。additive）。
+7. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
 
 ## 5. バックアップ・復旧
 

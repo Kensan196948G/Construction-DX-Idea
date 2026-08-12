@@ -419,6 +419,7 @@ a:hover { text-decoration: underline; }
           </sc-for>
           <div style="flex:1;"></div>
           <input value="{{ searchQueryIssue }}" onChange="{{ onSearchIssueChange }}" placeholder="タイトル・分類で検索" style="max-width:220px;font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;"></input>
+          <button onClick="{{ exportCsv }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ CSV出力</button>
         </div>
         <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
@@ -455,6 +456,7 @@ a:hover { text-decoration: underline; }
           </sc-for>
           <div style="flex:1;"></div>
           <input value="{{ searchQueryIdea }}" onChange="{{ onSearchIdeaChange }}" placeholder="タイトル・分類で検索" style="max-width:220px;font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;"></input>
+          <button onClick="{{ exportCsv }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ CSV出力</button>
         </div>
         <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
@@ -649,6 +651,38 @@ a:hover { text-decoration: underline; }
             </sc-for>
           </div>
         </sc-for>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isEvaluation }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="評価ボード">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <div style="font-size:12px;color:#8A97A8;">優先度スコア: ステージ・セキュリティ要検討・MVP案・実装方式候補・懸念なし・新しさで算出（0〜10点）</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ exportCsv }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ CSV出力</button>
+        </div>
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+          <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">スコア</th>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">タイトル</th>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">ステージ</th>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">評価理由</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ evaluationRows }}" as="row" hint-placeholder-count="5">
+                <tr>
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:24px;border-radius:6px;font-weight:700;font-size:12.5px;{{ row.scoreStyle }}">{{ row.score }}</span></td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;font-weight:500;color:#1A2433;">{{ row.title }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ row.badgeStyle }}">{{ row.stage }}</span></td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;max-width:420px;">{{ row.reasons }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
       </div>
       </sc-if>
 
@@ -877,6 +911,7 @@ class Component extends DCLogic {
     view: 'dashboard',
     selectedIdeaId: null,
     ideas: this.makeSeedIdeas(),
+    evaluationItems: [],
     auditLog: this.makeSeedAudit(),
     toast: null,
     filterStageIssue: 'all',
@@ -956,6 +991,10 @@ class Component extends DCLogic {
       ideas: s.ideas.map((i) => (i.id === id ? { ...i, comments: [...(i.comments || []), comment] } : i)),
       commentDraft: '',
     }));
+  };
+
+  exportCsv = () => {
+    this.setState({ toast: { message: 'CSV出力を準備しています（管理者権限が必要です）。' } });
   };
 
   toggleUserStatus = (id) => {
@@ -1246,6 +1285,7 @@ class Component extends DCLogic {
         { key: 'kanban', icon: '🗂️', label: '困りごとステージ管理' },
         { key: 'listIdea', icon: '💡', label: '業務アイデア一覧' },
         { key: 'kanbanIdea', icon: '🗂️', label: '業務アイデアステージ管理' },
+        { key: 'evaluation', icon: '🏆', label: '評価ボード' },
       ] },
       { label: 'ITシステム管理', items: [
         { key: 'adminSettings', icon: '⚙️', label: 'AI設定' },
@@ -1282,6 +1322,7 @@ class Component extends DCLogic {
       detail: { title: 'アイデア詳細', sub: '' },
       kanban: { title: '困りごとステージ管理', sub: '企画 → MVP → 検証 → 本番化' },
       kanbanIdea: { title: '業務アイデアステージ管理', sub: '企画 → MVP → 検証 → 本番化' },
+      evaluation: { title: '評価ボード', sub: '優先度スコア順のDXアイデア一覧' },
       adminSettings: { title: 'AI設定', sub: 'モデル・利用上限・接続管理' },
       userManagement: { title: 'ログインユーザー管理', sub: `${s.users.length}名のアカウント` },
       integrations: { title: '外部連携管理', sub: 'Slack・Teams・メール通知の連携設定' },
@@ -1433,11 +1474,28 @@ class Component extends DCLogic {
       return { ...e, badgeStyle: this.badgeStyle(m.fg, m.bg) };
     });
 
+    const evaluationRows = (s.evaluationItems && s.evaluationItems.length
+      ? s.evaluationItems
+      : s.ideas.map((i) => ({ id: i.id, title: i.title, stage: i.stage, score: 0, reasons: '評価API未接続のため仮表示' }))
+    ).map((row) => ({
+      ...row,
+      scoreStyle: row.score >= 8
+        ? 'background:#E4F3EC;color:#1F8255;'
+        : row.score >= 5
+          ? 'background:#FDEFE0;color:#B5701A;'
+          : 'background:#F2F4F8;color:#5A6678;',
+      badgeStyle: this.badgeStyle(
+        (stageMeta[row.stage] || {}).fg || '#5A6678',
+        (stageMeta[row.stage] || {}).bg || '#F2F4F8',
+      ),
+    }));
+
     return {
       view: s.view,
       isDashboard: s.view === 'dashboard', isIntake: s.view === 'intake', isWizard: s.view === 'wizard',
       isReview: s.view === 'review', isList: s.view === 'list', isListIdea: s.view === 'listIdea', isDetail: s.view === 'detail',
       isKanban: s.view === 'kanban', isKanbanIdea: s.view === 'kanbanIdea', isAdmin: s.view === 'adminSettings', isAudit: s.view === 'auditLog',
+      isEvaluation: s.view === 'evaluation',
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
       toast: s.toast, dismissToast: this.dismissToast,
@@ -1490,6 +1548,7 @@ class Component extends DCLogic {
       userRows, integrationRows,
 
       auditRows,
+      evaluationRows, exportCsv: this.exportCsv,
     };
   }
 }

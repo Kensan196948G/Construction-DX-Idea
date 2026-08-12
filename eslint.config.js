@@ -44,4 +44,11 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ["public/sw.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: globals.worker,
+    },
+  },
 );
