@@ -9,7 +9,9 @@ const {
   formatAlertMessage,
   isAllowedStageTransition,
   isValidIdempotencyKey,
+  modelAllowedForProvider,
   redactIdeaForUser,
+  resolveRoles,
   verifyAuditChain,
   xmlCell,
 } = workerSecurityTestHooks;
@@ -119,18 +121,18 @@ describe("stage transition guardrails", () => {
 });
 
 describe("idea PII redaction", () => {
-  it("keeps submitter email for admins", () => {
-    const idea = redactIdeaForUser(baseIdea(), "admin@example.jp", env);
+  it("keeps submitter email for admins", async () => {
+    const idea = await redactIdeaForUser(baseIdea(), "admin@example.jp", env);
     assert.equal(idea.submitterEmail, "yamada@example.jp");
   });
 
-  it("keeps submitter email for the owner", () => {
-    const idea = redactIdeaForUser(baseIdea(), "yamada@example.jp", env);
+  it("keeps submitter email for the owner", async () => {
+    const idea = await redactIdeaForUser(baseIdea(), "yamada@example.jp", env);
     assert.equal(idea.submitterEmail, "yamada@example.jp");
   });
 
-  it("strips submitter email for other authenticated users", () => {
-    const idea = redactIdeaForUser(baseIdea(), "taro@example.jp", env);
+  it("strips submitter email for other authenticated users", async () => {
+    const idea = await redactIdeaForUser(baseIdea(), "taro@example.jp", env);
     assert.equal(idea.submitterEmail, "");
     assert.equal(idea.title, "写真整理の自動化");
   });
@@ -219,5 +221,25 @@ describe("excel cell escaping", () => {
   it("guards formula-like cells with a leading apostrophe", () => {
     assert.equal(xmlCell("=SUM(A1)"), "&apos;=SUM(A1)");
     assert.equal(xmlCell("  -1"), "&apos;  -1");
+  });
+});
+
+describe("AI provider model allowlist", () => {
+  it("allows only the models configured for each provider", () => {
+    assert.equal(modelAllowedForProvider("claude", "claude-sonnet-5"), true);
+    assert.equal(modelAllowedForProvider("claude", "claude-opus-5"), true);
+    assert.equal(modelAllowedForProvider("claude", "deepseek-chat"), false);
+    assert.equal(modelAllowedForProvider("deepseek", "deepseek-chat"), true);
+    assert.equal(modelAllowedForProvider("deepseek", "deepseek-reasoner"), true);
+    assert.equal(modelAllowedForProvider("deepseek", "claude-sonnet-5"), false);
+  });
+});
+
+describe("role resolution", () => {
+  it("falls back to environment role configuration without a database", async () => {
+    const roles = await resolveRoles(env, "admin@example.jp");
+    assert.ok(roles.includes("user"));
+    assert.ok(roles.includes("admin"));
+    assert.equal(roles.includes("system_admin"), false);
   });
 });

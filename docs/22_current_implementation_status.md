@@ -1,5 +1,13 @@
 # 現在の実装・検証ステータス
 
+## 0.4 最新（2026-08-12: DeepSeek・ユーザー管理・監査エクスポート）
+
+- AI設定: DeepSeekプロバイダー（deepseek-chat / deepseek-reasoner）を追加し、接続テスト・設定保存・リセットを
+  プロバイダー対応で有効化。キーはCloudflare Secret（`DEEPSEEK_API_KEY`）で管理。
+- ログインユーザー管理: 新規追加・編集（氏名/部署/ロール/ステータス）・削除・一覧をAPI/UI実装（migration 005）。
+- 監査ログ: CSV・Excel（SpreadsheetML）・HTMLエクスポートを追加。
+- 検証: `npm run verify` PASS（test 56件）。migration 005は本番適用待ち（本PRマージ後）。
+
 ## 0.3 最新（2026-08-12: 本番反映完了）
 
 - PR #2 merge（main `86d216c`）→ `wrangler deploy` 成功（Version `0f311cb8`、custom domain + cron2本）。

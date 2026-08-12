@@ -43,6 +43,12 @@ type StandaloneComponent = {
   exportExcel?: () => void;
   requestApproval?: () => void;
   decideApproval?: (decision: string) => () => void;
+  saveUser?: () => void;
+  deleteUser?: (id: string | number) => void;
+  toggleUserStatus?: (id: string | number) => void;
+  exportAuditCsv?: () => void;
+  exportAuditXls?: () => void;
+  exportAuditHtml?: () => void;
   pushAudit?: (action: string, detail: string) => void;
   __hostWorkflowBound?: boolean;
   __hostDataLoaded?: boolean;
@@ -58,6 +64,7 @@ type StandaloneComponent = {
   __bridgeLastSearchIdea?: string;
   __bridgeSearchTimer?: number;
   __bridgeOfflineSyncDone?: boolean;
+  __bridgeUsersLoaded?: boolean;
 };
 
 export function App() {
@@ -152,6 +159,24 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.decideApproval = (decision: string) => () => {
     void decideApprovalThroughApi(component, decision);
   };
+  component.saveUser = () => {
+    void saveUserThroughApi(component);
+  };
+  component.deleteUser = (id: string | number) => {
+    void deleteUserThroughApi(component, id);
+  };
+  component.toggleUserStatus = (id: string | number) => {
+    void toggleUserStatusThroughApi(component, id);
+  };
+  component.exportAuditCsv = () => {
+    void exportAuditThroughApi(component, "csv");
+  };
+  component.exportAuditXls = () => {
+    void exportAuditThroughApi(component, "xls");
+  };
+  component.exportAuditHtml = () => {
+    void exportAuditThroughApi(component, "html");
+  };
   component.goTo = (view: string) => {
     if (
       ["adminSettings", "auditLog", "userManagement", "integrations"].includes(view) &&
@@ -167,6 +192,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     component.setState({ view });
     if (view === "detail") {
       void loadCommentsForSelected(component);
+    }
+    if (view === "userManagement" && hasRole(component, "system_admin")) {
+      void loadUsers(component);
     }
   };
 
@@ -517,6 +545,7 @@ async function testSavedAiConnectionThroughApi(component: StandaloneComponent) {
   }
 
   const model = component.state.adminSettings.model;
+  const provider = component.state.adminSettings.provider;
   const typedKey = component.state.adminSettings.apiKey?.trim() || undefined;
   const keySourceLabel = typedKey ? "入力中のキー" : "サーバー登録キー";
   component.setState((state) => ({
@@ -524,7 +553,7 @@ async function testSavedAiConnectionThroughApi(component: StandaloneComponent) {
   }));
 
   try {
-    const result = await api.testAiSettings(typedKey, model);
+    const result = await api.testAiSettings(typedKey, model, provider);
     component.setState((state) => ({
       adminSettings: {
         ...state.adminSettings,
@@ -540,8 +569,8 @@ async function testSavedAiConnectionThroughApi(component: StandaloneComponent) {
     component.pushAudit?.(
       "AI接続テスト",
       result.ok
-        ? `Claude API接続テスト成功（${keySourceLabel}）`
-        : `Claude API接続テスト失敗（${keySourceLabel}）`,
+        ? `${provider === "deepseek" ? "DeepSeek" : "Claude"} API接続テスト成功（${keySourceLabel}）`
+        : `${provider === "deepseek" ? "DeepSeek" : "Claude"} API接続テスト失敗（${keySourceLabel}）`,
     );
   } catch (error) {
     component.setState((state) => ({
@@ -571,10 +600,11 @@ async function saveApiKeyThroughApi(component: StandaloneComponent) {
 
   const apiKey = component.state.adminSettings.apiKey?.trim();
   const model = component.state.adminSettings.model;
+  const provider = component.state.adminSettings.provider;
 
   try {
     if (apiKey) {
-      const result = await api.testAiSettings(apiKey, model);
+      const result = await api.testAiSettings(apiKey, model, provider);
       if (!result.ok) {
         showToast(component, `接続確認に失敗しました: ${result.message}`);
         return;
@@ -582,6 +612,7 @@ async function saveApiKeyThroughApi(component: StandaloneComponent) {
     }
 
     const settings = await api.updateAiSettings({
+      provider: provider as "claude" | "deepseek",
       model,
       enabled: component.state.adminSettings.enabled,
       dailyLimit: component.__bridgeDailyLimit ?? 10,
@@ -600,7 +631,7 @@ async function saveApiKeyThroughApi(component: StandaloneComponent) {
           : `AI利用設定を保存しました: ${settings.model}`,
       },
     }));
-    component.pushAudit?.("設定変更", "Claude APIキーを更新");
+    component.pushAudit?.("設定変更", `${provider === "deepseek" ? "DeepSeek" : "Claude"} API設定を更新`);
     window.setTimeout(() => {
       component.setState((state) => ({
         adminSettings: { ...state.adminSettings, apiKeySavedMsg: false },
@@ -954,6 +985,114 @@ async function syncOfflineDrafts(component: StandaloneComponent) {
       ? `オフライン下書きを${synced}件同期しました。`
       : "オフライン下書きの同期に失敗しました。通信復旧後に再試行します。",
   );
+}
+
+async function loadUsers(component: StandaloneComponent) {
+  try {
+    const { items } = await api.getUsers();
+    component.setState({
+      users: items.map((user) => ({
+        id: user.id,
+        name: user.name || user.email,
+        department: user.department,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      })),
+    });
+  } catch (error) {
+    showToast(component, `ログインユーザーを取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function saveUserThroughApi(component: StandaloneComponent) {
+  const form = component.state.userForm;
+  const email = form.email.trim();
+  if (!email) {
+    showToast(component, "メールアドレスを入力してください。");
+    return;
+  }
+  try {
+    if (form.editingId != null) {
+      await api.updateUser(String(form.editingId), {
+        email,
+        name: form.name.trim(),
+        department: form.department.trim(),
+        role: form.role as "user" | "admin" | "system_admin",
+      });
+    } else {
+      await api.createUser({
+        email,
+        name: form.name.trim(),
+        department: form.department.trim(),
+        role: form.role as "user" | "admin" | "system_admin",
+      });
+    }
+    component.setState({
+      userForm: { email: "", name: "", department: "", role: "user", editingId: null },
+    });
+    await loadUsers(component);
+    component.pushAudit?.("ユーザー管理", form.editingId != null ? "ユーザーを更新" : "ユーザーを追加");
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function deleteUserThroughApi(component: StandaloneComponent, id: string | number) {
+  const target = component.state.users.find((user) => user.id === id);
+  if (!target) return;
+  if (!window.confirm(`ユーザー「${target.name}」を削除しますか？`)) return;
+  try {
+    await api.deleteUser(String(id));
+    await loadUsers(component);
+    showToast(component, "ユーザーを削除しました。");
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function toggleUserStatusThroughApi(component: StandaloneComponent, id: string | number) {
+  const target = component.state.users.find((user) => user.id === id);
+  if (!target) return;
+  try {
+    await api.updateUser(String(id), {
+      status: target.status === "active" ? "suspended" : "active",
+    });
+    await loadUsers(component);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function exportAuditThroughApi(component: StandaloneComponent, kind: "csv" | "xls" | "html") {
+  if (!hasRole(component, "system_admin")) {
+    showToast(component, "監査ログのエクスポートにはシステム管理者権限が必要です。");
+    return;
+  }
+  try {
+    const response =
+      kind === "csv"
+        ? await api.exportAuditLogsCsv()
+        : kind === "xls"
+          ? await api.exportAuditLogsXls()
+          : await api.exportAuditLogsHtml();
+    if (!response.ok) {
+      showToast(component, `監査ログのエクスポートに失敗しました: ${response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.${kind === "html" ? "html" : kind}`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    component.pushAudit?.("監査エクスポート", `監査ログを${kind.toUpperCase()}で出力`);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
 }
 
 const auditActionLabels: Record<string, string> = {

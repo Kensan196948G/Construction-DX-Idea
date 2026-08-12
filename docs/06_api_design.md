@@ -127,6 +127,23 @@ rejected/archived への変更は理由が必須（`STAGE_REASON_REQUIRED`）。
 監査ログのSHA-256ハッシュチェーン整合性を検証する（システム管理者限定）。
 `valid` / `checked` / `legacyRows` / `firstBrokenId` を返す。
 
+### GET `/api/admin/audit-logs/export.csv` / `.xls` / `.html`
+
+監査ログのエクスポート（システム管理者限定、最大10,000件）。CSVはBOM付き・式インジェクション対策、
+ExcelはSpreadsheetML、HTMLは監査レポート形式。
+
+### GET/POST/PATCH/DELETE `/api/admin/users`
+
+ログインユーザー管理（システム管理者限定）。新規追加（メール一意）、編集（氏名・部署・ロール・ステータス）、
+削除（自分自身は不可）。ロール（user/admin/system_admin）はAPI権限へ反映される。
+
+### AI設定（DeepSeek対応）
+
+- `PATCH /api/admin/ai-settings` に `provider`（claude/deepseek）を追加。モデルはプロバイダーごとの
+  許可リスト（claude-sonnet-5 / claude-opus-5 / deepseek-chat / deepseek-reasoner）で検証。
+- 接続テスト・AI呼び出しはプロバイダー別エンドポイント（Anthropic / DeepSeek API）へ分岐。
+- APIキー本体は引き続きCloudflare Secret（`ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY`）で管理し、DB・Git・UIには保存しない。
+
 ## 4. 権限
 
 | API種別 | 一般利用者 | 管理者 | システム管理者 |

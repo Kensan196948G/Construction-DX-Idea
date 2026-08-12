@@ -14,6 +14,21 @@ export const ideaStages = [
 
 export type IdeaStage = (typeof ideaStages)[number];
 
+export const aiProviders = ["claude", "deepseek"] as const;
+export type AiProvider = (typeof aiProviders)[number];
+
+export const aiProviderModels: Record<AiProvider, readonly string[]> = {
+  claude: ["claude-sonnet-5", "claude-opus-5"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+};
+
+export const aiModels = [
+  "claude-sonnet-5",
+  "claude-opus-5",
+  "deepseek-chat",
+  "deepseek-reasoner",
+] as const;
+
 export const approvalStatuses = [
   "none",
   "requested",
@@ -151,7 +166,7 @@ export type AiQuestion = {
 };
 
 export type AiSettings = {
-  provider: string;
+  provider: AiProvider;
   model: string;
   enabled: boolean;
   status: "not_configured" | "connected" | "error" | "disabled";
@@ -168,10 +183,36 @@ export type UserProfile = {
 };
 
 export type AiSettingsPatch = {
+  provider: AiProvider;
   model: string;
   enabled: boolean;
   dailyLimit: number;
   monthlyBudget: number;
+};
+
+export const userRoles = ["user", "admin", "system_admin"] as const;
+export type UserRole = (typeof userRoles)[number];
+
+export const userStatuses = ["active", "suspended"] as const;
+export type UserStatus = (typeof userStatuses)[number];
+
+export type AppUser = {
+  id: string;
+  email: string;
+  name: string;
+  department: string;
+  role: UserRole;
+  status: UserStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AppUserInput = {
+  email: string;
+  name?: string;
+  department?: string;
+  role: UserRole;
+  status?: UserStatus;
 };
 
 export type AiConnectionTestResult = {

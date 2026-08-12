@@ -48,6 +48,16 @@
 | IMP-30 | migration修正 | 004の制約追加をDOブロック化（PostgreSQL非対応構文の修正） | `migrations/004` | 本番適用成功 |
 | IMP-31 | 本番反映 | PR #2 merge→`wrangler deploy`（Version `0f311cb8`）→migration 003/004適用→バックアップ演習 | 本番 | deploy出力・psql検証 |
 
+## 1.3 2026-08-12 第4サイクル（DeepSeek・ユーザー管理・監査エクスポート）
+
+| ID | 分類 | 内容 | 対象 | 検証証跡 |
+|---|---|---|---|---|
+| IMP-32 | AI | DeepSeekプロバイダー対応（モデル許可リスト・API分岐・接続テスト・設定保存/リセット） | `worker/index.ts` `src/lib/*` HTML | 単体テスト2件（モデル許可リスト） |
+| IMP-33 | RBAC | app_usersテーブルとユーザー管理API（追加/編集/削除/一覧・自分自身保護）、DBロールを権限判定へ反映 | `worker/index.ts` `migrations/005` | 単体テスト1件（ロール解決） |
+| IMP-34 | 監査 | 監査ログのCSV/Excel/HTMLエクスポートAPIとUIボタン | `worker/index.ts` `src/lib/*` HTML | verify |
+| IMP-35 | UI | ユーザー管理画面（追加/編集/削除/ロール/有効無効）とAI設定のプロバイダー切替 | HTML `src/App.tsx` | HTML script構文OK |
+| IMP-36 | 文書 | docs/06/07/09/22/26/27・README・state.json更新 | 各docs | レビュー |
+
 ## 2. 検証証跡（2026-08-12）
 
 | 検証 | 結果 |
