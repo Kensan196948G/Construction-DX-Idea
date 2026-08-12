@@ -22,6 +22,14 @@ PR #2 merge → `wrangler deploy`（Version `0f311cb8`、cron2本）→ Neon本�
 バックアップ演習（`backup-20260812`）まで完了。承認UI・Excel出力・検索API連携・オフライン下書きキューを追加し、
 test 54件・CI green。残る人間作業は会社ドメイン管理者複数化と次期機能の実運用確認のみ。
 
+### 1.3 第4サイクル（2026-08-12追記: DeepSeek・ユーザー管理・監査エクスポート）
+
+- AI設定にDeepSeek（deepseek-chat / deepseek-reasoner）を追加し、接続テスト・保存・リセットをプロバイダー対応化。
+  キーはCloudflare Secret（DEEPSEEK_API_KEY）で管理（DB・Git・UIに保存しない）。
+- ログインユーザー管理（新規追加・編集・削除・ロール）とmigration 005（app_users）を実装。DBロールはAPI権限へ反映。
+- 監査ログのCSV・Excel・HTMLエクスポートを実装。
+- test 56件・verify PASS。migration 005適用と本番デプロイは本PRマージ後に実施。
+
 ## 2. 改善前後スコア
 
 | カテゴリ | 改善前 | 改善後 | 差分 | 主な改善 |

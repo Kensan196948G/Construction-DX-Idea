@@ -1,5 +1,7 @@
 import { inspectIssueInput } from "./privacy";
 import type {
+  AppUser,
+  AppUserInput,
   ApprovalDecision,
   ApprovalRequest,
   AuditChainVerifyResult,
@@ -357,7 +359,7 @@ export const mockApi = {
 
   async updateAiSettings(settings: AiSettingsPatch): Promise<AiSettings> {
     mockSettings = {
-      provider: "claude",
+      provider: settings.provider,
       model: settings.model,
       enabled: settings.enabled,
       status: settings.enabled ? "connected" : "disabled",
@@ -370,11 +372,14 @@ export const mockApi = {
     return mockSettings;
   },
 
-  async testAiSettings(): Promise<AiConnectionTestResult> {
+  async testAiSettings(_apiKey?: string, _model?: string, provider = "claude"): Promise<AiConnectionTestResult> {
     return {
       ok: true,
       status: "connected",
-      message: "モック接続テストに成功しました。",
+      message:
+        provider === "deepseek"
+          ? "モックDeepSeek接続テストに成功しました。"
+          : "モック接続テストに成功しました。",
       keyLast4: "mock",
       checkedAt: now(),
     };
@@ -431,6 +436,81 @@ export const mockApi = {
 
   async verifyAuditLogs(): Promise<AuditChainVerifyResult> {
     return { valid: true, checked: 2, legacyRows: 0 };
+  },
+
+  async exportAuditLogsCsv(): Promise<Response> {
+    const body = "\uFEFFid,actor,action,created_at\r\nlog-001,demo,idea.submit,2026-08-12\r\n";
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="audit-logs-${now().slice(0, 10)}.csv"`,
+      },
+    });
+  },
+
+  async exportAuditLogsXls(): Promise<Response> {
+    const body =
+      '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">' +
+      '<Worksheet ss:Name="AuditLogs"><Table><Row><Cell><Data ss:Type="String">id</Data></Cell>' +
+      "<Cell><Data ss:Type=\"String\">actor</Data></Cell></Row></Table></Worksheet></Workbook>";
+    return new Response(body, {
+      headers: {
+        "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+        "Content-Disposition": `attachment; filename="audit-logs-${now().slice(0, 10)}.xls"`,
+      },
+    });
+  },
+
+  async exportAuditLogsHtml(): Promise<Response> {
+    const body = "<!doctype html><html><body><h1>監査ログ</h1><table><tr><th>actor</th></tr><tr><td>demo</td></tr></table></body></html>";
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Disposition": `attachment; filename="audit-logs-${now().slice(0, 10)}.html"`,
+      },
+    });
+  },
+
+  async getUsers(): Promise<{ items: AppUser[] }> {
+    return {
+      items: [
+        {
+          id: "user-1",
+          email: "admin@example.jp",
+          name: "情報システム太郎",
+          department: "情報システム部",
+          role: "system_admin",
+          status: "active",
+          createdAt: now(),
+          updatedAt: now(),
+        },
+      ],
+    };
+  },
+
+  async createUser(input: AppUserInput): Promise<AppUser> {
+    return {
+      id: `user-${Date.now()}`,
+      email: input.email.toLowerCase(),
+      name: input.name ?? "",
+      department: input.department ?? "",
+      role: input.role,
+      status: input.status ?? "active",
+      createdAt: now(),
+      updatedAt: now(),
+    };
+  },
+
+  async updateUser(id: string, patch: Partial<AppUserInput>): Promise<AppUser> {
+    const users = await this.getUsers();
+    const found = users.items.find((user) => user.id === id);
+    if (!found) throw new Error("User not found");
+    return { ...found, ...patch, email: (patch.email ?? found.email).toLowerCase() };
+  },
+
+  async deleteUser(): Promise<{ ok: boolean }> {
+    return { ok: true };
   },
 };
 
