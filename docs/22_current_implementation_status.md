@@ -1,5 +1,13 @@
 # 現在の実装・検証ステータス
 
+## 0.3 最新（2026-08-12: 本番反映完了）
+
+- PR #2 merge（main `86d216c`）→ `wrangler deploy` 成功（Version `0f311cb8`、custom domain + cron2本）。
+- Neon本番へ migration 003（idempotency_key）・004（承認フィールド＋監査ハッシュチェーン）適用済み。
+- バックアップ演習: `backup-20260812` ブランチで整合性確認（ideas 0 / audit_logs 19 / outbox 0 / counters 0）。
+- 承認UI（詳細画面）・Excel出力（SpreadsheetML）・検索API連携・オフライン下書きキューを追加（test 54件）。
+- 残課題: 会社ドメイン管理者複数化、CodeRabbit指摘対応、次期機能の実運用確認。
+
 ## 0.2 最新（2026-08-12: 最優先改善10件対応）
 
 - 承認フローAPI（依頼・判定・承認ゲート・理由必須）とmigration 004。
