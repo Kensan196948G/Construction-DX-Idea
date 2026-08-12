@@ -30,6 +30,12 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | submitter_name | text | 提出者名（#14） |
 | submitter_email | text | 提出者メール（#14） |
 | coordination_needed | text | 関連部署との調整要否（#14） |
+| idempotency_key | text | 冪等登録キー（#追加、null許容・部分ユニーク索引） |
+| approval_status | text | 承認状態 none/requested/approved/rejected/returned（#004） |
+| approver_email | text | 承認者メール（#004） |
+| approval_requested_at | timestamptz | 承認依頼日時（#004） |
+| approval_acted_at | timestamptz | 承認判定日時（#004） |
+| approval_reason | text | 依頼・判定理由（#004） |
 | created_at | timestamptz | 登録日時 |
 | updated_at | timestamptz | 更新日時 |
 
@@ -90,6 +96,8 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | resource_id | text | 対象ID |
 | result | text | 成否 |
 | metadata | jsonb | 追加情報 |
+| prev_hash | text | ハッシュチェーン前件ハッシュ（#004） |
+| entry_hash | text | 当該行のSHA-256ハッシュ（#004） |
 | created_at | timestamptz | 実行日時 |
 
 ### notification_outbox

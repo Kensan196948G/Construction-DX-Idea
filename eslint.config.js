@@ -5,7 +5,15 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "node_modules", ".wrangler", "support.js"] },
+  {
+    ignores: [
+      "dist",
+      "node_modules",
+      ".wrangler",
+      "support.js",
+      "public/design/vendor/**",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -34,6 +42,13 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2023,
       globals: globals.node,
+    },
+  },
+  {
+    files: ["public/sw.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: globals.worker,
     },
   },
 );

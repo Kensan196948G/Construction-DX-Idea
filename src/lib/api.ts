@@ -1,13 +1,19 @@
 import { mockApi } from "./mockApi";
 import { normalizeApiBaseUrl } from "./shared";
 import type {
+  ApprovalDecision,
+  ApprovalRequest,
+  AuditChainVerifyResult,
   AiConnectionTestResult,
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiUsageSummary,
+  AuditLogEntry,
   DashboardMetrics,
   EvaluationItem,
   Idea,
+  IdeaComment,
   IdeaHistory,
   IdeaListParams,
   IdeaStage,
@@ -91,8 +97,32 @@ export const api = useMock
         const suffix = query.toString() ? `?${query.toString()}` : "";
         return request<Idea[]>(`/api/ideas${suffix}`);
       },
+      getIdea: (id: string) => request<Idea>(`/api/ideas/${id}`),
+      updateIdea: (id: string, patch: Partial<StructuredIdea>) =>
+        request<Idea>(`/api/ideas/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ patch }),
+        }),
+      getComments: (id: string) =>
+        request<{ items: IdeaComment[] }>(`/api/ideas/${id}/comments`),
+      addComment: (id: string, body: string) =>
+        request<IdeaComment>(`/api/ideas/${id}/comments`, {
+          method: "POST",
+          body: JSON.stringify({ body }),
+        }),
+      requestApproval: (id: string, payload: ApprovalRequest) =>
+        request<Idea>(`/api/ideas/${id}/request-approval`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      decideApproval: (id: string, payload: ApprovalDecision) =>
+        request<Idea>(`/api/ideas/${id}/approval`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
       getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
+      exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),
       inspectInput: (input: IssueInput) =>
         request<PrivacyFinding[]>("/api/privacy/inspect", {
@@ -109,9 +139,10 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify({ input, answers }),
         }),
-      saveIdea: (structured: StructuredIdea, stage: IdeaStage) =>
+      saveIdea: (structured: StructuredIdea, stage: IdeaStage, idempotencyKey?: string) =>
         request<SaveIdeaResult>(stage === "draft" ? "/api/ideas/drafts" : "/api/ideas", {
           method: "POST",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
           body: JSON.stringify({ structured }),
         }),
       updateStage: (id: string, stage: IdeaStage, reason?: string) =>
@@ -130,4 +161,8 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify({ apiKey, model }),
         }),
+      getAuditLogs: (limit = 100) =>
+        request<{ items: AuditLogEntry[] }>(`/api/admin/audit-logs?limit=${limit}`),
+      getAiUsage: () => request<AiUsageSummary>("/api/admin/ai-usage"),
+      verifyAuditLogs: () => request<AuditChainVerifyResult>("/api/admin/audit-logs/verify"),
     };

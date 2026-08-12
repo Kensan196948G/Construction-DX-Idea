@@ -7,6 +7,8 @@
 - Slack通知失敗がないか確認する。
 - 監査ログに異常な操作がないか確認する。
 - エラーレート、タイムアウトを確認する。
+- システム管理者は `GET /api/admin/audit-logs` と `GET /api/admin/ai-usage` で
+  監査・利用量を実データで確認する（UIの監査ログ/利用量表示も同一API）。
 - `npm run release:smoke` で一般ユーザー/管理者境界の継続監視を行う。
   - 前提:
     - `SMOKE_API_BASE_URL` 必須。未設定時は即時終了コード1。
@@ -57,3 +59,31 @@ AI利用に情報漏えい、異常課金、誤設定の疑いがある場合:
 3. 監査ログとAI処理履歴を確認する。
 4. 影響範囲を整理する。
 5. 再開条件を管理者が承認する。
+
+## 6. バックアップ・復旧（2026-08-12追加）
+
+Neonは自動バックアップ（PITR）を提供する。復旧手順の検証は四半期に1回以上実施する。
+
+```bash
+# Neon CLI（例。実行前に Neon プロジェクトIDを確認）
+neonctl branches create --name backup-YYYYMMDD --project-id twilight-cloud-06040828
+# バックアップブランチから一時接続URLを取得し、整合性SQLを実行
+neonctl connection-string --branch backup-YYYYMMDD --project-id twilight-cloud-06040828
+psql "$TEMPORARY_URL" -c "select count(*) from ideas; select count(*) from audit_logs;"
+```
+
+- RTO目標: 4時間 / RPO目標: 5分（Neon PITR前提。運用開始前にユーザー承認で確定する）。
+- 復旧演習（リストア→スモーク→利用者確認）は本番を汚さないよう一時ブランチで行う。
+- ロールバック手順は `docs/23_release_deploy_runbook.md` §ロールバックを参照。
+
+## 7. 障害アラート（2026-08-12追加）
+
+- Worker cron（毎時 `0 * * * *`）が直近1時間のAI処理失敗・Slack通知失敗を集計し、
+  0件超の場合はSlackへアラートを送信し、`alert.failure.notified` を監査ログへ記録する。
+- アラートのしきい値変更・停止はシステム管理者が判断する（現状は失敗1件以上で通知）。
+
+## 8. 監査ログの改ざん検知
+
+- `GET /api/admin/audit-logs/verify` でSHA-256チェーンを検証する（システム管理者限定）。
+- `valid=false` の場合は `firstBrokenId` を確認し、原因（DB改変・スクリプト直接更新等）を調査する。
+- 既存レガシー行は `legacyRows` として報告される（チェーン化前の行）。

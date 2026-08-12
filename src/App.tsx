@@ -7,14 +7,14 @@ import {
   fromReviewDraft,
   mapAiSettingsToStandalone,
   mapApiIdeaToStandalone,
+  toStandaloneStage,
   toAnswerRecord,
-  toApiStage,
   toIssueInput,
   toReviewDraft,
   validateIssueInput,
 } from "./lib/standaloneBridge";
 import type { StandaloneState } from "./lib/standaloneBridge";
-import type { IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
+import type { AuditLogEntry, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
 
 const designPath = "/design/construction-dx-idea.html";
 const workflowBindIntervalMs = 700;
@@ -38,6 +38,11 @@ type StandaloneComponent = {
   goTo?: (view: string) => void;
   runConnectionTest?: () => void;
   resetApiKeyInput?: () => void;
+  submitComment?: () => void;
+  exportCsv?: () => void;
+  exportExcel?: () => void;
+  requestApproval?: () => void;
+  decideApproval?: (decision: string) => () => void;
   pushAudit?: (action: string, detail: string) => void;
   __hostWorkflowBound?: boolean;
   __hostDataLoaded?: boolean;
@@ -48,6 +53,11 @@ type StandaloneComponent = {
   __bridgeBusy?: Record<string, boolean>;
   __bridgeDailyLimit?: number;
   __bridgeRetryCount?: number;
+  __bridgeSubmitKey?: string;
+  __bridgeLastSearchIssue?: string;
+  __bridgeLastSearchIdea?: string;
+  __bridgeSearchTimer?: number;
+  __bridgeOfflineSyncDone?: boolean;
 };
 
 export function App() {
@@ -56,6 +66,7 @@ export function App() {
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       bindStandaloneWorkflowBridge(frameRef.current);
+      watchSearchQuery(frameRef.current);
     }, workflowBindIntervalMs);
 
     return () => window.clearInterval(intervalId);
@@ -126,12 +137,37 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.resetApiKeyInput = () => {
     void resetApiKeyInputThroughApi(component);
   };
+  component.submitComment = () => {
+    void submitCommentThroughApi(component);
+  };
+  component.exportCsv = () => {
+    void exportCsvThroughApi(component);
+  };
+  component.exportExcel = () => {
+    void exportExcelThroughApi(component);
+  };
+  component.requestApproval = () => {
+    void requestApprovalThroughApi(component);
+  };
+  component.decideApproval = (decision: string) => () => {
+    void decideApprovalThroughApi(component, decision);
+  };
   component.goTo = (view: string) => {
-    if (["adminSettings", "auditLog"].includes(view) && !hasRole(component, "system_admin")) {
+    if (
+      ["adminSettings", "auditLog", "userManagement", "integrations"].includes(view) &&
+      !hasRole(component, "system_admin")
+    ) {
       showToast(component, "システム管理者権限が必要です。");
       return;
     }
+    if (view === "evaluation" && !hasRole(component, "admin")) {
+      showToast(component, "評価ボードには管理者権限が必要です。");
+      return;
+    }
     component.setState({ view });
+    if (view === "detail") {
+      void loadCommentsForSelected(component);
+    }
   };
 
   component.setState((state) => ({ ...state }));
@@ -184,6 +220,46 @@ async function loadInitialData(component: StandaloneComponent) {
   } else if (settingsResult.status === "rejected" && hasRole(component, "system_admin")) {
     shouldRetry = true;
     showToast(component, `AI利用設定を取得できませんでした: ${toErrorMessage(settingsResult.reason)}`);
+  }
+
+  if (hasRole(component, "system_admin")) {
+    const [auditResult, usageResult] = await Promise.allSettled([api.getAuditLogs(200), api.getAiUsage()]);
+    if (auditResult.status === "fulfilled") {
+      component.setState({ auditLog: auditResult.value.items.map(mapAuditEntryToStandalone) });
+    } else {
+      shouldRetry = true;
+      showToast(component, `監査ログを取得できませんでした: ${toErrorMessage(auditResult.reason)}`);
+    }
+    if (usageResult.status === "fulfilled") {
+      component.setState((state) => ({
+        adminSettings: { ...state.adminSettings, used: usageResult.value.summary.totalCalls },
+      }));
+    } else {
+      shouldRetry = true;
+      showToast(component, `AI利用量を取得できませんでした: ${toErrorMessage(usageResult.reason)}`);
+    }
+  }
+
+  if (hasRole(component, "admin")) {
+    try {
+      const evaluationResult = await api.getEvaluationBoard();
+      component.setState({
+        evaluationItems: evaluationResult.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          stage: toStandaloneStage(item.stage),
+          score: item.priorityScore,
+          reasons: item.reasons.join("、"),
+        })),
+      });
+    } catch (error) {
+      showToast(component, `評価ボードを取得できませんでした: ${toErrorMessage(error)}`);
+    }
+  }
+
+  if (!component.__bridgeOfflineSyncDone) {
+    component.__bridgeOfflineSyncDone = true;
+    void syncOfflineDrafts(component);
   }
 
   if (shouldRetry) {
@@ -340,9 +416,12 @@ async function saveReviewDraftThroughApi(component: StandaloneComponent, stage: 
     component.__bridgeStructuredDraft,
   );
   component.__bridgeStructuredDraft = structured;
+  const idempotencyKey = component.__bridgeSubmitKey ?? crypto.randomUUID();
+  component.__bridgeSubmitKey = idempotencyKey;
 
   try {
-    const result = await api.saveIdea(structured, stage);
+    const result = await api.saveIdea(structured, stage, idempotencyKey);
+    component.__bridgeSubmitKey = undefined;
     const savedIdea = mapApiIdeaToStandalone(result);
     component.setState((state) => ({
       ideas: [savedIdea, ...state.ideas.filter((idea) => idea.id !== savedIdea.id)],
@@ -368,6 +447,12 @@ async function saveReviewDraftThroughApi(component: StandaloneComponent, stage: 
     }));
     component.pushAudit?.(stage === "draft" ? "下書き保存" : "新規登録", `「${savedIdea.title}」を保存`);
   } catch (error) {
+    if (isNetworkLikeError(error)) {
+      queueOfflineDraft(structured, stage);
+      showToast(component, "サーバーに接続できないため、内容を端末のオフライン下書きへ保存しました。通信復旧後に自動同期します。");
+      finishBridgeAction(component, actionKey);
+      return;
+    }
     showToast(component, toErrorMessage(error));
   } finally {
     finishBridgeAction(component, actionKey);
@@ -394,24 +479,28 @@ async function advanceStageThroughApi(component: StandaloneComponent, id: string
     return;
   }
 
-  const order = ["企画", "MVP", "検証", "本番化"];
-  const currentIndex = order.indexOf(idea.stage);
-  if (currentIndex < 0 || currentIndex >= order.length - 1) {
+  const nextByApiStage: Partial<Record<IdeaStage, IdeaStage>> = {
+    submitted: "planning",
+    planning: "mvp",
+    mvp: "verification",
+    verification: "production_candidate",
+    production_candidate: "production",
+  };
+  const nextStage = idea.apiStage ? nextByApiStage[idea.apiStage] : undefined;
+  if (!nextStage) {
     finishBridgeAction(component, actionKey);
     return;
   }
 
-  const nextStageLabel = order[currentIndex + 1];
-  const nextStage = toApiStage(nextStageLabel);
   try {
     const updated = await api.updateStage(String(id), nextStage);
     const updatedIdea = mapApiIdeaToStandalone(updated);
     component.setState((state) => ({
       ideas: state.ideas.map((candidate) => (candidate.id === id ? updatedIdea : candidate)),
       selectedIdeaId: updatedIdea.id,
-      toast: { message: `ステージを${nextStageLabel}へ変更しました:「${updatedIdea.title}」` },
+      toast: { message: `ステージを${toStandaloneStage(nextStage)}へ変更しました:「${updatedIdea.title}」` },
     }));
-    component.pushAudit?.("ステージ変更", `「${updatedIdea.title}」のステージを${nextStageLabel}へ変更`);
+    component.pushAudit?.("ステージ変更", `「${updatedIdea.title}」のステージを${toStandaloneStage(nextStage)}へ変更`);
   } catch (error) {
     showToast(component, toErrorMessage(error));
   } finally {
@@ -589,4 +678,312 @@ function toErrorMessage(error: unknown) {
     return `${error.message}（request_id: ${error.requestId}）`;
   }
   return error instanceof Error ? error.message : "処理に失敗しました。";
+}
+
+async function submitCommentThroughApi(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  if (!idea?.apiStage) {
+    component.submitComment?.();
+    return;
+  }
+  const text = component.state.commentDraft.trim();
+  if (!text) return;
+  try {
+    const created = await api.addComment(String(idea.id), text);
+    component.setState((state) => {
+      const target = state.ideas.find((candidate) => candidate.id === idea.id);
+      if (!target) return {};
+      const updated = {
+        ...target,
+        comments: [
+          ...(target.comments ?? []),
+          {
+            author: created.author,
+            time: created.createdAt.replace("T", " ").slice(0, 16),
+            text: created.body,
+          },
+        ],
+      };
+      return {
+        ideas: state.ideas.map((candidate) => (candidate.id === idea.id ? updated : candidate)),
+        commentDraft: "",
+        toast: { message: "コメントを追加しました。" },
+      };
+    });
+    component.pushAudit?.("コメント", `「${idea.title}」にコメントを追加`);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function loadCommentsForSelected(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  if (!idea?.apiStage) return;
+  try {
+    const { items } = await api.getComments(String(idea.id));
+    component.setState((state) => ({
+      ideas: state.ideas.map((candidate) =>
+        candidate.id === idea.id
+          ? {
+              ...candidate,
+              comments: items.map((comment) => ({
+                author: comment.author,
+                time: comment.createdAt.replace("T", " ").slice(0, 16),
+                text: comment.body,
+              })),
+            }
+          : candidate,
+      ),
+    }));
+  } catch (error) {
+    showToast(component, `コメントを取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function exportCsvThroughApi(component: StandaloneComponent) {
+  if (!hasRole(component, "admin")) {
+    showToast(component, "CSV出力には管理者権限が必要です。");
+    return;
+  }
+  try {
+    const response = await api.exportIdeasCsv();
+    if (!response.ok) {
+      const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
+      showToast(component, `CSV出力に失敗しました: ${errorBody?.message ?? response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `dx-ideas-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    component.pushAudit?.("CSV出力", "DXアイデア一覧をCSV出力");
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function exportExcelThroughApi(component: StandaloneComponent) {
+  if (!hasRole(component, "admin")) {
+    showToast(component, "Excel出力には管理者権限が必要です。");
+    return;
+  }
+  try {
+    const response = await api.exportIdeasXls();
+    if (!response.ok) {
+      const errorBody = (await response.json().catch(() => null)) as { message?: string } | null;
+      showToast(component, `Excel出力に失敗しました: ${errorBody?.message ?? response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `dx-ideas-${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    component.pushAudit?.("Excel出力", "DXアイデア一覧をExcel出力");
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function requestApprovalThroughApi(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  if (!idea?.apiStage) return;
+  const { approverEmail, reason } = component.state.approvalDraft;
+  if (!approverEmail.trim()) {
+    showToast(component, "承認者メールを入力してください。");
+    return;
+  }
+  try {
+    const updated = await api.requestApproval(String(idea.id), {
+      approverEmail: approverEmail.trim(),
+      reason: reason.trim() || undefined,
+    });
+    const mapped = mapApiIdeaToStandalone(updated);
+    component.setState((state) => ({
+      ideas: state.ideas.map((candidate) => (candidate.id === idea.id ? mapped : candidate)),
+      approvalDraft: { approverEmail: "", reason: "" },
+      toast: { message: `承認依頼を送信しました: ${mapped.approverEmail}` },
+    }));
+    component.pushAudit?.("承認依頼", `「${mapped.title}」の承認依頼を送信`);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function decideApprovalThroughApi(component: StandaloneComponent, decision: string) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  if (!idea?.apiStage) return;
+  const reason = component.state.approvalDraft.reason.trim();
+  if (!reason) {
+    showToast(component, "判定理由を入力してください。");
+    return;
+  }
+  if (!["approve", "reject", "return"].includes(decision)) return;
+  try {
+    const updated = await api.decideApproval(String(idea.id), {
+      decision: decision as "approve" | "reject" | "return",
+      reason,
+    });
+    const mapped = mapApiIdeaToStandalone(updated);
+    component.setState((state) => ({
+      ideas: state.ideas.map((candidate) => (candidate.id === idea.id ? mapped : candidate)),
+      approvalDraft: { ...state.approvalDraft, reason: "" },
+      toast: { message: `承認判定を記録しました: ${mapped.approvalStatus}` },
+    }));
+    component.pushAudit?.("承認判定", `「${mapped.title}」を${decision}`);
+  } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+function watchSearchQuery(frame: HTMLIFrameElement | null) {
+  const component = getStandaloneComponent(frame);
+  if (!component || !component.__hostDataLoaded) return;
+  const issueQuery = component.state.searchQueryIssue;
+  const ideaQuery = component.state.searchQueryIdea;
+  if (issueQuery !== (component.__bridgeLastSearchIssue ?? "")) {
+    component.__bridgeLastSearchIssue = issueQuery;
+    scheduleSearch(component, issueQuery);
+  }
+  if (ideaQuery !== (component.__bridgeLastSearchIdea ?? "")) {
+    component.__bridgeLastSearchIdea = ideaQuery;
+    scheduleSearch(component, ideaQuery);
+  }
+}
+
+function scheduleSearch(component: StandaloneComponent, q: string) {
+  if (component.__bridgeSearchTimer) {
+    window.clearTimeout(component.__bridgeSearchTimer);
+  }
+  component.__bridgeSearchTimer = window.setTimeout(() => {
+    component.__bridgeSearchTimer = undefined;
+    void api
+      .listIdeas({ q: q.trim() || undefined })
+      .then((ideas) => {
+        component.setState({ ideas: ideas.map(mapApiIdeaToStandalone) });
+      })
+      .catch((error) => {
+        showToast(component, `検索に失敗しました: ${toErrorMessage(error)}`);
+      });
+  }, 600);
+}
+
+const OFFLINE_DRAFTS_KEY = "cdx-offline-drafts-v1";
+
+function isNetworkLikeError(error: unknown): boolean {
+  if (error instanceof ApiClientError) {
+    return (
+      error.code === undefined ||
+      error.code === "INTERNAL_ERROR" ||
+      error.code === "DATABASE_NOT_CONFIGURED" ||
+      error.code === "DATABASE_MISCONFIGURED"
+    );
+  }
+  return true;
+}
+
+function queueOfflineDraft(structured: StructuredIdea, stage: IdeaStage) {
+  try {
+    const raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
+    const queue = raw
+      ? (
+          JSON.parse(raw) as Array<{
+            structured: StructuredIdea;
+            stage: IdeaStage;
+            queuedAt: string;
+          }>
+        ).slice(0, 19)
+      : [];
+    queue.push({ structured, stage, queuedAt: new Date().toISOString() });
+    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(queue));
+  } catch {
+    // Storage unavailable — fall back to the regular error toast.
+  }
+}
+
+async function syncOfflineDrafts(component: StandaloneComponent) {
+  let raw: string | null = null;
+  try {
+    raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let queue: Array<{ structured: StructuredIdea; stage: IdeaStage; queuedAt: string }> = [];
+  try {
+    queue = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!Array.isArray(queue) || queue.length === 0) return;
+  const remaining: typeof queue = [];
+  let synced = 0;
+  for (const draft of queue) {
+    try {
+      await api.saveIdea(draft.structured, draft.stage);
+      synced += 1;
+    } catch {
+      remaining.push(draft);
+    }
+  }
+  try {
+    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(remaining));
+  } catch {
+    // Keep the queue in memory for this session only.
+  }
+  showToast(
+    component,
+    synced > 0
+      ? `オフライン下書きを${synced}件同期しました。`
+      : "オフライン下書きの同期に失敗しました。通信復旧後に再試行します。",
+  );
+}
+
+const auditActionLabels: Record<string, string> = {
+  "ai_usage.read": "AI利用量閲覧",
+  "ai.quality.blocked": "AI品質ブロック",
+  "ai_settings.test": "AI接続テスト",
+  "ai_settings.update": "設定変更",
+  "audit_logs.read": "監査ログ閲覧",
+  "idea.draft": "下書き保存",
+  "idea.draft.duplicate": "重複下書き検知",
+  "idea.export.csv": "CSVエクスポート",
+  "idea.history.read": "履歴閲覧",
+  "idea.submit": "新規登録",
+  "idea.submit.duplicate": "重複登録検知",
+  "slack.notify.failed": "Slack通知失敗",
+  "stage.update": "ステージ変更",
+  "usage_limits.read": "利用制限閲覧",
+  "usage_limits.update": "利用制限更新",
+};
+
+function mapAuditEntryToStandalone(entry: AuditLogEntry) {
+  const metadataText = JSON.stringify(entry.metadata ?? {});
+  const detail = [entry.resourceType, entry.resourceId, metadataText]
+    .filter(Boolean)
+    .join(" / ")
+    .slice(0, 160);
+  return {
+    time: entry.createdAt.replace("T", " ").slice(0, 16),
+    actor: entry.actor,
+    action: auditActionLabels[entry.action] ?? entry.action,
+    detail,
+  };
 }

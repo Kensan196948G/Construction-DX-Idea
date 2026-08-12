@@ -133,7 +133,15 @@ export SMOKE_REQUEST_TIMEOUT_MS=12000
 2. `migrations/001_initial_schema.sql` を適用する。
 3. `ideas`、`idea_ai_sessions`、`audit_logs`、`ai_usage_counters`、`ai_monthly_usage_counters`、`notification_outbox` が作成されたことを確認する。
 4. `migrations/002_add_idea_submitter_fields.sql` を適用する（#14。additive、`IF NOT EXISTS`、既存行はDEFAULT ''。2026-08-09本番適用済み）。
-5. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
+5. `migrations/003_add_idea_idempotency.sql` を適用する（冪等登録キー。additive、null許容・部分ユニーク索引）。
+6. `migrations/004_approval_and_audit_chain.sql` を適用する（承認フロー＋監査ハッシュチェーン。additive）。
+7. 接続文字列をCloudflare Worker Secretの `DATABASE_URL` に登録する（Stage B。値は表示・保存しない）。
+
+## 5. バックアップ・復旧
+
+- Neonの自動バックアップ（PITR）を有効にし、`docs/10_operations_runbook.md` §6の
+  ブランチ取得・整合性確認・復旧演習を四半期に1回以上実施する。
+- 復旧時は一時ブランチで整合性を確認後、接続文字列を切り替え、`release:smoke` で確認する。
 
 Stage Aではプロジェクト作成とmigration適用（スキーマ準備）まで行い、`DATABASE_URL` の
 Secret投入はStage Bで行ってよい。Workerは `DATABASE_URL` 未設定の間、DB依存APIを503で

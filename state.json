@@ -7,8 +7,8 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "保守フェーズ: 2026-08-09サイクル完了（ソース正本復元 + Issue #14永続化）。本番Worker（8/7デプロイ）にのみ存在した新機能（評価ボード#36/CSV#40/検索#37/履歴API/ステージreason）のソースをbundledコード正本から再実装しローカルと一致。Issue #14（idea追加フィールド永続化）をmigration 002で本番反映。残Issue: #36〜#44のUI接続（評価ボード画面等はデザイン正本改修が必要）・#15（APIキーサーバーサイド化）・#16（support.js上流・保留）。",
-  "phase": "Monitor",
+  "goal": "2026-08-12第2サイクル完了（最優先改善10件対応）: 承認フローAPI・コメント/詳細/編集・Slack通知・評価ボードUI/CSV・毎時アラート・監査ハッシュチェーン・PWA・バックアップ演習・Dependabot・GitHub Issue 10件復元。verify PASS（test 52件）。次: PRレビュー・本番デプロイ・migration 003/004適用（人間承認）、承認フローUIとオフラインキュー。",
+  "phase": "Verify",
   "deploy": {
     "ready": true,
     "ready_at": "2026-07-14",
@@ -33,8 +33,8 @@
     "test_pass_rate": 1.0,
     "security_critical": 0,
     "blocker_count": 0,
-    "verified_at": "2026-07-28",
-    "verified_by": "保守サイクル完了（main bcd8c66 + PR #34）: PR #29/#31/#32/#33をCI green+Y承認でmerge・本番デプロイ（最終Version 475f4c50）。Neon整合性PASS、release:monitor 13/14 PASS（DATABASE_URLローカル未設定は設計どおり）、Cloudflare Observability直近3hエラー0件、npm audit 0件（dev含む）"
+    "verified_at": "2026-08-12",
+    "verified_by": "第2サイクル完了: npm run verify PASS（lint / test 52件 / build x2 / security:scan）、HTMLデザインscript構文OK、npm audit 0件。承認フロー・コメント/編集・通知・評価ボードUI/CSV・アラート・監査チェーン・PWA・バックアップ演習・Dependabot・Issue 10件復元。本番デプロイ・migration 003/004・JWT付きsmokeは人間承認待ち"
   },
   "execution": {
     "max_duration_minutes": 300,

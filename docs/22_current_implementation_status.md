@@ -1,5 +1,36 @@
 # 現在の実装・検証ステータス
 
+## 0.2 最新（2026-08-12: 最優先改善10件対応）
+
+- 承認フローAPI（依頼・判定・承認ゲート・理由必須）とmigration 004。
+- コメント・詳細・編集APIと、詳細画面のコメントAPI接続。
+- ステージ変更・承認依頼/判定のSlack通知（Outbox再送対応）。
+- 評価ボード画面（優先度スコア順）とCSV出力ボタンをstandaloneデザインへ追加し、APIデータ接続。
+- 毎時障害アラート（AI処理失敗・Slack通知失敗）と監査ログSHA-256ハッシュチェーン＋verify API。
+- PWA（manifest/SW）とバックアップ演習スクリプト、管理者個人ドメイン警告、Dependabot。
+- GitHub Issue 10件復元（#3〜#12）。
+- 検証: `npm run verify` PASS（test 52件）、HTMLデザインscript構文チェックOK、`worker:deploy:dry-run` PASS。
+- 未実施: 本番デプロイ・migration 004本番適用・承認フローUI・オフライン下書きキュー（人間承認/次期）。
+
+## 0.1 最新（2026-08-12: 総合評価・改善サイクル）
+
+- 統合評価（`docs/25_baseline_evaluation.md`）: 18カテゴリ平均55.5点 / 総合判定「条件付き利用可」。
+- 実装済み改善（`docs/26_improvement_ledger.md`）:
+  - AI利用予約の失敗時解放（コスト・上限の公正化）
+  - AIプロンプトのsystem/user分離とプロンプトインジェクション対策（`questions_v2`/`structure_v2`）
+  - Claude APIタイムアウト15秒（504 `AI_TIMEOUT`）
+  - 監査ログ閲覧・AI利用量・利用制限の管理API（システム管理者限定）とUI接続
+  - 一覧/評価APIのPII最小化（submitter_email）
+  - `Idempotency-Key` によるアイデア登録の冪等化（`migrations/003_add_idea_idempotency.sql`）
+  - ステージ遷移ガードと却下/保管理由必須
+  - CSVエクスポートのカラム拡充
+  - React/ReactDOMの自己ホスト化（unpkg CDN依存解消、SRI一致確認）
+  - npm依存脆弱性0件化
+- 再評価（`docs/27_improvement_evaluation_report.md`）: 平均62.4点 / 代替率54.5%→61.0% / 「条件付き利用可」。
+- 検証: `npm run verify` PASS（lint / test 49件 / build / build:production-api / security:scan）、
+  `worker:deploy:dry-run` PASS（assets 12ファイル）、`npm audit` 0件、`release:monitor` 9/9 PASS（pre-access）。
+- 未実施: 本番デプロイ・migration 003本番適用・JWT付きsmoke（人間承認・本番操作のため保留）。
+
 ## 0. 最新（2026-08-09: ソース正本復元 + Issue #14永続化）
 
 - 本番Worker（2026-08-07デプロイ）にのみ存在し、ローカルgit HEADから失われていた新機能の

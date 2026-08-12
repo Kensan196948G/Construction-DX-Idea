@@ -1,11 +1,17 @@
 import { inspectIssueInput } from "./privacy";
 import type {
+  ApprovalDecision,
+  ApprovalRequest,
+  AuditChainVerifyResult,
   AiConnectionTestResult,
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiUsageSummary,
+  AuditLogEntry,
   DashboardMetrics,
   Idea,
+  IdeaComment,
   IdeaHistory,
   IdeaStage,
   IssueInput,
@@ -35,6 +41,7 @@ const seedIdeas: Idea[] = [
     mvpCandidate: "1現場の出来形写真を対象に、分類候補と台帳CSVを出力する。",
     mvpDoneDefinition: "100枚程度の写真を対象に、担当者が手直し可能な分類結果を出せること。",
     stage: "mvp",
+    approvalStatus: "none",
     createdBy: "demo.user@example.com",
     ownerId: "dx-team",
     department: "土木工事部",
@@ -62,6 +69,7 @@ const seedIdeas: Idea[] = [
     mvpCandidate: "1工区・社内利用者限定で日報入力とCSV出力を試す。",
     mvpDoneDefinition: "1週間分の日報を紙転記なしで集計できること。",
     stage: "planning",
+    approvalStatus: "none",
     createdBy: "demo.user@example.com",
     department: "土木工事部",
     submitterName: "デモ太郎",
@@ -167,12 +175,84 @@ export const mockApi = {
     });
   },
 
+  async exportIdeasXls(): Promise<Response> {
+    const body =
+      '<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?>' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">' +
+      '<Worksheet ss:Name="DX Ideas"><Table><Row><Cell><Data ss:Type="String">id</Data></Cell>' +
+      "<Cell><Data ss:Type=\"String\">title</Data></Cell></Row></Table></Worksheet></Workbook>";
+    return new Response(body, {
+      headers: {
+        "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+        "Content-Disposition": `attachment; filename="dx-ideas-${now().slice(0, 10)}.xls"`,
+      },
+    });
+  },
+
   async getIdeaHistory(id: string): Promise<IdeaHistory> {
     const idea = ideas.find((candidate) => candidate.id === id);
     if (!idea) throw new Error("Idea not found");
     return {
       history: [{ fromStage: undefined, toStage: idea.stage, changedBy: idea.createdBy, reason: "", changedAt: idea.updatedAt }],
       decisions: [],
+    };
+  },
+
+  async getIdea(id: string): Promise<Idea> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    return idea;
+  },
+
+  async updateIdea(id: string, patch: Partial<StructuredIdea>): Promise<Idea> {
+    const found = ideas.find((idea) => idea.id === id);
+    if (!found) throw new Error("Idea not found");
+    Object.assign(found, patch);
+    found.updatedAt = now();
+    return found;
+  },
+
+  async getComments(id: string): Promise<{ items: IdeaComment[] }> {
+    if (!ideas.some((idea) => idea.id === id)) throw new Error("Idea not found");
+    return { items: [] };
+  },
+
+  async addComment(id: string, body: string): Promise<IdeaComment> {
+    if (!ideas.some((idea) => idea.id === id)) throw new Error("Idea not found");
+    return {
+      id: `comment-${Date.now()}`,
+      ideaId: id,
+      author: "demo.user@example.com",
+      body,
+      createdAt: now(),
+    };
+  },
+
+  async requestApproval(id: string, payload: ApprovalRequest): Promise<Idea> {
+    const found = ideas.find((idea) => idea.id === id);
+    if (!found) throw new Error("Idea not found");
+    return {
+      ...found,
+      approvalStatus: "requested",
+      approverEmail: payload.approverEmail,
+      approvalRequestedAt: now(),
+      approvalReason: payload.reason ?? "",
+    };
+  },
+
+  async decideApproval(id: string, payload: ApprovalDecision): Promise<Idea> {
+    const found = ideas.find((idea) => idea.id === id);
+    if (!found) throw new Error("Idea not found");
+    return {
+      ...found,
+      approvalStatus:
+        payload.decision === "approve"
+          ? "approved"
+          : payload.decision === "reject"
+            ? "rejected"
+            : "returned",
+      approvalActedAt: now(),
+      approvalReason: payload.reason,
     };
   },
 
@@ -246,11 +326,12 @@ export const mockApi = {
     };
   },
 
-  async saveIdea(structured: StructuredIdea, stage: IdeaStage): Promise<SaveIdeaResult> {
+  async saveIdea(structured: StructuredIdea, stage: IdeaStage, _idempotencyKey?: string): Promise<SaveIdeaResult> {
     const idea: Idea = {
       ...structured,
       id: `IDEA-${String(ideas.length + 1).padStart(3, "0")}`,
       stage,
+      approvalStatus: "none",
       createdBy: "demo.user@example.com",
       createdAt: now(),
       updatedAt: now(),
@@ -297,6 +378,59 @@ export const mockApi = {
       keyLast4: "mock",
       checkedAt: now(),
     };
+  },
+
+  async getAuditLogs(limit = 100): Promise<{ items: AuditLogEntry[] }> {
+    const seed: AuditLogEntry[] = [
+      {
+        id: "log-001",
+        actor: "demo.user@example.com",
+        action: "idea.submit",
+        resourceType: "idea",
+        resourceId: "IDEA-001",
+        result: "success",
+        metadata: { stage: "submitted", duplicated: false },
+        createdAt: now(),
+      },
+      {
+        id: "log-002",
+        actor: "admin@example.com",
+        action: "ai_settings.update",
+        resourceType: "ai_settings",
+        result: "success",
+        metadata: { model: "claude-sonnet-5", enabled: true },
+        createdAt: now(),
+      },
+    ];
+    return { items: seed.slice(0, limit) };
+  },
+
+  async getAiUsage(): Promise<AiUsageSummary> {
+    return {
+      summary: {
+        totalCalls: 7,
+        successCalls: 7,
+        failedCalls: 0,
+        totalCostEstimate: 0.42,
+      },
+      recent: [
+        {
+          executedBy: "demo.user@example.com",
+          processType: "questions",
+          model: "claude-sonnet-5",
+          inputChars: 480,
+          outputChars: 220,
+          result: "success",
+          usageCostEstimate: 0.02,
+          promptVersion: "questions_v2",
+          createdAt: now(),
+        },
+      ],
+    };
+  },
+
+  async verifyAuditLogs(): Promise<AuditChainVerifyResult> {
+    return { valid: true, checked: 2, legacyRows: 0 };
   },
 };
 
