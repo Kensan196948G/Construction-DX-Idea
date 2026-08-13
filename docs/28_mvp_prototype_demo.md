@@ -85,6 +85,8 @@ SMOKE_API_BASE_URL=https://dxidea-mvp.mirai-dx-platform.com/api npm run mvp:smok
   （`X-Frame-Options: SAMEORIGIN`、nosniff等のヘッダーは適用済み）。
 - **AI**: MVPのAI応答はデモ用の決定的ローカル生成であり、実Claude/DeepSeekの品質を示すものではない。
 - **Slack通知**: MVPではwebhook未接続のため通知はskipped。outbox/再送ロジックは本番と同一コード。
+- **監査チェーン**: 追記は同一isolate内で直列化。複数isolateにまたがる同時追記は競合し得るが、
+  verify APIが検出する（`/api/admin/audit-logs/verify`）。本番はWebSocketドライバ＋advisory lock化を推奨。
 
 ## 7. 完了条件との対応
 

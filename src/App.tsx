@@ -257,20 +257,23 @@ async function loadInitialData(component: StandaloneComponent) {
   }
 
   if (hasRole(component, "system_admin")) {
-    const [auditResult, usageResult] = await Promise.allSettled([api.getAuditLogs(200), api.getAiUsage()]);
-    if (auditResult.status === "fulfilled") {
-      component.setState({ auditLog: auditResult.value.items.map(mapAuditEntryToStandalone) });
-    } else {
+    // Sequential (not Promise.allSettled): each read appends to the hash
+    // chain, and parallel appends raced on the previous hash.
+    try {
+      const auditResult = await api.getAuditLogs(200);
+      component.setState({ auditLog: auditResult.items.map(mapAuditEntryToStandalone) });
+    } catch (error) {
       shouldRetry = true;
-      showToast(component, `監査ログを取得できませんでした: ${toErrorMessage(auditResult.reason)}`);
+      showToast(component, `監査ログを取得できませんでした: ${toErrorMessage(error)}`);
     }
-    if (usageResult.status === "fulfilled") {
+    try {
+      const usageResult = await api.getAiUsage();
       component.setState((state) => ({
-        adminSettings: { ...state.adminSettings, used: usageResult.value.summary.totalCalls },
+        adminSettings: { ...state.adminSettings, used: usageResult.summary.totalCalls },
       }));
-    } else {
+    } catch (error) {
       shouldRetry = true;
-      showToast(component, `AI利用量を取得できませんでした: ${toErrorMessage(usageResult.reason)}`);
+      showToast(component, `AI利用量を取得できませんでした: ${toErrorMessage(error)}`);
     }
   }
 

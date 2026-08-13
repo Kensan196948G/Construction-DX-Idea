@@ -12,6 +12,7 @@ const {
   modelAllowedForProvider,
   redactIdeaForUser,
   resolveRoles,
+  serializeAudit,
   stableStringify,
   toIsoString,
   verifyAuditChain,
@@ -233,6 +234,22 @@ describe("audit log hash chain", () => {
       "2026-08-13T13:34:39.542Z",
     );
     assert.equal(toIsoString("2026-08-13T13:34:39.542Z"), "2026-08-13T13:34:39.542Z");
+  });
+
+  it("serializes audit appends so concurrent requests cannot share a previous hash", async () => {
+    const order: string[] = [];
+    const first = serializeAudit(async () => {
+      order.push("start-1");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      order.push("end-1");
+    });
+    const second = serializeAudit(async () => {
+      order.push("start-2");
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      order.push("end-2");
+    });
+    await Promise.all([first, second]);
+    assert.deepEqual(order, ["start-1", "end-1", "start-2", "end-2"]);
   });
 });
 

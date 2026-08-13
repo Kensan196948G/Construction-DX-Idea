@@ -2418,35 +2418,55 @@ async function audit(
   resourceId: string,
   metadata: Record<string, unknown>,
 ) {
-  const db = getDb(env);
-  const createdAt = new Date().toISOString();
-  const lastRows = await db`
-    select entry_hash
-    from audit_logs
-    where entry_hash is not null
-    order by created_at desc, id desc
-    limit 1
-  `;
-  const prevHash = lastRows[0]?.entry_hash ? String(lastRows[0].entry_hash) : "genesis";
-  const entryHash = await computeAuditEntryHash(prevHash, {
-    actor,
-    action,
-    resourceType,
-    resourceId,
-    result: "success",
-    metadata,
-    createdAt,
+  return serializeAudit(async () => {
+    const db = getDb(env);
+    const createdAt = new Date().toISOString();
+    const lastRows = await db`
+      select entry_hash
+      from audit_logs
+      where entry_hash is not null
+      order by created_at desc, id desc
+      limit 1
+    `;
+    const prevHash = lastRows[0]?.entry_hash ? String(lastRows[0].entry_hash) : "genesis";
+    const entryHash = await computeAuditEntryHash(prevHash, {
+      actor,
+      action,
+      resourceType,
+      resourceId,
+      result: "success",
+      metadata,
+      createdAt,
+    });
+    await db`
+      insert into audit_logs (
+        actor, action, resource_type, resource_id, result, metadata,
+        prev_hash, entry_hash, created_at
+      )
+      values (
+        ${actor}, ${action}, ${resourceType}, ${resourceId}, 'success',
+        ${JSON.stringify(metadata)}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
+      )
+    `;
   });
-  await db`
-    insert into audit_logs (
-      actor, action, resource_type, resource_id, result, metadata,
-      prev_hash, entry_hash, created_at
-    )
-    values (
-      ${actor}, ${action}, ${resourceType}, ${resourceId}, 'success',
-      ${JSON.stringify(metadata)}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
-    )
-  `;
+}
+
+/**
+ * Serializes audit-chain appends within this Worker isolate. Concurrent
+ * audited requests (e.g. the dashboard loading audit logs and AI usage in
+ * parallel) previously raced: both read the same previous hash and broke the
+ * chain. Cross-isolate concurrency is still best-effort and is documented in
+ * docs/28; verify detects any break and the chain can be re-anchored.
+ */
+let auditChainQueue: Promise<void> = Promise.resolve();
+
+function serializeAudit<T>(task: () => Promise<T>): Promise<T> {
+  const run = auditChainQueue.then(task, task);
+  auditChainQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 async function computeAuditEntryHash(
@@ -2896,6 +2916,7 @@ export const workerSecurityTestHooks = {
   resolveRoles,
   resolveCorsOrigin,
   sanitizeLog,
+  serializeAudit,
   verifyAuditChain,
   verifyAccessJwt,
   stableStringify,
