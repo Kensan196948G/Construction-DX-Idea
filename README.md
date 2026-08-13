@@ -26,7 +26,7 @@
 | 本番（既存・変更なし） | https://dxidea.mirai-dx-platform.com |
 | DB | Neon `mvp`ブランチ（本番から分離。架空ダミーデータ14アイデア/全ステージ・6ユーザー・監査チェーン等を投入済み） |
 | AI | `demo`プロバイダー（決定的ローカル応答・課金なし・外部API呼び出しなし） |
-| 検証 | `npm run verify`（test 68件）PASS、`mvp:smoke` 17チェック ALL PASS、登録→承認→コメントのE2E PASS |
+| 検証 | `npm run verify`（test 71件）PASS、`mvp:smoke` 17チェック ALL PASS（連続2回・監査verify valid:true）、登録→承認→コメントのE2E PASS |
 
 デモ手順・ダミーデータ構成は [`docs/28_mvp_prototype_demo.md`](docs/28_mvp_prototype_demo.md)、
 総合アセスメントは [`docs/audit/2026-08-13-assessment.md`](docs/audit/2026-08-13-assessment.md) を参照。

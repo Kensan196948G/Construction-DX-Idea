@@ -10,8 +10,9 @@
   - 提出者メールを含む構造化保存が常に `PRIVACY_BLOCKED` になる不具合 → blockerのみブロック・submitter context除外
   - 監査ハッシュチェーンがjsonbキー順序で破綻 → canonical serialization（stableStringify）へ統一
   - `toIsoString` のDateミリ秒欠落 → 監査行ハッシュ不整合の修正
+  - 監査追記の並行競合（同じprevを2行が共有） → isolate内直列化＋フロント逐次化（PR #25）
 - オフライン下書き同期へIdempotency-Keyを追加（再送重複登録リスク解消、`src/lib/offlineDrafts.ts`）
-- 検証: `npm run verify` PASS（lint / test 68件 / build×2 / security:scan）、`mvp:smoke` ALL PASS、
+- 検証: `npm run verify` PASS（lint / test 71件 / build×2 / security:scan）、`mvp:smoke` ALL PASS（連続2回）、
   登録→ステージ→承認→コメントのE2E PASS、監査verify `valid:true`
 - デモ手順: `docs/28_mvp_prototype_demo.md`。アセスメント: `docs/audit/2026-08-13-assessment.md`
 

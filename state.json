@@ -14,12 +14,13 @@
     "worker": "construction-dx-idea-api-mvp",
     "neon_branch_id": "br-lively-rain-axde06n5",
     "neon_endpoint": "ep-lingering-cake-ax569ixz",
-    "deployed_version_id": "5eaa087b-1739-48e4-a824-e3da99ba7584",
+    "deployed_version_id": "b1fe62c5-8514-46e2-bfc4-5a757e0504f5",
     "deployed_at": "2026-08-13",
     "auth_mode": "ALLOW_LOCAL_AUTH_BYPASS=true",
     "ai_provider": "demo",
     "seed": "scripts/mvp-seed.mjs (ideas 14 / users 6 / audit_logs 26 / histories 36 / decisions 7 / comments 6)",
-    "smoke": "scripts/mvp-smoke.mjs (17 checks ALL PASS)"
+    "smoke": "scripts/mvp-smoke.mjs (17 checks ALL PASS, 連続実行でも監査verify valid:true)",
+    "audit_chain": "追記を同一isolate内で直列化（PR #25）。複数isolate同時追記は残存リスクとして文書化"
   },
   "deploy": {
     "ready": true,
@@ -48,7 +49,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-08-13",
-    "verified_by": "MVP/Prototypeサイクル: npm run verify PASS（lint / test 68件 / build x2 / security:scan）。mvp:smoke ALL PASS。demo AI・PRIVACY_BLOCKED修正・監査チェーン修正・オフライン冪等化。残: PR/CI/マージ、ライセンス方針（ユーザー判断）、DEEPSEEK_API_KEY登録"
+    "verified_by": "MVP/Prototypeサイクル: npm run verify PASS（lint / test 71件 / build x2 / security:scan）。mvp:smoke ALL PASS（連続2回・監査verify valid:true）。demo AI・PRIVACY_BLOCKED修正・監査チェーン修正（jsonb順序/ミリ秒/並行競合）・オフライン冪等化。PR #24/#25 merge完了。残: ライセンス方針（ユーザー判断）、DEEPSEEK_API_KEY登録"
   },
   "execution": {
     "max_duration_minutes": 300,
