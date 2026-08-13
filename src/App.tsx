@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ApiClientError, api } from "./lib/api";
+import { drainQueue, enqueueDraft, normalizeQueue } from "./lib/offlineDrafts";
 import {
   buildManualStructuredIdea,
   emptyIntakeForm,
@@ -81,6 +82,11 @@ export function App() {
 
   return (
     <main className="standaloneDesignShell" aria-label="Construction DX Idea">
+      {import.meta.env.VITE_DEMO_BANNER === "true" && (
+        <div className="demoEnvironmentBadge" role="status">
+          MVPデモ環境（ダミーデータ）
+        </div>
+      )}
       <iframe
         ref={frameRef}
         className="standaloneDesignFrame"
@@ -933,17 +939,9 @@ function isNetworkLikeError(error: unknown): boolean {
 function queueOfflineDraft(structured: StructuredIdea, stage: IdeaStage) {
   try {
     const raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
-    const queue = raw
-      ? (
-          JSON.parse(raw) as Array<{
-            structured: StructuredIdea;
-            stage: IdeaStage;
-            queuedAt: string;
-          }>
-        ).slice(0, 19)
-      : [];
-    queue.push({ structured, stage, queuedAt: new Date().toISOString() });
-    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(queue));
+    const queue = raw ? normalizeQueue(JSON.parse(raw)) : [];
+    const next = enqueueDraft(queue, structured, stage);
+    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(next));
   } catch {
     // Storage unavailable — fall back to the regular error toast.
   }
@@ -957,23 +955,16 @@ async function syncOfflineDrafts(component: StandaloneComponent) {
     return;
   }
   if (!raw) return;
-  let queue: Array<{ structured: StructuredIdea; stage: IdeaStage; queuedAt: string }> = [];
+  let queue = [];
   try {
-    queue = JSON.parse(raw);
+    queue = normalizeQueue(JSON.parse(raw));
   } catch {
     return;
   }
-  if (!Array.isArray(queue) || queue.length === 0) return;
-  const remaining: typeof queue = [];
-  let synced = 0;
-  for (const draft of queue) {
-    try {
-      await api.saveIdea(draft.structured, draft.stage);
-      synced += 1;
-    } catch {
-      remaining.push(draft);
-    }
-  }
+  if (queue.length === 0) return;
+  const { remaining, synced } = await drainQueue(queue, async (draft) => {
+    await api.saveIdea(draft.structured, draft.stage, draft.idempotencyKey);
+  });
   try {
     window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(remaining));
   } catch {

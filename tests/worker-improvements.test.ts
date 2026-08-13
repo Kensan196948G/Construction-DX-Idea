@@ -12,7 +12,10 @@ const {
   modelAllowedForProvider,
   redactIdeaForUser,
   resolveRoles,
+  stableStringify,
+  toIsoString,
   verifyAuditChain,
+  writeRateLimitExceeded,
   xmlCell,
 } = workerSecurityTestHooks;
 
@@ -201,6 +204,36 @@ describe("audit log hash chain", () => {
     assert.equal(tampered.firstBrokenId, "2");
     assert.equal(tampered.legacyRows, 1);
   });
+
+  it("hashes metadata canonically so jsonb key-order changes cannot break the chain", async () => {
+    const base = {
+      actor: "user@example.jp",
+      action: "stage.update",
+      resourceType: "idea",
+      resourceId: "idea-1",
+      result: "success",
+      createdAt: "2026-08-12T00:00:00.000Z",
+    };
+    const insertionOrder = await computeAuditEntryHash("genesis", {
+      ...base,
+      metadata: { stage: "mvp", reason: "承認" },
+    });
+    // jsonb round-trips may return keys in a different order:
+    const jsonbOrder = await computeAuditEntryHash("genesis", {
+      ...base,
+      metadata: { reason: "承認", stage: "mvp" },
+    });
+    assert.equal(insertionOrder, jsonbOrder);
+    assert.equal(stableStringify({ b: 1, a: [2, 3] }), '{"a":[2,3],"b":1}');
+  });
+
+  it("preserves milliseconds when the database driver returns Date objects", () => {
+    assert.equal(
+      toIsoString(new Date("2026-08-13T13:34:39.542Z")),
+      "2026-08-13T13:34:39.542Z",
+    );
+    assert.equal(toIsoString("2026-08-13T13:34:39.542Z"), "2026-08-13T13:34:39.542Z");
+  });
 });
 
 describe("failure alert message", () => {
@@ -232,6 +265,23 @@ describe("AI provider model allowlist", () => {
     assert.equal(modelAllowedForProvider("deepseek", "deepseek-chat"), true);
     assert.equal(modelAllowedForProvider("deepseek", "deepseek-reasoner"), true);
     assert.equal(modelAllowedForProvider("deepseek", "claude-sonnet-5"), false);
+    assert.equal(modelAllowedForProvider("demo", "demo-local"), true);
+    assert.equal(modelAllowedForProvider("demo", "claude-sonnet-5"), false);
+    assert.equal(modelAllowedForProvider("claude", "demo-local"), false);
+  });
+});
+
+describe("MVP write rate limiter", () => {
+  it("allows writes inside the window up to the limit", () => {
+    const now = 1_000_000;
+    assert.equal(writeRateLimitExceeded(1, now, now), false);
+    assert.equal(writeRateLimitExceeded(60, now, now), false);
+    assert.equal(writeRateLimitExceeded(61, now, now), true);
+  });
+
+  it("resets the counter after the window elapses", () => {
+    const windowStart = 1_000_000;
+    assert.equal(writeRateLimitExceeded(61, windowStart, windowStart + 60_001), false);
   });
 });
 
