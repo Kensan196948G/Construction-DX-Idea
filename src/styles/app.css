@@ -49,3 +49,19 @@ textarea {
   border: 0;
   background: #141c29;
 }
+
+.demoEnvironmentBadge {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #1a2433;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}

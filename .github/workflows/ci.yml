@@ -19,4 +19,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
+      - run: npm audit --audit-level=high
       - run: npm run worker:deploy:dry-run
+      - run: npm run mvp:dry-run
