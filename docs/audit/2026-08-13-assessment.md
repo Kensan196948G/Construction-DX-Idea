@@ -26,6 +26,7 @@
 | 1 | `assertStructuredIdeaSafe` が「あらゆる」privacy finding（warning含む）で保存をブロック | 提出者メール入力時は常に PRIVACY_BLOCKED。本番ideas 0件の原因と整合 | blockerのみブロックへ変更＋テスト |
 | 2 | 監査ハッシュチェーンがjsonbのキー順序で破綻 | 複数キーのmetadataを含む行がverifyで必ず tampered扱い | canonical serialization（stableStringify）へ統一＋テスト |
 | 3 | `toIsoString` がDateオブジェクトのミリ秒を欠落 | ミリ秒≠0の監査行のハッシュが不整合 | Dateを直接ISO化＋テスト |
+| 4 | 監査チェーン追記が並行リクエストで競合（同じprevを2行が共有） | ダッシュボードの監査ログ＋AI利用量の並行読取りでchain破綻 | Worker内で追記を直列化＋フロントを逐次読取り化＋テスト |
 
 ### P1（主要操作不能・主要価値）
 
