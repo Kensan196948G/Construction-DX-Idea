@@ -16,6 +16,23 @@
 
 ## 🚦 現在の実装ステータス
 
+### 🧪 MVP/Prototype環境（2026-08-13 新設）
+
+本番と完全分離した「操作・評価できるMVP/Prototype」を公開しています。
+
+| 項目 | URL / 内容 |
+|---|---|
+| MVP/Prototype | **https://dxidea-mvp.mirai-dx-platform.com**（認証なし・右上にデモバッジ表示） |
+| 本番（既存・変更なし） | https://dxidea.mirai-dx-platform.com |
+| DB | Neon `mvp`ブランチ（本番から分離。架空ダミーデータ14アイデア/全ステージ・6ユーザー・監査チェーン等を投入済み） |
+| AI | `demo`プロバイダー（決定的ローカル応答・課金なし・外部API呼び出しなし） |
+| 検証 | `npm run verify`（test 68件）PASS、`mvp:smoke` 17チェック ALL PASS、登録→承認→コメントのE2E PASS |
+
+デモ手順・ダミーデータ構成は [`docs/28_mvp_prototype_demo.md`](docs/28_mvp_prototype_demo.md)、
+総合アセスメントは [`docs/audit/2026-08-13-assessment.md`](docs/audit/2026-08-13-assessment.md) を参照。
+
+---
+
 | 領域 | 状態 | 実装内容 |
 |---|---|---|
 | 🖥️ WebUI | デザイン適用済み / 主要機能ブリッジ済み | `Construction DX Idea (standalone).html` を正本として100%表示。困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、ステージ変更、AI設定をWorker APIへ接続 |

@@ -7,8 +7,20 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "2026-08-12第2サイクル完了（最優先改善10件対応）: 承認フローAPI・コメント/詳細/編集・Slack通知・評価ボードUI/CSV・毎時アラート・監査ハッシュチェーン・PWA・バックアップ演習・Dependabot・GitHub Issue 10件復元。verify PASS（test 52件）。次: PRレビュー・本番デプロイ・migration 003/004適用（人間承認）、承認フローUIとオフラインキュー。",
+  "goal": "2026-08-13: 本番から分離した操作可能なMVP/Prototypeの完成。MVPサブドメイン（dxidea-mvp.mirai-dx-platform.com）＋Neon mvpブランチ＋架空ダミーデータ投入・保持＋demo AIプロバイダー＋重大バグ3件修正（PRIVACY_BLOCKED/監査チェーンjsonb順序/Dateミリ秒）。verify PASS（test 68件）・mvp:smoke ALL PASS・書込みE2E PASS・監査verify valid:true。次: PR作成→CI→マージ→最終報告。",
   "phase": "Verify",
+  "mvp": {
+    "url": "https://dxidea-mvp.mirai-dx-platform.com",
+    "worker": "construction-dx-idea-api-mvp",
+    "neon_branch_id": "br-lively-rain-axde06n5",
+    "neon_endpoint": "ep-lingering-cake-ax569ixz",
+    "deployed_version_id": "5eaa087b-1739-48e4-a824-e3da99ba7584",
+    "deployed_at": "2026-08-13",
+    "auth_mode": "ALLOW_LOCAL_AUTH_BYPASS=true",
+    "ai_provider": "demo",
+    "seed": "scripts/mvp-seed.mjs (ideas 14 / users 6 / audit_logs 26 / histories 36 / decisions 7 / comments 6)",
+    "smoke": "scripts/mvp-smoke.mjs (17 checks ALL PASS)"
+  },
   "deploy": {
     "ready": true,
     "ready_at": "2026-07-14",
@@ -35,8 +47,8 @@
     "test_pass_rate": 1.0,
     "security_critical": 0,
     "blocker_count": 0,
-    "verified_at": "2026-08-12",
-    "verified_by": "第4サイクル完了+本番反映: npm run verify PASS（lint / test 56件 / build x2 / security:scan）。PR #22 merge→本番デプロイ（Version d1edb3c4）→migration 005適用。DeepSeek対応・ユーザー管理CRUD/ロール・監査CSV/Excel/HTMLエクスポート稼働。残: DEEPSEEK_API_KEY Secret登録・会社ドメイン管理者複数化"
+    "verified_at": "2026-08-13",
+    "verified_by": "MVP/Prototypeサイクル: npm run verify PASS（lint / test 68件 / build x2 / security:scan）。mvp:smoke ALL PASS。demo AI・PRIVACY_BLOCKED修正・監査チェーン修正・オフライン冪等化。残: PR/CI/マージ、ライセンス方針（ユーザー判断）、DEEPSEEK_API_KEY登録"
   },
   "execution": {
     "max_duration_minutes": 300,
