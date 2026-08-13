@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
+import { buildDemoQuestions, buildDemoStructure } from "../src/lib/demoAi";
 import { inspectIssueInput, inspectStructuredIdea, maskSensitiveText } from "../src/lib/privacy";
 import {
   aiModels,
@@ -70,6 +71,9 @@ type JwksResponse = {
 
 const app = new Hono<{ Bindings: Env }>();
 const jwksCache = new Map<string, { expiresAt: number; keys: AccessJwk[] }>();
+const writeRateBuckets = new Map<string, { windowStart: number; count: number }>();
+const WRITE_RATE_WINDOW_MS = 60_000;
+const WRITE_RATE_LIMIT = 60;
 const SLACK_TIMEOUT_MS = 5000;
 const CLAUDE_TIMEOUT_MS = 15000;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
@@ -95,6 +99,18 @@ app.get("/api/health", (c) =>
 
 app.use("/api/*", async (c, next) => {
   await getUser(c.req.raw, c.env);
+  await next();
+});
+
+// MVP/Prototype only: ALLOW_LOCAL_AUTH_BYPASS opens public writes against the
+// seeded demo database, so a best-effort per-IP fixed window guards abuse.
+app.use("/api/*", async (c, next) => {
+  if (
+    c.env.ALLOW_LOCAL_AUTH_BYPASS === "true" &&
+    ["POST", "PATCH", "PUT", "DELETE"].includes(c.req.method)
+  ) {
+    assertWriteRateAllowed(c);
+  }
   await next();
 });
 
@@ -882,6 +898,13 @@ app.patch(
     const user = await getUser(c.req.raw, c.env);
     await requireSystemAdmin(c.env, user);
     const patch = c.req.valid("json");
+    if (patch.provider === "demo" && c.env.ALLOW_LOCAL_AUTH_BYPASS !== "true") {
+      throw new ApiError(
+        "AI_MODEL_INVALID",
+        "デモ応答モードはMVP/Prototype環境でのみ利用できます。",
+        400,
+      );
+    }
     if (!modelAllowedForProvider(patch.provider, patch.model)) {
       throw new ApiError(
         "AI_MODEL_INVALID",
@@ -1261,12 +1284,14 @@ app.put(
     await requireSystemAdmin(c.env, user);
     const db = getDb(c.env);
     const patch = c.req.valid("json");
+    const subjectId =
+      patch.subjectType === "global" ? "*" : patch.subjectId;
     const rows = await db`
       insert into usage_limits (
         subject_type, subject_id, daily_ai_limit, monthly_budget, enabled, updated_by
       )
       values (
-        ${patch.subjectType}, ${patch.subjectId}, ${patch.dailyLimit},
+        ${patch.subjectType}, ${subjectId}, ${patch.dailyLimit},
         ${patch.monthlyBudget}, ${patch.enabled}, ${user}
       )
       on conflict (subject_type, subject_id)
@@ -1287,7 +1312,7 @@ app.put(
       updatedBy: rows[0].updated_by ? String(rows[0].updated_by) : undefined,
       updatedAt: toIsoString(rows[0].updated_at),
     };
-    await audit(c.env, user, "usage_limits.update", "usage_limits", item.subjectId, {
+    await audit(c.env, user, "usage_limits.update", "usage_limits", subjectId, {
       subjectType: item.subjectType,
       dailyLimit: item.dailyLimit,
       monthlyBudget: item.monthlyBudget,
@@ -1634,7 +1659,11 @@ function base64UrlDecode(value: string): ArrayBuffer {
 
 function assertStructuredIdeaSafe(structured: StructuredIdea) {
   const findings = inspectStructuredIdea(structured);
-  if (findings.length > 0) {
+  // Warnings are surfaced to the user before AI transmission; saving is
+  // stopped only for blocker-class findings (money, credentials), matching
+  // AC-003 ("warn") and keeping ordinary content such as project numbers or
+  // contact emails registrable.
+  if (findings.some((finding) => finding.severity === "blocker")) {
     throw new ApiError("PRIVACY_BLOCKED", "機密情報候補があるため保存を停止しました。", 422);
   }
 }
@@ -1721,6 +1750,34 @@ function splitCsv(value?: string): string[] {
     .filter(Boolean);
 }
 
+export function writeRateLimitExceeded(count: number, windowStart: number, now: number): boolean {
+  return now - windowStart > WRITE_RATE_WINDOW_MS ? false : count > WRITE_RATE_LIMIT;
+}
+
+function assertWriteRateAllowed(c: AppContext) {
+  const forwarded = c.req.header("X-Forwarded-For")?.split(",")[0]?.trim();
+  const ip = c.req.header("CF-Connecting-IP") || forwarded || "unknown";
+  const now = Date.now();
+  if (writeRateBuckets.size > 10_000) {
+    for (const [key, bucket] of writeRateBuckets) {
+      if (now - bucket.windowStart > WRITE_RATE_WINDOW_MS) writeRateBuckets.delete(key);
+    }
+  }
+  const current = writeRateBuckets.get(ip);
+  if (!current || now - current.windowStart > WRITE_RATE_WINDOW_MS) {
+    writeRateBuckets.set(ip, { windowStart: now, count: 1 });
+    return;
+  }
+  current.count += 1;
+  if (writeRateLimitExceeded(current.count, current.windowStart, now)) {
+    throw new ApiError(
+      "RATE_LIMITED",
+      "短時間に多くの書き込みが行われたため、一時的に制限しています。",
+      429,
+    );
+  }
+}
+
 type UsageLimit = {
   subjectType: "user" | "global";
   subjectId: string;
@@ -1739,6 +1796,14 @@ type AiReservation = {
 
 async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promise<AiReservation> {
   const aiSettings = await getAiSettings(env);
+  if (aiSettings.provider === "demo") {
+    if (env.ALLOW_LOCAL_AUTH_BYPASS !== "true") {
+      throw new ApiError("AI_DISABLED", "デモ応答モードはMVP/Prototype環境でのみ利用できます。", 503);
+    }
+    // Deterministic local responses: no external API call and no cost, so no
+    // usage reservation or counter changes are needed.
+    return { dailyReservations: [], monthlyReservations: [] };
+  }
   if (env.AI_ENABLED !== "true" || !aiSettings.enabled) {
     throw new ApiError("AI_DISABLED", "AI機能は無効です。", 503);
   }
@@ -1908,6 +1973,7 @@ async function getEffectiveUsageLimits(
 
 async function generateQuestions(env: Env, input: IssueInput): Promise<AiQuestion[]> {
   const aiSettings = await getAiSettings(env);
+  if (aiSettings.provider === "demo") return buildDemoQuestions(input);
   const messages = buildPromptMessages("questions", JSON.stringify(maskIssue(input)));
   const result = await callAiModel(env, aiSettings.provider, messages, aiSettings.model);
   const parsed = parseJson<unknown>(result);
@@ -1932,6 +1998,7 @@ async function structureIdea(
   answers: Record<string, string>,
 ): Promise<StructuredIdea> {
   const aiSettings = await getAiSettings(env);
+  if (aiSettings.provider === "demo") return buildDemoStructure(input, answers);
   const payload = JSON.stringify({
     input: maskIssue(input),
     answers: maskSensitiveText(JSON.stringify(answers)),
@@ -1978,7 +2045,9 @@ function buildPromptMessages(processType: "questions" | "structure", payload: st
 }
 
 function secretForProvider(env: Env, provider: AiProvider): string | undefined {
-  return provider === "deepseek" ? env.DEEPSEEK_API_KEY : env.ANTHROPIC_API_KEY;
+  if (provider === "deepseek") return env.DEEPSEEK_API_KEY;
+  if (provider === "demo") return "";
+  return env.ANTHROPIC_API_KEY;
 }
 
 async function callAiModel(
@@ -1987,6 +2056,9 @@ async function callAiModel(
   messages: AiMessage[],
   model: string,
 ): Promise<string> {
+  if (provider === "demo") {
+    throw new ApiError("AI_DISABLED", "デモ応答モードでは外部AI APIを呼び出しません。", 503);
+  }
   if (provider === "deepseek") {
     return callDeepSeek(env, messages, model);
   }
@@ -2068,6 +2140,14 @@ async function testAiConnection(
   apiKey?: string,
   model?: string,
 ): Promise<AiConnectionTestResult> {
+  if (provider === "demo") {
+    return {
+      ok: true,
+      status: "connected",
+      message: "デモ応答モードです。外部AI APIは呼び出しません（課金なし）。",
+      checkedAt: new Date().toISOString(),
+    };
+  }
   const key = apiKey || secretForProvider(env, provider);
   const checkedAt = new Date().toISOString();
   if (!key) {
@@ -2152,7 +2232,10 @@ async function getAiSettings(env: Env): Promise<AiSettings> {
     provider,
     model: env.AI_MODEL,
     enabled: env.AI_ENABLED === "true",
-    status: env.AI_ENABLED === "true" && configuredKey ? "connected" : "disabled",
+    status:
+      env.AI_ENABLED === "true" && (configuredKey || provider === "demo")
+        ? "connected"
+        : "disabled",
     keyLast4: configuredKey ? configuredKey.slice(-4) : undefined,
     dailyLimit: Number(env.DAILY_AI_LIMIT || 10),
     monthlyBudget: 0,
@@ -2385,13 +2468,38 @@ async function computeAuditEntryHash(
     fields.resourceType,
     fields.resourceId ?? "",
     fields.result,
-    JSON.stringify(fields.metadata ?? {}),
+    stableStringify(fields.metadata ?? {}),
     fields.createdAt,
   ].join("\n");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Canonical JSON serialization for the audit hash chain.
+ *
+ * metadata is stored as jsonb, which does not preserve object key order. If
+ * the write path hashed JSON.stringify(metadata) in insertion order while the
+ * verify path hashed the jsonb round-trip (different key order), every
+ * multi-key entry would fail verification. Sorting keys recursively makes the
+ * hash independent of how the value was serialized or read back.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+      .join(",")}}`;
+  }
+  return "null";
 }
 
 function verifyAuditChain(
@@ -2684,6 +2792,12 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
 }
 
 function toIsoString(value: unknown): string {
+  // The Neon driver returns timestamptz columns as Date objects. Converting
+  // through String(Date) drops milliseconds, which would change audit-chain
+  // hashes for entries written at any time with a non-zero millisecond part.
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? new Date(0).toISOString() : value.toISOString();
+  }
   const date = new Date(String(value ?? ""));
   return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
 }
@@ -2764,6 +2878,8 @@ class ApiError extends Error {
 }
 
 export const workerSecurityTestHooks = {
+  buildDemoQuestions,
+  buildDemoStructure,
   computeAuditEntryHash,
   buildPromptMessages,
   formatAlertMessage,
@@ -2782,6 +2898,9 @@ export const workerSecurityTestHooks = {
   sanitizeLog,
   verifyAuditChain,
   verifyAccessJwt,
+  stableStringify,
+  toIsoString,
+  writeRateLimitExceeded,
 };
 
 type MinimalExecutionContext = {

@@ -14,12 +14,18 @@ export const ideaStages = [
 
 export type IdeaStage = (typeof ideaStages)[number];
 
-export const aiProviders = ["claude", "deepseek"] as const;
+/**
+ * "demo" is a deterministic, cost-free provider for the MVP/Prototype
+ * environment only. It never calls an external AI API and is rejected by the
+ * Worker unless ALLOW_LOCAL_AUTH_BYPASS is enabled.
+ */
+export const aiProviders = ["claude", "deepseek", "demo"] as const;
 export type AiProvider = (typeof aiProviders)[number];
 
 export const aiProviderModels: Record<AiProvider, readonly string[]> = {
   claude: ["claude-sonnet-5", "claude-opus-5"],
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  demo: ["demo-local"],
 };
 
 export const aiModels = [
@@ -27,6 +33,7 @@ export const aiModels = [
   "claude-opus-5",
   "deepseek-chat",
   "deepseek-reasoner",
+  "demo-local",
 ] as const;
 
 export const approvalStatuses = [

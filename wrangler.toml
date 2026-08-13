@@ -41,3 +41,43 @@ AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 # wrangler secret put DATABASE_URL
 # wrangler secret put ANTHROPIC_API_KEY   (only when AI is enabled)
 # wrangler secret put SLACK_WEBHOOK_URL   (optional)
+
+# ---------------------------------------------------------------------------
+# MVP/Prototype environment (https://dxidea-mvp.mirai-dx-platform.com)
+#
+# Fully separated from production:
+#   - its own Worker name + custom domain
+#   - its own Neon branch/database (seeded with fictional demo data)
+#   - ALLOW_LOCAL_AUTH_BYPASS=true: no Cloudflare Access gate so reviewers can
+#     open the URL and operate every screen immediately (write-rate limited)
+#   - AI_PROVIDER=demo: deterministic local responses, no API key, no cost
+# Secrets: wrangler secret put DATABASE_URL --env mvp
+# ---------------------------------------------------------------------------
+[env.mvp]
+name = "construction-dx-idea-api-mvp"
+routes = [
+  { pattern = "dxidea-mvp.mirai-dx-platform.com", custom_domain = true }
+]
+# The MVP environment has no Slack webhook, so the production retry/alert
+# crons are unnecessary here. Overriding with an empty list also keeps the
+# Free plan's account-level cron trigger quota free.
+[env.mvp.triggers]
+crons = []
+
+[env.mvp.vars]
+APP_BASE_URL = "https://dxidea-mvp.mirai-dx-platform.com"
+ALLOWED_ORIGINS = "https://dxidea-mvp.mirai-dx-platform.com"
+ALLOW_LOCAL_AUTH_BYPASS = "true"
+ADMIN_EMAILS = ""
+SYSTEM_ADMIN_EMAILS = ""
+AI_PROVIDER = "demo"
+AI_MODEL = "demo-local"
+AI_ENABLED = "true"
+DAILY_AI_LIMIT = "10"
+MAX_INPUT_CHARS = "2000"
+AI_INPUT_COST_PER_1K_TOKENS = "0.003"
+AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
+# Access JWT settings are unused while ALLOW_LOCAL_AUTH_BYPASS is enabled.
+CF_ACCESS_CERTS_URL = ""
+CF_ACCESS_AUD = ""
+CF_ACCESS_ISSUER = ""
