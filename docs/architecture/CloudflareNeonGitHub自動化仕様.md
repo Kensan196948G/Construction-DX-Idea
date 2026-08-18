@@ -22,9 +22,19 @@ Linux上の全Workspaceで、以下を共通基盤として利用する。
 | `cloudflare` | Cloudflare API MCP（Code Mode。`https://mcp.cloudflare.com/mcp`） | Cloudflare APIの実操作（一覧・取得・設定変更・デプロイ） |
 | `cloudflare-docs` | Cloudflare Documentation MCP（`https://docs.mcp.cloudflare.com/mcp`） | 最新仕様・API仕様・設定方法の調査 |
 
-接続はCodex / Claude Codeの既存設定（プラグイン / MCP設定）をそのまま使う。本リポジトリでは再設定しない。
+接続はCodex / Claude Codeの既存設定（プラグイン / MCP設定）に加え、**DeepSeek Harness WebUIのMCP構成（`harness/patches/mcp.cordis.patch.yml`）にも登録済み**。
+WebUIセッションでは `mcp__cloudflare__search` / `mcp__cloudflare__execute` として利用できる。
 認証はOAuth、または `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` を環境変数から利用する。
 Cloudflare API MCPはCode Mode方式のため、ツールは `search()` と `execute()` の2本構成（全APIを検索してから実行する）。
+
+### 2.4 DeepSeek Harness WebUIでの利用
+
+| serverName | WebUI上のツール名 | 認証 |
+|---|---|---|
+| `cloudflare` | `mcp__cloudflare__search` / `mcp__cloudflare__execute` | `CLOUDFLARE_API_TOKEN`（Authorization Bearer） |
+| `cloudflare-docs` | `mcp__cloudflare-docs__*` | 不要 |
+
+WebUIを起動するプロセスの環境変数に `CLOUDFLARE_API_TOKEN` がexportされていること。systemdサービス（`deepseek-harness-web.service`）では `~/.config/deepseek-harness-web.env`（0600）から読み込む。値はリポジトリ・ログ・session metadataへ保存しない。
 
 ### 2.2 理想フロー（ルーティング）
 
@@ -63,8 +73,10 @@ read-back確認（list / get で変更後状態を実測し報告）
 
 ### 3.1 設定
 
-- Neon MCP（公式 `@neondatabase/mcp-server-neon` またはホスト型 `mcp.neon.tech`）はCodex / Claude Codeに設定済み。
+- Neon MCP（ホスト型 `https://mcp.neon.tech/mcp`）はCodex / Claude Codeに設定済みで、**DeepSeek Harness WebUIのMCP構成（`harness/patches/mcp.cordis.patch.yml`）にも登録済み**。
+- WebUIセッションでは `mcp__neon__*` として利用できる。
 - 認証は `NEON_API_KEY`（`~/.bashrc` / `~/.profile` にexport済み）を利用する。値を出力・保存しない。
+- systemdサービスの場合は `~/.config/deepseek-harness-web.env`（0600）に `NEON_API_KEY` を含め、`./start.sh service install` で再生成・再起動する。
 
 ### 3.2 用途
 
