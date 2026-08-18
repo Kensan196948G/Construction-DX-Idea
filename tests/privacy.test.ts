@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { inspectIssueInput, maskSensitiveText } from "../src/lib/privacy";
+import { inspectIssueInput, inspectStructuredIdea, maskSensitiveText } from "../src/lib/privacy";
+import { structuredIdeaSchema, type StructuredIdea } from "../src/lib/shared";
 
 describe("privacy inspection", () => {
   it("detects and masks email addresses", () => {
@@ -72,5 +73,50 @@ describe("privacy inspection", () => {
       maskSensitiveText("担当者: 山田太郎 / 顧客名: 〇〇市 / 工事名: 中央橋補修工事 / トークン: dummycredential"),
       "[個人名] / [顧客名] / [工事名]/ [認証情報]",
     );
+  });
+
+  it("does not flag the structured submitter email as a content leak", () => {
+    const idea = structuredIdeaSchema.parse({
+      title: "写真整理の改善",
+      currentIssue: "写真整理に時間がかかる",
+      targetBusiness: "出来形管理",
+      targetUsers: "現場代理人",
+      currentWorkflow: "手作業",
+      improvementIdea: "自動化",
+      expectedEffects: "時間削減",
+      requiredData: [],
+      relatedSystems: [],
+      implementationOptions: [],
+      securityNotes: [],
+      openQuestions: [],
+      mvpCandidate: "",
+      mvpDoneDefinition: "",
+      department: "土木工事部",
+      submitterName: "デモ 太郎",
+      submitterEmail: "taro@demo.example.com",
+      coordinationNeeded: "",
+    }) as StructuredIdea;
+    assert.deepEqual(inspectStructuredIdea(idea), []);
+  });
+
+  it("still detects emails embedded in free-text content", () => {
+    const idea = structuredIdeaSchema.parse({
+      title: "連絡先が記載された困りごと",
+      currentIssue: "連絡先は tanaka@example.jp へお願いします",
+      targetBusiness: "連絡",
+      targetUsers: "",
+      currentWorkflow: "メール",
+      improvementIdea: "",
+      expectedEffects: "",
+      requiredData: [],
+      relatedSystems: [],
+      implementationOptions: [],
+      securityNotes: [],
+      openQuestions: [],
+      mvpCandidate: "",
+      mvpDoneDefinition: "",
+    }) as StructuredIdea;
+    const findings = inspectStructuredIdea(idea);
+    assert.ok(findings.some((finding) => finding.type === "email"));
   });
 });

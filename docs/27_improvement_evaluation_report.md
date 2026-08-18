@@ -16,6 +16,21 @@ PII露出、プロンプトインジェクション、アイデア登録の非�
 テストは52件（+3）となり、`npm run verify` PASS、HTMLデザインスクリプト構文チェックOK。
 本番デプロイ・migration 004適用・承認フローUI・オフラインキューは引き続き人間承認/次期作業。
 
+### 1.2 第3サイクル（2026-08-12追記: 本番反映完了）
+
+PR #2 merge → `wrangler deploy`（Version `0f311cb8`、cron2本）→ Neon本番へ migration 003/004 適用 →
+バックアップ演習（`backup-20260812`）まで完了。承認UI・Excel出力・検索API連携・オフライン下書きキューを追加し、
+test 54件・CI green。残る人間作業は会社ドメイン管理者複数化と次期機能の実運用確認のみ。
+
+### 1.3 第4サイクル（2026-08-12追記: DeepSeek・ユーザー管理・監査エクスポート）
+
+- AI設定にDeepSeek（deepseek-chat / deepseek-reasoner）を追加し、接続テスト・保存・リセットをプロバイダー対応化。
+  キーはCloudflare Secret（DEEPSEEK_API_KEY）で管理（DB・Git・UIに保存しない）。
+- ログインユーザー管理（新規追加・編集・削除・ロール）とmigration 005（app_users）を実装。DBロールはAPI権限へ反映。
+- 監査ログのCSV・Excel・HTMLエクスポートを実装。
+- test 56件・verify PASS。PR #22マージ→本番デプロイ（Version `d1edb3c4`）→migration 005適用まで完了。
+- 残: `DEEPSEEK_API_KEY` Secret登録（ユーザー操作）、会社ドメイン管理者複数化。
+
 ## 2. 改善前後スコア
 
 | カテゴリ | 改善前 | 改善後 | 差分 | 主な改善 |

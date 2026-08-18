@@ -1,6 +1,8 @@
 import { mockApi } from "./mockApi";
 import { normalizeApiBaseUrl } from "./shared";
 import type {
+  AppUser,
+  AppUserInput,
   ApprovalDecision,
   ApprovalRequest,
   AuditChainVerifyResult,
@@ -156,13 +158,34 @@ export const api = useMock
           method: "PATCH",
           body: JSON.stringify(settings),
         }),
-      testAiSettings: (apiKey?: string, model?: string) =>
+      testAiSettings: (apiKey?: string, model?: string, provider?: string) =>
         request<AiConnectionTestResult>("/api/admin/ai-settings/test", {
           method: "POST",
-          body: JSON.stringify({ apiKey, model }),
+          body: JSON.stringify({ apiKey, model, provider }),
         }),
       getAuditLogs: (limit = 100) =>
         request<{ items: AuditLogEntry[] }>(`/api/admin/audit-logs?limit=${limit}`),
       getAiUsage: () => request<AiUsageSummary>("/api/admin/ai-usage"),
       verifyAuditLogs: () => request<AuditChainVerifyResult>("/api/admin/audit-logs/verify"),
+      exportAuditLogsCsv: () =>
+        fetch(`${apiBaseUrl}/api/admin/audit-logs/export.csv`, { credentials: "include" }),
+      exportAuditLogsXls: () =>
+        fetch(`${apiBaseUrl}/api/admin/audit-logs/export.xls`, { credentials: "include" }),
+      exportAuditLogsHtml: () =>
+        fetch(`${apiBaseUrl}/api/admin/audit-logs/export.html`, { credentials: "include" }),
+      getUsers: () => request<{ items: AppUser[] }>("/api/admin/users"),
+      createUser: (input: AppUserInput) =>
+        request<AppUser>("/api/admin/users", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      updateUser: (id: string, patch: Partial<AppUserInput>) =>
+        request<AppUser>(`/api/admin/users/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+      deleteUser: (id: string) =>
+        request<{ ok: boolean }>(`/api/admin/users/${id}`, {
+          method: "DELETE",
+        }),
     };
