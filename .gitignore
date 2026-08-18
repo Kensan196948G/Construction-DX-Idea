@@ -9,3 +9,8 @@ dist/
 coverage/
 playwright-report/
 test-results/
+
+# Local tool session artifacts (not project source)
+.omo/
+.opencode/
+.coderabbit.yaml.bak-*

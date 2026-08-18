@@ -718,10 +718,18 @@ a:hover { text-decoration: underline; }
             <div onClick="{{ toggleAiEnabled }}" style="{{ adminToggleTrackStyle }}"><div style="{{ adminToggleDotStyle }}"></div></div>
           </div>
           <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:12px;font-weight:600;color:#5A6678;">AIプロバイダー</label>
+            <select value="{{ adminSettings.provider }}" onChange="{{ onProviderChange }}" style="font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;width:100%;outline:none;">
+              <option value="claude">Claude（Anthropic）</option>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
             <label style="font-size:12px;font-weight:600;color:#5A6678;">モデル</label>
             <select value="{{ adminSettings.model }}" onChange="{{ onModelChange }}" style="font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;width:100%;outline:none;">
-              <option value="claude-sonnet-5">Claude Sonnet 5(デフォルト)</option>
-              <option value="claude-opus-5">Claude Opus 5</option>
+              <sc-for list="{{ modelOptions }}" as="opt" hint-placeholder-count="2">
+                <option value="{{ opt.value }}">{{ opt.label }}</option>
+              </sc-for>
             </select>
           </div>
           <div style="display:flex;flex-direction:column;gap:5px;">
@@ -771,6 +779,13 @@ a:hover { text-decoration: underline; }
 
       <sc-if value="{{ isAudit }}" hint-placeholder-val="{{ false }}">
       <div data-screen-label="監査ログ" style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+        <div style="display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid #EEF1F5;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#8A97A8;">監査ログ（直近 {{ auditCount }} 件）</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ exportAuditCsv }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">⬇ CSV出力</button>
+          <button onClick="{{ exportAuditXls }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">⬇ Excel出力</button>
+          <button onClick="{{ exportAuditHtml }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">⬇ HTML出力</button>
+        </div>
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
           <thead>
             <tr>
@@ -795,7 +810,27 @@ a:hover { text-decoration: underline; }
       </sc-if>
 
       <sc-if value="{{ isUserManagement }}" hint-placeholder-val="{{ false }}">
-      <div data-screen-label="ログインユーザー管理" style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+      <div data-screen-label="ログインユーザー管理" style="display:flex;flex-direction:column;gap:14px;max-width:960px;">
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:16px 18px;display:flex;flex-direction:column;gap:10px;">
+          <div style="font-size:14px;font-weight:600;color:#1A2433;">{{ userFormTitle }}</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">
+            <input value="{{ userForm.email }}" onChange="{{ onUserFormChange('email') }}" placeholder="メールアドレス（必須）" style="font-size:12.5px;padding:8px 10px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+            <input value="{{ userForm.name }}" onChange="{{ onUserFormChange('name') }}" placeholder="氏名" style="font-size:12.5px;padding:8px 10px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+            <input value="{{ userForm.department }}" onChange="{{ onUserFormChange('department') }}" placeholder="所属部署" style="font-size:12.5px;padding:8px 10px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+            <select value="{{ userForm.role }}" onChange="{{ onUserFormChange('role') }}" style="font-size:12.5px;padding:8px 10px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;">
+              <sc-for list="{{ roleOptions }}" as="r" hint-placeholder-count="3">
+                <option value="{{ r.value }}">{{ r.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button onClick="{{ saveUser }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 16px;border-radius:8px;font-size:12.5px;font-weight:600;">{{ saveUserLabel }}</button>
+            <sc-if value="{{ showUserFormCancel }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ resetUserForm }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#5A6678;padding:8px 16px;border-radius:8px;font-size:12.5px;font-weight:600;">キャンセル</button>
+            </sc-if>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
           <thead>
             <tr>
@@ -813,15 +848,18 @@ a:hover { text-decoration: underline; }
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;font-weight:500;color:#1A2433;">{{ u.name }}</td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ u.department }}</td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ u.email }}</td>
-                <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ u.role }}</td>
+                <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ u.roleBadgeStyle }}">{{ u.roleLabel }}</span></td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ u.statusBadgeStyle }}">{{ u.statusLabel }}</span></td>
-                <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;">
+                <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;display:flex;gap:6px;">
+                  <button onClick="{{ u.onEdit }}" style="{{ u.smallButtonStyle }}">編集</button>
                   <button onClick="{{ u.onToggle }}" style="{{ u.toggleButtonStyle }}">{{ u.toggleButtonLabel }}</button>
+                  <button onClick="{{ u.onDelete }}" style="{{ u.dangerButtonStyle }}">削除</button>
                 </td>
               </tr>
             </sc-for>
           </tbody>
         </table>
+        </div>
       </div>
       </sc-if>
 
@@ -946,9 +984,10 @@ class Component extends DCLogic {
     },
     wizard: { questions: [], answers: [], draftAnswer: '', thinking: false, sourceIntake: null },
     reviewDraft: null,
-    adminSettings: { model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false, keyLast4: '', keyStatus: 'not_configured' },
+    adminSettings: { provider: 'claude', model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false, keyLast4: '', keyStatus: 'not_configured' },
     commentDraft: '',
     approvalDraft: { approverEmail: '', reason: '' },
+    userForm: { email: '', name: '', department: '', role: 'user', editingId: null },
     users: this.makeSeedUsers(),
     integrations: this.makeSeedIntegrations(),
   };
@@ -1022,6 +1061,18 @@ class Component extends DCLogic {
     this.setState({ toast: { message: 'Excel出力を準備しています（管理者権限が必要です）。' } });
   };
 
+  exportAuditCsv = () => {
+    this.setState({ toast: { message: '監査ログのCSV出力を準備しています（システム管理者権限が必要です）。' } });
+  };
+
+  exportAuditXls = () => {
+    this.setState({ toast: { message: '監査ログのExcel出力を準備しています（システム管理者権限が必要です）。' } });
+  };
+
+  exportAuditHtml = () => {
+    this.setState({ toast: { message: '監査ログのHTML出力を準備しています（システム管理者権限が必要です）。' } });
+  };
+
   updateApprovalField = (key) => (e) => {
     this.setState({ approvalDraft: { ...this.state.approvalDraft, [key]: e.target.value } });
   };
@@ -1067,6 +1118,71 @@ class Component extends DCLogic {
     setTimeout(() => {
       if (target) this.pushAudit('設定変更', `「${target.name}」のアカウントを${target.status === 'active' ? '無効化' : '有効化'}`);
     }, 0);
+  };
+
+  updateUserForm = (key) => (e) => {
+    this.setState({ userForm: { ...this.state.userForm, [key]: e.target.value } });
+  };
+
+  resetUserForm = () => {
+    this.setState({ userForm: { email: '', name: '', department: '', role: 'user', editingId: null } });
+  };
+
+  editUser = (id) => {
+    const target = this.state.users.find((u) => u.id === id);
+    if (!target) return;
+    this.setState({
+      userForm: {
+        email: target.email,
+        name: target.name,
+        department: target.department,
+        role: target.role,
+        editingId: id,
+      },
+    });
+  };
+
+  saveUser = () => {
+    const f = this.state.userForm;
+    if (!f.email.trim()) {
+      this.setState({ toast: { message: 'メールアドレスを入力してください。' } });
+      return;
+    }
+    if (f.editingId != null) {
+      this.setState((s) => ({
+        users: s.users.map((u) =>
+          u.id === f.editingId
+            ? { ...u, email: f.email.trim(), name: f.name.trim(), department: f.department.trim(), role: f.role }
+            : u,
+        ),
+        userForm: { email: '', name: '', department: '', role: 'user', editingId: null },
+        toast: { message: 'ユーザーを更新しました（モック表示。本番はAPI経由）。' },
+      }));
+      return;
+    }
+    const user = {
+      id: `local-${Date.now()}`,
+      email: f.email.trim(),
+      name: f.name.trim() || f.email.trim(),
+      department: f.department.trim(),
+      role: f.role,
+      status: 'active',
+    };
+    this.setState((s) => ({
+      users: [...s.users, user],
+      userForm: { email: '', name: '', department: '', role: 'user', editingId: null },
+      toast: { message: 'ユーザーを追加しました（モック表示。本番はAPI経由）。' },
+    }));
+  };
+
+  deleteUser = (id) => {
+    const target = this.state.users.find((u) => u.id === id);
+    if (!target) return;
+    if (!window.confirm(`ユーザー「${target.name}」を削除しますか？`)) return;
+    this.setState((s) => ({
+      users: s.users.filter((u) => u.id !== id),
+      toast: { message: 'ユーザーを削除しました（モック表示。本番はAPI経由）。' },
+    }));
   };
 
   toggleIntegration = (id) => {
@@ -1279,6 +1395,14 @@ class Component extends DCLogic {
     this.setState((s) => ({ adminSettings: { ...s.adminSettings, [key]: v } }));
   };
 
+  onProviderChange = (e) => {
+    const provider = e.target.value;
+    const firstModel = provider === 'deepseek' ? 'deepseek-chat' : 'claude-sonnet-5';
+    this.setState((s) => ({
+      adminSettings: { ...s.adminSettings, provider, model: firstModel, keyStatus: 'not_configured' },
+    }));
+  };
+
   toggleAiEnabled = () => {
     const wasEnabled = this.state.adminSettings.enabled;
     this.setState((s) => ({ adminSettings: { ...s.adminSettings, enabled: !s.adminSettings.enabled } }));
@@ -1486,15 +1610,34 @@ class Component extends DCLogic {
 
     const userRows = s.users.map((u) => {
       const active = u.status === 'active';
+      const roleLabelMap = { user: '一般', admin: '管理者', system_admin: 'システム管理者' };
       return {
         ...u,
         statusLabel: active ? '有効' : '無効',
         statusBadgeStyle: this.badgeStyle(active ? '#1F8255' : '#C5392F', active ? '#E4F3EC' : '#FCE9E7'),
+        roleLabel: roleLabelMap[u.role] || u.role,
+        roleBadgeStyle: this.badgeStyle(
+          u.role === 'system_admin' ? '#6B45B0' : u.role === 'admin' ? '#2E5AAC' : '#5A6678',
+          u.role === 'system_admin' ? '#EDE7F6' : u.role === 'admin' ? '#E9F0FB' : '#F2F4F8',
+        ),
         toggleButtonLabel: active ? '無効化' : '有効化',
         toggleButtonStyle: 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#5A6678;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;',
+        smallButtonStyle: 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#2E5AAC;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;',
+        dangerButtonStyle: 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #F3D3D0;background:#FCE9E7;color:#C5392F;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;',
         onToggle: () => this.toggleUserStatus(u.id),
+        onEdit: () => this.editUser(u.id),
+        onDelete: () => this.deleteUser(u.id),
       };
     });
+
+    const roleOptions = [
+      { value: 'user', label: '一般' },
+      { value: 'admin', label: '管理者' },
+      { value: 'system_admin', label: 'システム管理者' },
+    ];
+    const userFormTitle = s.userForm.editingId != null ? 'ユーザー編集' : '新規ログイン追加';
+    const saveUserLabel = s.userForm.editingId != null ? '更新する' : '追加する';
+    const showUserFormCancel = s.userForm.editingId != null;
 
     const integrationRows = s.integrations.map((ig) => ({
       ...ig,
@@ -1509,6 +1652,16 @@ class Component extends DCLogic {
     }));
 
     const a = s.adminSettings;
+    const providerModelLabels = {
+      'claude-sonnet-5': 'Claude Sonnet 5（デフォルト）',
+      'claude-opus-5': 'Claude Opus 5',
+      'deepseek-chat': 'DeepSeek Chat（デフォルト）',
+      'deepseek-reasoner': 'DeepSeek Reasoner',
+    };
+    const modelOptions = (a.provider === 'deepseek'
+      ? ['deepseek-chat', 'deepseek-reasoner']
+      : ['claude-sonnet-5', 'claude-opus-5']
+    ).map((value) => ({ value, label: providerModelLabels[value] }));
     const usagePercent = Math.min(100, Math.round((a.used / a.monthlyCap) * 100));
     const adminUsageBarStyle = `height:100%;border-radius:3px;background:${a.enabled ? '#E08A2B' : '#8A97A8'};width:${usagePercent}%;`;
     const adminToggleTrackStyle = a.enabled
@@ -1603,6 +1756,7 @@ class Component extends DCLogic {
       adminSettings: a, usagePercent, adminUsageBarStyle, adminToggleTrackStyle, adminToggleDotStyle,
       adminEnabledLabel, testButtonLabel, adminTestSuccess, adminApiKeySavedMsg: a.apiKeySavedMsg,
       onModelChange: this.updateAdmin('model'), onCapChange: this.updateAdmin('monthlyCap'),
+      onProviderChange: this.onProviderChange, modelOptions,
       onApiKeyChange: this.updateAdmin('apiKey'), saveApiKey: this.saveApiKey,
       toggleAiEnabled: this.toggleAiEnabled, runConnectionTest: this.runConnectionTest,
       resetApiKeyInput: this.resetApiKeyInput, adminKeyStatusLabel,
@@ -1615,8 +1769,16 @@ class Component extends DCLogic {
       exportExcel: this.exportExcel,
 
       userRows, integrationRows,
+      userForm: s.userForm,
+      userFormTitle, saveUserLabel, showUserFormCancel, roleOptions,
+      onUserFormChange: this.updateUserForm,
+      resetUserForm: this.resetUserForm,
+      saveUser: this.saveUser,
 
-      auditRows,
+      auditRows, auditCount: s.auditLog.length,
+      exportAuditCsv: this.exportAuditCsv,
+      exportAuditXls: this.exportAuditXls,
+      exportAuditHtml: this.exportAuditHtml,
       evaluationRows, exportCsv: this.exportCsv,
     };
   }

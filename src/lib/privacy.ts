@@ -107,7 +107,21 @@ export function maskSensitiveText(text: string): string {
 }
 
 export function inspectStructuredIdea(idea: StructuredIdea): PrivacyFinding[] {
-  const text = JSON.stringify(idea);
+  // Submitter context (department/name/email) is structured, schema-validated
+  // identity metadata, not free-text content. Scanning it would block every
+  // registration that fills in the intake email field (PRIVACY_BLOCKED),
+  // which is not the detectors' purpose: they target sensitive data embedded
+  // in business content.
+  const {
+    department: _department,
+    submitterName: _submitterName,
+    submitterEmail: _submitterEmail,
+    ...contentFields
+  } = idea;
+  void _department;
+  void _submitterName;
+  void _submitterEmail;
+  const text = JSON.stringify(contentFields);
   return inspectIssueInput({
     workType: text,
     affectedRole: "",

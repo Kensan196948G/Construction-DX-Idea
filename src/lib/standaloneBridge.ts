@@ -103,7 +103,23 @@ export type StandaloneState = {
   searchQueryIssue: string;
   searchQueryIdea: string;
   approvalDraft: { approverEmail: string; reason: string };
+  userForm: {
+    email: string;
+    name: string;
+    department: string;
+    role: string;
+    editingId: string | number | null;
+  };
+  users: Array<{
+    id: string | number;
+    name: string;
+    department: string;
+    email: string;
+    role: string;
+    status: string;
+  }>;
   adminSettings: {
+    provider: string;
     model: string;
     enabled: boolean;
     monthlyCap: number | string;
@@ -350,6 +366,7 @@ export function mapAiSettingsToStandalone(
 ): StandaloneState["adminSettings"] {
   return {
     ...current,
+    provider: settings.provider,
     model: settings.model,
     enabled: settings.enabled,
     monthlyCap: settings.monthlyBudget,

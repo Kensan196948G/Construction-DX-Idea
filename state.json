@@ -7,8 +7,21 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "2026-08-12第2サイクル完了（最優先改善10件対応）: 承認フローAPI・コメント/詳細/編集・Slack通知・評価ボードUI/CSV・毎時アラート・監査ハッシュチェーン・PWA・バックアップ演習・Dependabot・GitHub Issue 10件復元。verify PASS（test 52件）。次: PRレビュー・本番デプロイ・migration 003/004適用（人間承認）、承認フローUIとオフラインキュー。",
+  "goal": "2026-08-18: DSH統合ラウンド。MVP稼働再確認（URL 200・ideas 15/users 6/監査verify valid:true・evaluation 13件）。npm run verify PASS（test 71件）・npm audit 0・worker/mvp dry-run PASS。Neon一時ブランチでMigration 001-005再実行+Seed --reset再実行を実証（users 6/ideas 14/comments 6/histories 36/decisions 7/aiSessions 4/outbox 2/auditLogs 26・監査ハッシュ欠損0）。ルールセットcentral-auto-mergeの必須チェック改行バグ（\"verify\\n\"）を修正→PR #28 auto-merge完了（78bcd69）。 2026-08-13:  本番から分離した操作可能なMVP/Prototypeの完成。MVPサブドメイン（dxidea-mvp.mirai-dx-platform.com）＋Neon mvpブランチ＋架空ダミーデータ投入・保持＋demo AIプロバイダー＋重大バグ3件修正（PRIVACY_BLOCKED/監査チェーンjsonb順序/Dateミリ秒）。verify PASS（test 68件）・mvp:smoke ALL PASS・書込みE2E PASS・監査verify valid:true。次: PR作成→CI→マージ→最終報告。",
   "phase": "Verify",
+  "mvp": {
+    "url": "https://dxidea-mvp.mirai-dx-platform.com",
+    "worker": "construction-dx-idea-api-mvp",
+    "neon_branch_id": "br-lively-rain-axde06n5",
+    "neon_endpoint": "ep-lingering-cake-ax569ixz",
+    "deployed_version_id": "b1fe62c5-8514-46e2-bfc4-5a757e0504f5",
+    "deployed_at": "2026-08-13",
+    "auth_mode": "ALLOW_LOCAL_AUTH_BYPASS=true",
+    "ai_provider": "demo",
+    "seed": "scripts/mvp-seed.mjs (ideas 14 / users 6 / audit_logs 26 / histories 36 / decisions 7 / comments 6)",
+    "smoke": "scripts/mvp-smoke.mjs (17 checks ALL PASS, 連続実行でも監査verify valid:true)",
+    "audit_chain": "追記を同一isolate内で直列化（PR #25）。複数isolate同時追記は残存リスクとして文書化"
+  },
   "deploy": {
     "ready": true,
     "ready_at": "2026-07-14",
@@ -24,6 +37,8 @@
     "ai_enabled_at": "2026-07-28",
     "ai_enabled_note": "PR #29でAI_ENABLED=true（Version d433ecf6）→ ユーザーがANTHROPIC_API_KEYをwrangler secret putで登録（Version 3828f822自動発行）→ PR #31でモデルIDをclaude-sonnet-5へ統一（Version a5f0b1b8）。本番で接続テスト成功・ai_settings最新行connected。",
     "latest_version_id": "475f4c50-e5df-4689-9d8f-c94efcbdd929",
+    "production_2026_08_12": "PR #2 merge（86d216c）→ wrangler deploy 成功（Version 0f311cb8-219c-4287-bb31-896bd4a3befc、cron2本: 10分再送+毎時アラート）。migration 003/004 本番適用済み（idempotency_key・approval_status等・audit_logs prev_hash/entry_hash・制約・索引確認）。バックアップ演習: branch backup-20260812 で整合性確認（ideas 0 / audit_logs 19 / outbox 0 / counters 0）。",
+    "production_2026_08_12_b": "PR #22 merge（77bcb75）→ wrangler deploy 成功（Version d1edb3c4-5079-4444-bf78-cdb0a040a9ca）。migration 005（app_users）本番適用済み。DeepSeek・ユーザー管理API・監査エクスポート稼働。DEEPSEEK_API_KEY Secret登録はユーザー操作待ち。",
     "maintenance_2026_07_28": "PR #29/#31/#32/#33を全てY承認・CI green・squash mergeで本番反映（最終Version 475f4c50）。PR #34は文書・依存同期（デプロイ不要）。Observability直近3hエラー0件。",
     "maintenance_2026_08_09": "ソース正本復元 + Issue #14。Version 26c92c09（Version 16）をデプロイし、デプロイ済みbundledの新機能（evaluation/csvCell等8フック）とローカルソースの完全一致を確認。本番Neonへmigration 002適用（ideasにdepartment等4カラム追加）。verify PASS（test 39件）。Observabilityデプロイ後エラー0件。GitHubリポジトリ消失のためpush/PRは未実施（復旧はユーザー判断）。"
   },
@@ -33,8 +48,8 @@
     "test_pass_rate": 1.0,
     "security_critical": 0,
     "blocker_count": 0,
-    "verified_at": "2026-08-12",
-    "verified_by": "第2サイクル完了: npm run verify PASS（lint / test 52件 / build x2 / security:scan）、HTMLデザインscript構文OK、npm audit 0件。承認フロー・コメント/編集・通知・評価ボードUI/CSV・アラート・監査チェーン・PWA・バックアップ演習・Dependabot・Issue 10件復元。本番デプロイ・migration 003/004・JWT付きsmokeは人間承認待ち"
+    "verified_at": "2026-08-18",
+    "verified_by": "2026-08-18再検証: npm run verify PASS（lint / test 71件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。MVP URL稼働+ダミーデータ実測確認。Neon Migration/Seed再実行を一時ブランチで実証。PR #28 merge（78bcd69）"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -74,7 +89,8 @@
       "wrangler dev（workerd/V8）は本開発機のsandbox環境では『Fatal process out of memory: SegmentedTable::InitializeTable』で起動不可（2026-07-21確認）。Chrome本体も--versionでSIGTRAPクラッシュ（カーネル6.17とChromium系V8バイナリの非互換、Node.jsは無事）。ローカル実動確認はdry-run+デプロイ後実測、ブラウザ確認はユーザーの実ブラウザで代替する。",
       "NeonのReset password直後の画面はパスワード単体にもCopyボタンがあり、接続URL全体と取り違えやすい（2026-07-21実発生: npg_...単体がDATABASE_URLに投入され全API 500）。案内時は『postgresql://で始まる長い1行』と見た目で指定する。",
       "@neondatabase/serverlessのneon()は不正な接続文字列をエラーメッセージに平文で含め、Workerの未処理例外ログ（wrangler tail）にそのまま出る。応答側のsanitizeはログ経路に効かない（Issue #25でトラック）。",
-      "sanitizeLogのマスクは『正しい形式』のパターンだけでは不十分。壊れた形式の秘密値（npg_パスワード単体等）はpostgres://パターンに一致せず素通りする。発生源での形式検証（getDbのURL検証）と個別トークンパターンの両方が必要（Issue #25/PR #32）。"
+      "sanitizeLogのマスクは『正しい形式』のパターンだけでは不十分。壊れた形式の秘密値（npg_パスワード単体等）はpostgres://パターンに一致せず素通りする。発生源での形式検証（getDbのURL検証）と個別トークンパターンの両方が必要（Issue #25/PR #32）。",
+      "rulesetのrequired_status_checksに末尾改行付きcontext（\"verify\\n\"）が登録されると、実在チェックと永遠に一致せずPRが恒常BLOCKEDになる（2026-08-15作成・2026-08-18発見/修正）。作成後はGET /repos/{owner}/{repo}/rulesets/{id} でcontext文字列を確認する。"
     ],
     "success_patterns": [
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
@@ -88,7 +104,8 @@
       "本番のエラー診断はwrangler tailが最速。ブラウザがリトライポーリング中なら、ユーザー操作なしでも数十秒のtailで実エラー（例: 不正な接続文字列）を特定できる。",
       "wrangler secret putはコード再デプロイなしで新Versionを自動発行する（既存コード+新Secret）。AI有効化はvars切替PR→secret put→画面確認の順で、キー未登録間はfail-close(503)のため課金リスクなく段階投入できる（2026-07-28実証）。",
       "standalone HTMLテンプレートはブラウザが素のHTMLを先にパースするため、number inputのvalueプレースホルダーはパース警告になる。text+inputmode=numericで根絶できる（Issue #26）。",
-      "npm audit --omit=devで本番依存を先に確認すると、dev限定脆弱性の対応緊急度を正しく判定できる。eslint 9→10はflat config済みなら小さな更新で、audit 0件を達成（2026-07-28）。"
+      "npm audit --omit=devで本番依存を先に確認すると、dev限定脆弱性の対応緊急度を正しく判定できる。eslint 9→10はflat config済みなら小さな更新で、audit 0件を達成（2026-07-28）。",
+      "gh pr merge --squash --auto はPRを待機状態にし、ruleset修正後に自動でmergeされる（2026-08-18実績: PR #28 11:18:08Z merge）。"
     ]
   },
   "open_issues_triage": {

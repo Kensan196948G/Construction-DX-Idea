@@ -37,12 +37,37 @@
 | IMP-24 | GitHub復元 | バックログIssue 10件を新リポジトリへ起票（#3〜#12） | GitHub Issues | gh issue list 確認 |
 | IMP-25 | 文書 | docs/06/07/10/22/23/26/27・README・state.jsonを更新 | 各docs | レビュー |
 
+## 1.2 2026-08-12 第3サイクル（本番反映・次期機能）
+
+| ID | 分類 | 内容 | 対象 | 検証証跡 |
+|---|---|---|---|---|
+| IMP-26 | 承認UI | 詳細画面に承認依頼・判定UI（承認/差戻し/却下・理由必須）を追加しAPI接続 | `Construction DX Idea (standalone).html` `src/App.tsx` | verify |
+| IMP-27 | Excel | SpreadsheetMLによるExcel出力（依存追加なし・式インジェクション対策）とUIボタン | `worker/index.ts` `src/lib/*` HTML | 単体テスト2件（xmlCell） |
+| IMP-28 | 検索 | 一覧検索をAPI（qパラメータ）へデバウンス連携 | `src/App.tsx` | verify |
+| IMP-29 | オフライン | 通信障害時に下書きをlocalStorageキューへ保存し復帰後自動同期 | `src/App.tsx` | verify |
+| IMP-30 | migration修正 | 004の制約追加をDOブロック化（PostgreSQL非対応構文の修正） | `migrations/004` | 本番適用成功 |
+| IMP-31 | 本番反映 | PR #2 merge→`wrangler deploy`（Version `0f311cb8`）→migration 003/004適用→バックアップ演習 | 本番 | deploy出力・psql検証 |
+
+## 1.3 2026-08-12 第4サイクル（DeepSeek・ユーザー管理・監査エクスポート）
+
+| ID | 分類 | 内容 | 対象 | 検証証跡 |
+|---|---|---|---|---|
+| IMP-32 | AI | DeepSeekプロバイダー対応（モデル許可リスト・API分岐・接続テスト・設定保存/リセット） | `worker/index.ts` `src/lib/*` HTML | 単体テスト2件（モデル許可リスト） |
+| IMP-33 | RBAC | app_usersテーブルとユーザー管理API（追加/編集/削除/一覧・自分自身保護）、DBロールを権限判定へ反映 | `worker/index.ts` `migrations/005` | 単体テスト1件（ロール解決） |
+| IMP-34 | 監査 | 監査ログのCSV/Excel/HTMLエクスポートAPIとUIボタン | `worker/index.ts` `src/lib/*` HTML | verify |
+| IMP-35 | UI | ユーザー管理画面（追加/編集/削除/ロール/有効無効）とAI設定のプロバイダー切替 | HTML `src/App.tsx` | HTML script構文OK |
+| IMP-36 | 文書 | docs/06/07/09/22/26/27・README・state.json更新 | 各docs | レビュー |
+| IMP-37 | 本番反映 | PR #22 merge→`wrangler deploy`（Version `d1edb3c4`）→migration 005（app_users）本番適用 | 本番 | deploy出力・psql検証 |
+
 ## 2. 検証証跡（2026-08-12）
 
 | 検証 | 結果 |
 |---|---|
-| `npm run verify`（lint / test / build / build:production-api / security:scan） | ✅ PASS（test 52件、suites 11） |
-| 単体テスト追加分 | ✅ 12件（prompt 2 / idempotency 2 / stage 2 / PII 3 / 監査チェーン2 / アラート1） |
+| `npm run verify`（lint / test / build / build:production-api / security:scan） | ✅ PASS（test 54件、suites 12） |
+| 単体テスト追加分 | ✅ 14件（prompt 2 / idempotency 2 / stage 2 / PII 3 / 監査チェーン2 / アラート1 / xmlCell 2） |
+| 本番デプロイ | ✅ Version `0f311cb8`（custom domain + cron2本） |
+| Neon本番migration | ✅ 003（idempotency_key）・004（承認+監査チェーン）適用・カラム/制約/索引確認 |
+| バックアップ演習 | ✅ `backup-20260812` ブランチで整合性SQL実行（ideas 0 / audit_logs 19 / outbox 0 / counters 0） |
 | `npx wrangler deploy worker/index.ts --dry-run` | ✅ PASS（assets 12ファイル、891KB / gzip 168.5KB） |
 | `npm audit` | ✅ 0 vulnerabilities |
 | `release:monitor`（pre-access、実DNS） | ✅ PASS 9/9（wrangler認証・DNS解決含む） |

@@ -218,3 +218,40 @@
   APIは本番反映済み・UIはバックログ（state.jsonのtriageに記録）
 - #15（APIキーサーバーサイド化）・#16（support.js上流）は従来どおり保留
 - GitHubリポジトリ復旧（再作成+push）はユーザー承認待ち
+
+---
+
+## 2026-08-18 DSH統合ラウンド（DeepSeek Harness・Goal Round 1）
+
+### Monitor
+- ローカル未コミット（前セッション由来）: ルートCLAUDE.md（新規663行）・.claude/START_PROMPT.md（統合/goal化）・
+  .coderabbit.yaml（パス3箇所）・docs/architecture（DSH WebUI MCP追記）。origin/mainはPR #27で1コミット先行。
+- PR #27のコミット版とローカル版をdiffし、DSH追記のみ差分であることを確認（GITHUB_POLICY.mdは同一）。
+
+### Development（Git統合）
+- origin/mainへff-only同期後、作業ブランチ `auto/dsh-policy-sync` で3コミット:
+  1. chore: .gitignoreへ.omo/.opencode/.coderabbit.yaml.bak-*追加
+  2. docs: ルートCLAUDE.md配布・START_PROMPT更新・中央ポリシーへDSH WebUI MCP追記
+  3. fix: .coderabbit.yamlのrelease scriptパスを実在パス（scripts/release-*.mjs）へ修正
+- PR #28作成。CI（verify）PASS後、自動マージ登録。
+
+### Verify（全項目実測）
+- `npm run verify` PASS（lint / test 71件 / build / build:production-api / security:scan）
+- `npm audit --audit-level=high`: 0件 / `worker:deploy:dry-run`・`mvp:dry-run`: PASS
+- MVP URL（https://dxidea-mvp.mirai-dx-platform.com/）: / 200・/api/health 200・/api/me 200
+- ダミーデータ実測: ideas 15件（14ダミー+E2E1件・全9ステージ）・users 6件・監査verify valid:true（62件）・
+  evaluation 13件・metrics正常。Cloudflare最新デプロイ Version b1fe62c5（state.json記録と一致）
+- Neon再実行実証: 一時ブランチ `verify-migration-seed-20260818`（mvpブランチから分岐・自己削除設定）で
+  Migration 001-005再適用（全て冪等に成功）→ `mvp-seed.mjs --reset` 再実行
+  （users 6/ideas 14/comments 6/histories 36/decisions 7/aiSessions 4/outbox 2/auditLogs 26・監査ハッシュ欠損0）
+
+### Improvement / 障害対応
+- **ruleset障害**: `central-auto-merge` の必須チェックcontextが `"verify\n"`（末尾改行）で登録されており、
+  実在の `verify` チェックと一致せず全PRが恒常BLOCKED（2026-08-15作成時バグ）。
+  PATCHでcontextを `verify` に修正 → mergeStateStatus BLOCKED→CLEAN → PR #28 自動マージ完了（78bcd69, 11:18:08Z）。
+- state.jsonのlearningに改行contextバグとauto-merge成功パターンを追記。
+
+### 残課題
+- 旧 `.claude/CLAUDE.md` と新ルート `CLAUDE.md` の一本化
+- Dependabot PR #14-#20（CI結果次第で個別判断）
+- DEEPSEEK_API_KEY Secret登録（ユーザー操作待ち）

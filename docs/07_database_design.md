@@ -117,6 +117,19 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | created_at | timestamptz | 作成日時 |
 | updated_at | timestamptz | 更新日時 |
 
+### app_users（#005）
+
+| カラム | 型 | 内容 |
+|---|---|---|
+| id | uuid | ユーザーID |
+| email | text unique | ログインメール（小文字正規化） |
+| name | text | 氏名 |
+| department | text | 所属部署 |
+| role | text | user / admin / system_admin |
+| status | text | active / suspended |
+| created_by | text | 登録者 |
+| created_at / updated_at | timestamptz | 作成・更新日時 |
+
 ### ai_monthly_usage_counters
 
 | カラム | 型 | 内容 |
