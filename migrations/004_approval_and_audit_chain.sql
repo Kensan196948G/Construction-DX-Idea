@@ -8,9 +8,16 @@ alter table ideas
   add column if not exists approval_acted_at timestamptz,
   add column if not exists approval_reason text not null default '';
 
-alter table ideas
-  add constraint if not exists ideas_approval_status_check
-  check (approval_status in ('none', 'requested', 'approved', 'rejected', 'returned'));
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'ideas_approval_status_check'
+  ) then
+    alter table ideas
+      add constraint ideas_approval_status_check
+      check (approval_status in ('none', 'requested', 'approved', 'rejected', 'returned'));
+  end if;
+end $$;
 
 alter table audit_logs
   add column if not exists prev_hash text,

@@ -201,6 +201,7 @@ describe("standalone WebUI bridge helpers", () => {
 
   it("maps server key state (keyLast4 / status) into admin settings", () => {
     const current: StandaloneState["adminSettings"] = {
+      provider: "claude",
       model: "claude-sonnet-5",
       enabled: false,
       monthlyCap: 100,
@@ -214,7 +215,7 @@ describe("standalone WebUI bridge helpers", () => {
       keyStatus: "not_configured",
     };
     const settings: AiSettings = {
-      provider: "anthropic",
+    provider: "claude",
       model: "claude-opus-5",
       enabled: true,
       status: "connected",
@@ -236,6 +237,7 @@ describe("standalone WebUI bridge helpers", () => {
 
   it("defaults keyLast4 to empty and keeps prior test result when key is not configured", () => {
     const current: StandaloneState["adminSettings"] = {
+      provider: "claude",
       model: "claude-sonnet-5",
       enabled: true,
       monthlyCap: 100,
@@ -249,7 +251,7 @@ describe("standalone WebUI bridge helpers", () => {
       keyStatus: "connected",
     };
     const settings: AiSettings = {
-      provider: "anthropic",
+    provider: "claude",
       model: "claude-sonnet-5",
       enabled: false,
       status: "not_configured",

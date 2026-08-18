@@ -186,7 +186,7 @@ describe("worker security helpers", () => {
     assert.equal(sanitized.includes("user:password@db.example"), false);
     assert.equal(sanitized.includes("Bearer abc.def.ghi"), false);
     assert.equal(sanitized.includes("plain-secret"), false);
-    assert.match(sanitized, /\[ANTHROPIC_API_KEY]/);
+    assert.match(sanitized, /\[AI_API_KEY]/);
     assert.match(sanitized, /\[SLACK_WEBHOOK_URL]/);
     assert.match(sanitized, /\[DATABASE_URL]/);
     assert.match(sanitized, /Bearer \[TOKEN]/);

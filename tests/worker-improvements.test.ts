@@ -9,8 +9,14 @@ const {
   formatAlertMessage,
   isAllowedStageTransition,
   isValidIdempotencyKey,
+  modelAllowedForProvider,
   redactIdeaForUser,
+  resolveRoles,
+  serializeAudit,
+  stableStringify,
+  toIsoString,
   verifyAuditChain,
+  writeRateLimitExceeded,
   xmlCell,
 } = workerSecurityTestHooks;
 
@@ -119,18 +125,18 @@ describe("stage transition guardrails", () => {
 });
 
 describe("idea PII redaction", () => {
-  it("keeps submitter email for admins", () => {
-    const idea = redactIdeaForUser(baseIdea(), "admin@example.jp", env);
+  it("keeps submitter email for admins", async () => {
+    const idea = await redactIdeaForUser(baseIdea(), "admin@example.jp", env);
     assert.equal(idea.submitterEmail, "yamada@example.jp");
   });
 
-  it("keeps submitter email for the owner", () => {
-    const idea = redactIdeaForUser(baseIdea(), "yamada@example.jp", env);
+  it("keeps submitter email for the owner", async () => {
+    const idea = await redactIdeaForUser(baseIdea(), "yamada@example.jp", env);
     assert.equal(idea.submitterEmail, "yamada@example.jp");
   });
 
-  it("strips submitter email for other authenticated users", () => {
-    const idea = redactIdeaForUser(baseIdea(), "taro@example.jp", env);
+  it("strips submitter email for other authenticated users", async () => {
+    const idea = await redactIdeaForUser(baseIdea(), "taro@example.jp", env);
     assert.equal(idea.submitterEmail, "");
     assert.equal(idea.title, "写真整理の自動化");
   });
@@ -199,6 +205,52 @@ describe("audit log hash chain", () => {
     assert.equal(tampered.firstBrokenId, "2");
     assert.equal(tampered.legacyRows, 1);
   });
+
+  it("hashes metadata canonically so jsonb key-order changes cannot break the chain", async () => {
+    const base = {
+      actor: "user@example.jp",
+      action: "stage.update",
+      resourceType: "idea",
+      resourceId: "idea-1",
+      result: "success",
+      createdAt: "2026-08-12T00:00:00.000Z",
+    };
+    const insertionOrder = await computeAuditEntryHash("genesis", {
+      ...base,
+      metadata: { stage: "mvp", reason: "承認" },
+    });
+    // jsonb round-trips may return keys in a different order:
+    const jsonbOrder = await computeAuditEntryHash("genesis", {
+      ...base,
+      metadata: { reason: "承認", stage: "mvp" },
+    });
+    assert.equal(insertionOrder, jsonbOrder);
+    assert.equal(stableStringify({ b: 1, a: [2, 3] }), '{"a":[2,3],"b":1}');
+  });
+
+  it("preserves milliseconds when the database driver returns Date objects", () => {
+    assert.equal(
+      toIsoString(new Date("2026-08-13T13:34:39.542Z")),
+      "2026-08-13T13:34:39.542Z",
+    );
+    assert.equal(toIsoString("2026-08-13T13:34:39.542Z"), "2026-08-13T13:34:39.542Z");
+  });
+
+  it("serializes audit appends so concurrent requests cannot share a previous hash", async () => {
+    const order: string[] = [];
+    const first = serializeAudit(async () => {
+      order.push("start-1");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      order.push("end-1");
+    });
+    const second = serializeAudit(async () => {
+      order.push("start-2");
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      order.push("end-2");
+    });
+    await Promise.all([first, second]);
+    assert.deepEqual(order, ["start-1", "end-1", "start-2", "end-2"]);
+  });
 });
 
 describe("failure alert message", () => {
@@ -219,5 +271,42 @@ describe("excel cell escaping", () => {
   it("guards formula-like cells with a leading apostrophe", () => {
     assert.equal(xmlCell("=SUM(A1)"), "&apos;=SUM(A1)");
     assert.equal(xmlCell("  -1"), "&apos;  -1");
+  });
+});
+
+describe("AI provider model allowlist", () => {
+  it("allows only the models configured for each provider", () => {
+    assert.equal(modelAllowedForProvider("claude", "claude-sonnet-5"), true);
+    assert.equal(modelAllowedForProvider("claude", "claude-opus-5"), true);
+    assert.equal(modelAllowedForProvider("claude", "deepseek-chat"), false);
+    assert.equal(modelAllowedForProvider("deepseek", "deepseek-chat"), true);
+    assert.equal(modelAllowedForProvider("deepseek", "deepseek-reasoner"), true);
+    assert.equal(modelAllowedForProvider("deepseek", "claude-sonnet-5"), false);
+    assert.equal(modelAllowedForProvider("demo", "demo-local"), true);
+    assert.equal(modelAllowedForProvider("demo", "claude-sonnet-5"), false);
+    assert.equal(modelAllowedForProvider("claude", "demo-local"), false);
+  });
+});
+
+describe("MVP write rate limiter", () => {
+  it("allows writes inside the window up to the limit", () => {
+    const now = 1_000_000;
+    assert.equal(writeRateLimitExceeded(1, now, now), false);
+    assert.equal(writeRateLimitExceeded(60, now, now), false);
+    assert.equal(writeRateLimitExceeded(61, now, now), true);
+  });
+
+  it("resets the counter after the window elapses", () => {
+    const windowStart = 1_000_000;
+    assert.equal(writeRateLimitExceeded(61, windowStart, windowStart + 60_001), false);
+  });
+});
+
+describe("role resolution", () => {
+  it("falls back to environment role configuration without a database", async () => {
+    const roles = await resolveRoles(env, "admin@example.jp");
+    assert.ok(roles.includes("user"));
+    assert.ok(roles.includes("admin"));
+    assert.equal(roles.includes("system_admin"), false);
   });
 });

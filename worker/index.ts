@@ -5,8 +5,15 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
+import { buildDemoQuestions, buildDemoStructure } from "../src/lib/demoAi";
 import { inspectIssueInput, inspectStructuredIdea, maskSensitiveText } from "../src/lib/privacy";
 import {
+  aiModels,
+  aiProviderModels,
+  aiProviders,
+  type AiProvider,
+  type AppUser,
+  type AppUserInput,
   type ApprovalDecision,
   type ApprovalRequest,
   type AuditChainVerifyResult,
@@ -22,11 +29,13 @@ import {
   ideaStages,
   issueInputSchema,
   structuredIdeaSchema,
+  userRoles,
 } from "../src/lib/shared";
 
 type Env = {
   DATABASE_URL?: string;
   ANTHROPIC_API_KEY?: string;
+  DEEPSEEK_API_KEY?: string;
   SLACK_WEBHOOK_URL?: string;
   AI_PROVIDER: string;
   AI_MODEL: string;
@@ -62,6 +71,9 @@ type JwksResponse = {
 
 const app = new Hono<{ Bindings: Env }>();
 const jwksCache = new Map<string, { expiresAt: number; keys: AccessJwk[] }>();
+const writeRateBuckets = new Map<string, { windowStart: number; count: number }>();
+const WRITE_RATE_WINDOW_MS = 60_000;
+const WRITE_RATE_LIMIT = 60;
 const SLACK_TIMEOUT_MS = 5000;
 const CLAUDE_TIMEOUT_MS = 15000;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
@@ -90,9 +102,21 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 
+// MVP/Prototype only: ALLOW_LOCAL_AUTH_BYPASS opens public writes against the
+// seeded demo database, so a best-effort per-IP fixed window guards abuse.
+app.use("/api/*", async (c, next) => {
+  if (
+    c.env.ALLOW_LOCAL_AUTH_BYPASS === "true" &&
+    ["POST", "PATCH", "PUT", "DELETE"].includes(c.req.method)
+  ) {
+    assertWriteRateAllowed(c);
+  }
+  await next();
+});
+
 app.get("/api/me", (c) => {
-  return getUser(c.req.raw, c.env).then((user) =>
-    c.json({ email: user, roles: inferRoles(user, c.env) }),
+  return getUser(c.req.raw, c.env).then(async (user) =>
+    c.json({ email: user, roles: await resolveRoles(c.env, user) }),
   );
 });
 
@@ -153,7 +177,7 @@ app.get("/api/metrics", async (c) => {
 
 app.get("/api/ideas/export.csv", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireAdmin(user, c.env);
+  await requireAdmin(c.env, user);
   const db = getDb(c.env);
   const rows = await db`
     select * from ideas
@@ -214,7 +238,7 @@ app.get("/api/ideas/export.csv", async (c) => {
 
 app.get("/api/ideas/export.xls", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireAdmin(user, c.env);
+  await requireAdmin(c.env, user);
   const db = getDb(c.env);
   const rows = await db`
     select * from ideas
@@ -328,12 +352,16 @@ app.get("/api/ideas", async (c) => {
       limit ${limit}
     `;
   }
-  return c.json(rows.map((row) => redactIdeaForUser(mapIdeaRow(row), user, c.env)));
+  return c.json(
+    await Promise.all(
+      rows.map(async (row) => redactIdeaForUser(mapIdeaRow(row), user, c.env)),
+    ),
+  );
 });
 
 app.get("/api/ideas/evaluation", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireAdmin(user, c.env);
+  await requireAdmin(c.env, user);
   const db = getDb(c.env);
   const rows = await db`
     select * from ideas
@@ -341,9 +369,13 @@ app.get("/api/ideas/evaluation", async (c) => {
     order by updated_at desc
     limit 200
   `;
-  const items = rows
-    .map((row) => mapIdeaRow(row))
-    .map((idea) => redactIdeaForUser(idea, user, c.env))
+  const items = (
+    await Promise.all(
+      rows.map(async (row) =>
+        redactIdeaForUser(mapIdeaRow(row), user, c.env),
+      ),
+    )
+  )
     .map((idea) => {
       const { score, reasons } = evaluationScore(idea);
       return { ...idea, priorityScore: score, reasons };
@@ -400,7 +432,7 @@ app.get("/api/ideas/:id", async (c) => {
     limit 1
   `;
   if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
-  return c.json(redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+  return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
 });
 
 app.patch(
@@ -417,7 +449,7 @@ app.patch(
     `;
     if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     const current = mapIdeaRow(locked[0]);
-    const isAdmin = inferRoles(user, c.env).includes("admin");
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
     const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
     if (!isAdmin && !isOwner) {
       throw new ApiError("FORBIDDEN", "編集は提出者本人または管理者のみ可能です。", 403);
@@ -472,7 +504,7 @@ app.patch(
     await audit(c.env, user, "idea.update", "idea", id, {
       updatedFields: Object.keys(patch),
     });
-    return c.json(redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+    return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
   },
 );
 
@@ -545,7 +577,7 @@ app.post(
     `;
     if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     const current = mapIdeaRow(locked[0]);
-    const isAdmin = inferRoles(user, c.env).includes("admin");
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
     const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
     if (!isAdmin && !isOwner) {
       throw new ApiError("FORBIDDEN", "承認依頼は提出者本人または管理者のみ可能です。", 403);
@@ -612,7 +644,7 @@ app.post(
     }
     const isApprover =
       current.approverEmail?.toLowerCase() === user.toLowerCase();
-    const isAdmin = inferRoles(user, c.env).includes("admin");
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
     if (!isApprover && !isAdmin) {
       throw new ApiError("FORBIDDEN", "承認者または管理者のみ判定できます。", 403);
     }
@@ -762,7 +794,7 @@ app.post(
   ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
-    requireAdmin(user, c.env);
+    await requireAdmin(c.env, user);
     const db = getDb(c.env);
   const id = c.req.param("id");
   const { stage, reason: rawReason } = c.req.valid("json");
@@ -842,20 +874,21 @@ app.post(
 
 app.get("/api/admin/ai-settings", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireSystemAdmin(user, c.env);
+  await requireSystemAdmin(c.env, user);
   return c.json(await getAiSettings(c.env));
 });
 
-// Model IDs this deployment is allowed to call on the Anthropic API. The UI
-// dropdown must stay in sync with this list (standalone HTML AI設定 screen).
-const allowedAiModels = ["claude-sonnet-5", "claude-opus-5"] as const;
+function modelAllowedForProvider(provider: AiProvider, model: string): boolean {
+  return (aiProviderModels[provider] ?? []).includes(model);
+}
 
 app.patch(
   "/api/admin/ai-settings",
   zValidator(
     "json",
     z.object({
-      model: z.enum(allowedAiModels),
+      provider: z.enum(aiProviders),
+      model: z.enum(aiModels),
       enabled: z.boolean(),
       dailyLimit: z.number().int().min(0).max(10000),
       monthlyBudget: z.number().min(0).max(100000000),
@@ -863,30 +896,48 @@ app.patch(
   ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
-    requireSystemAdmin(user, c.env);
+    await requireSystemAdmin(c.env, user);
     const patch = c.req.valid("json");
+    if (patch.provider === "demo" && c.env.ALLOW_LOCAL_AUTH_BYPASS !== "true") {
+      throw new ApiError(
+        "AI_MODEL_INVALID",
+        "デモ応答モードはMVP/Prototype環境でのみ利用できます。",
+        400,
+      );
+    }
+    if (!modelAllowedForProvider(patch.provider, patch.model)) {
+      throw new ApiError(
+        "AI_MODEL_INVALID",
+        `モデル ${patch.model} はプロバイダー ${patch.provider} で利用できません。`,
+        400,
+      );
+    }
     const db = getDb(c.env);
-    const connection = patch.enabled ? await testClaudeConnection(c.env, undefined, patch.model) : undefined;
+    const connection = patch.enabled
+      ? await testAiConnection(c.env, patch.provider, undefined, patch.model)
+      : undefined;
     const status = !patch.enabled
       ? "disabled"
-      : !c.env.ANTHROPIC_API_KEY
+      : !secretForProvider(c.env, patch.provider)
         ? "not_configured"
         : connection?.ok
           ? "connected"
           : "error";
-    const keyLast4 = c.env.ANTHROPIC_API_KEY ? c.env.ANTHROPIC_API_KEY.slice(-4) : undefined;
+    const keyLast4 = secretForProvider(c.env, patch.provider)?.slice(-4);
+    const secretName = patch.provider === "deepseek" ? "DEEPSEEK_API_KEY" : "ANTHROPIC_API_KEY";
     const rows = await db`
       insert into ai_settings (
         provider, model, secret_name, key_last4, status, enabled,
         daily_limit, monthly_budget, updated_by
       )
       values (
-        ${c.env.AI_PROVIDER}, ${patch.model}, 'ANTHROPIC_API_KEY', ${keyLast4 ?? null},
+        ${patch.provider}, ${patch.model}, ${secretName}, ${keyLast4 ?? null},
         ${status}, ${patch.enabled}, ${patch.dailyLimit}, ${patch.monthlyBudget}, ${user}
       )
       returning *
     `;
     await audit(c.env, user, "ai_settings.update", "ai_settings", String(rows[0].id), {
+      provider: patch.provider,
       model: patch.model,
       enabled: patch.enabled,
       dailyLimit: patch.dailyLimit,
@@ -899,17 +950,33 @@ app.patch(
 
 app.post(
   "/api/admin/ai-settings/test",
-  zValidator("json", z.object({ apiKey: z.string().optional(), model: z.enum(allowedAiModels).optional() })),
+  zValidator(
+    "json",
+    z.object({
+      provider: z.enum(aiProviders).optional(),
+      apiKey: z.string().optional(),
+      model: z.enum(aiModels).optional(),
+    }),
+  ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
-    requireSystemAdmin(user, c.env);
-    const { apiKey, model } = c.req.valid("json");
-    const result = await testClaudeConnection(c.env, apiKey, model);
+    await requireSystemAdmin(c.env, user);
+    const { apiKey, model, provider } = c.req.valid("json");
+    const resolvedProvider = provider ?? (await getAiSettings(c.env)).provider;
+    if (model && !modelAllowedForProvider(resolvedProvider, model)) {
+      throw new ApiError(
+        "AI_MODEL_INVALID",
+        `モデル ${model} はプロバイダー ${resolvedProvider} で利用できません。`,
+        400,
+      );
+    }
+    const result = await testAiConnection(c.env, resolvedProvider, apiKey, model);
     await audit(c.env, user, "ai_settings.test", "ai_settings", "connection", {
       ok: result.ok,
       status: result.status,
       keyLast4: result.keyLast4,
-      model: model ?? c.env.AI_MODEL,
+      provider: resolvedProvider,
+      model: model ?? (await getAiSettings(c.env)).model,
     });
     return c.json(result);
   },
@@ -917,7 +984,7 @@ app.post(
 
 app.get("/api/admin/audit-logs", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireSystemAdmin(user, c.env);
+  await requireSystemAdmin(c.env, user);
   const db = getDb(c.env);
   const rawLimit = Number(c.req.query("limit") ?? 100);
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), 500) : 100;
@@ -952,7 +1019,7 @@ app.get("/api/admin/audit-logs", async (c) => {
 
 app.get("/api/admin/audit-logs/verify", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireSystemAdmin(user, c.env);
+  await requireSystemAdmin(c.env, user);
   const db = getDb(c.env);
   const rows = await db`
     select id, actor, action, resource_type, resource_id, result, metadata,
@@ -1001,9 +1068,141 @@ app.get("/api/admin/audit-logs/verify", async (c) => {
   return c.json(result);
 });
 
+app.get("/api/admin/audit-logs/export.csv", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select id, actor, action, resource_type, resource_id, result, created_at
+    from audit_logs
+    order by created_at desc
+    limit 10000
+  `;
+  const header = ["id", "actor", "action", "resource_type", "resource_id", "result", "created_at"];
+  const lines = [
+    header.join(","),
+    ...rows.map((row) =>
+      [
+        csvCell(String(row.id)),
+        csvCell(String(row.actor)),
+        csvCell(String(row.action)),
+        csvCell(String(row.resource_type)),
+        csvCell(row.resource_id ? String(row.resource_id) : ""),
+        csvCell(String(row.result)),
+        csvCell(toIsoString(row.created_at)),
+      ].join(","),
+    ),
+  ];
+  await audit(c.env, user, "audit_logs.export.csv", "audit_logs", "all", { rows: rows.length });
+  return new Response("\uFEFF" + lines.join("\r\n") + "\r\n", {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Cache-Control": "no-store",
+    },
+  });
+});
+
+app.get("/api/admin/audit-logs/export.xls", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select id, actor, action, resource_type, resource_id, result, created_at
+    from audit_logs
+    order by created_at desc
+    limit 10000
+  `;
+  const header = ["id", "actor", "action", "resource_type", "resource_id", "result", "created_at"];
+  const lines = [
+    header,
+    ...rows.map((row) => [
+      String(row.id),
+      String(row.actor),
+      String(row.action),
+      String(row.resource_type),
+      row.resource_id ? String(row.resource_id) : "",
+      String(row.result),
+      toIsoString(row.created_at),
+    ]),
+  ];
+  const sheetRows = lines
+    .map((cells, rowIndex) =>
+      [
+        `<Row ss:Index="${rowIndex + 1}">`,
+        ...cells.map(
+          (cell, columnIndex) =>
+            `<Cell ss:Index="${columnIndex + 1}"><Data ss:Type="String">${xmlCell(cell)}</Data></Cell>`,
+        ),
+        "</Row>",
+      ].join(""),
+    )
+    .join("");
+  const workbook =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<?mso-application progid="Excel.Sheet"?>\n` +
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">` +
+    `<Worksheet ss:Name="AuditLogs"><Table>${sheetRows}</Table></Worksheet></Workbook>`;
+  await audit(c.env, user, "audit_logs.export.xls", "audit_logs", "all", { rows: rows.length });
+  return new Response("\uFEFF" + workbook, {
+    headers: {
+      "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+      "Content-Disposition": `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.xls"`,
+      "Cache-Control": "no-store",
+    },
+  });
+});
+
+app.get("/api/admin/audit-logs/export.html", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select id, actor, action, resource_type, resource_id, result, created_at
+    from audit_logs
+    order by created_at desc
+    limit 10000
+  `;
+  const bodyRows = rows
+    .map(
+      (row) =>
+        "<tr>" +
+        ["id", "actor", "action", "resource_type", "resource_id", "result", "created_at"]
+          .map((key) => {
+            const value =
+              key === "resource_id" && !row.resource_id
+                ? ""
+                : key === "created_at"
+                  ? toIsoString(row.created_at)
+                  : String(row[key as keyof typeof row] ?? "");
+            return `<td>${xmlCell(value)}</td>`;
+          })
+          .join("") +
+        "</tr>",
+    )
+    .join("\n");
+  const html =
+    "<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">" +
+    "<title>監査ログ</title><style>table{border-collapse:collapse;font-size:12px;}" +
+    "th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;}</style></head>" +
+    `<body><h1>監査ログ（${new Date().toISOString().slice(0, 10)}）</h1>` +
+    "<table><thead><tr><th>ID</th><th>実行者</th><th>操作</th><th>対象種別</th>" +
+    "<th>対象ID</th><th>結果</th><th>日時</th></tr></thead><tbody>" +
+    bodyRows +
+    "</tbody></table></body></html>";
+  await audit(c.env, user, "audit_logs.export.html", "audit_logs", "all", { rows: rows.length });
+  return new Response(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Disposition": `attachment; filename="audit-logs-${new Date().toISOString().slice(0, 10)}.html"`,
+      "Cache-Control": "no-store",
+    },
+  });
+});
+
 app.get("/api/admin/ai-usage", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireSystemAdmin(user, c.env);
+  await requireSystemAdmin(c.env, user);
   const db = getDb(c.env);
   const summaryRows = await db`
     select
@@ -1048,7 +1247,7 @@ app.get("/api/admin/ai-usage", async (c) => {
 
 app.get("/api/admin/usage-limits", async (c) => {
   const user = await getUser(c.req.raw, c.env);
-  requireSystemAdmin(user, c.env);
+  await requireSystemAdmin(c.env, user);
   const db = getDb(c.env);
   const rows = await db`
     select subject_type, subject_id, daily_ai_limit, monthly_budget, enabled, updated_by, updated_at
@@ -1082,15 +1281,17 @@ app.put(
   ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
-    requireSystemAdmin(user, c.env);
+    await requireSystemAdmin(c.env, user);
     const db = getDb(c.env);
     const patch = c.req.valid("json");
+    const subjectId =
+      patch.subjectType === "global" ? "*" : patch.subjectId;
     const rows = await db`
       insert into usage_limits (
         subject_type, subject_id, daily_ai_limit, monthly_budget, enabled, updated_by
       )
       values (
-        ${patch.subjectType}, ${patch.subjectId}, ${patch.dailyLimit},
+        ${patch.subjectType}, ${subjectId}, ${patch.dailyLimit},
         ${patch.monthlyBudget}, ${patch.enabled}, ${user}
       )
       on conflict (subject_type, subject_id)
@@ -1111,7 +1312,7 @@ app.put(
       updatedBy: rows[0].updated_by ? String(rows[0].updated_by) : undefined,
       updatedAt: toIsoString(rows[0].updated_at),
     };
-    await audit(c.env, user, "usage_limits.update", "usage_limits", item.subjectId, {
+    await audit(c.env, user, "usage_limits.update", "usage_limits", subjectId, {
       subjectType: item.subjectType,
       dailyLimit: item.dailyLimit,
       monthlyBudget: item.monthlyBudget,
@@ -1120,6 +1321,121 @@ app.put(
     return c.json(item);
   },
 );
+
+app.get("/api/admin/users", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select * from app_users
+    order by name asc, email asc
+  `;
+  const items = rows.map(mapUserRow);
+  await audit(c.env, user, "users.read", "app_users", "all", { count: items.length });
+  return c.json({ items });
+});
+
+app.post(
+  "/api/admin/users",
+  zValidator(
+    "json",
+    z.object({
+      email: z.string().email().max(320),
+      name: z.string().max(200).optional().default(""),
+      department: z.string().max(200).optional().default(""),
+      role: z.enum(userRoles),
+      status: z.enum(["active", "suspended"]).optional().default("active"),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const db = getDb(c.env);
+    const input = c.req.valid("json") as AppUserInput;
+    const email = input.email.trim().toLowerCase();
+    const existing = await db`select id from app_users where email = ${email} limit 1`;
+    if (existing[0]) {
+      throw new ApiError("USER_ALREADY_EXISTS", "このメールアドレスは登録済みです。", 409);
+    }
+    const rows = await db`
+      insert into app_users (email, name, department, role, status, created_by)
+      values (${email}, ${input.name ?? ""}, ${input.department ?? ""}, ${input.role}, ${input.status ?? "active"}, ${user})
+      returning *
+    `;
+    const item = mapUserRow(rows[0]);
+    await audit(c.env, user, "users.create", "app_users", item.id, {
+      email: item.email,
+      role: item.role,
+    });
+    return c.json(item, 201);
+  },
+);
+
+app.patch(
+  "/api/admin/users/:id",
+  zValidator(
+    "json",
+    z.object({
+      name: z.string().max(200).optional(),
+      department: z.string().max(200).optional(),
+      role: z.enum(userRoles).optional(),
+      status: z.enum(["active", "suspended"]).optional(),
+    }).strict(),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const patch = c.req.valid("json");
+    const locked = await db`select * from app_users where id = ${id} for update`;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "User not found.", 404);
+    const current = mapUserRow(locked[0]);
+    const isSelf = current.email.toLowerCase() === user.toLowerCase();
+    if (isSelf && patch.role && patch.role !== "system_admin") {
+      throw new ApiError("SELF_DEMOTION", "自分自身のシステム管理者ロールを変更できません。", 422);
+    }
+    if (isSelf && patch.status === "suspended") {
+      throw new ApiError("SELF_SUSPENSION", "自分自身を無効化できません。", 422);
+    }
+    const rows = await db`
+      update app_users
+      set
+        name = coalesce(${patch.name ?? null}, name),
+        department = coalesce(${patch.department ?? null}, department),
+        role = coalesce(${patch.role ?? null}, role),
+        status = coalesce(${patch.status ?? null}, status),
+        updated_at = now()
+      where id = ${id}
+      returning *
+    `;
+    const item = mapUserRow(rows[0]);
+    await audit(c.env, user, "users.update", "app_users", item.id, {
+      email: item.email,
+      changed: Object.keys(patch),
+    });
+    return c.json(item);
+  },
+);
+
+app.delete("/api/admin/users/:id", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const locked = await db`select * from app_users where id = ${id} for update`;
+  if (!locked[0]) throw new ApiError("NOT_FOUND", "User not found.", 404);
+  const current = mapUserRow(locked[0]);
+  if (current.email.toLowerCase() === user.toLowerCase()) {
+    throw new ApiError("SELF_DELETE", "自分自身を削除できません。", 422);
+  }
+  await db`delete from app_users where id = ${id}`;
+  await audit(c.env, user, "users.delete", "app_users", id, {
+    email: current.email,
+    role: current.role,
+  });
+  return c.json({ ok: true });
+});
 
 app.onError((error, c) => {
   const requestId = c.req.header("CF-Ray") ?? crypto.randomUUID();
@@ -1343,7 +1659,11 @@ function base64UrlDecode(value: string): ArrayBuffer {
 
 function assertStructuredIdeaSafe(structured: StructuredIdea) {
   const findings = inspectStructuredIdea(structured);
-  if (findings.length > 0) {
+  // Warnings are surfaced to the user before AI transmission; saving is
+  // stopped only for blocker-class findings (money, credentials), matching
+  // AC-003 ("warn") and keeping ordinary content such as project numbers or
+  // contact emails registrable.
+  if (findings.some((finding) => finding.severity === "blocker")) {
     throw new ApiError("PRIVACY_BLOCKED", "機密情報候補があるため保存を停止しました。", 422);
   }
 }
@@ -1359,14 +1679,38 @@ function inferRoles(user: string, env: Env): string[] {
   return roles;
 }
 
-function requireAdmin(user: string, env: Env) {
-  if (!inferRoles(user, env).includes("admin")) {
+async function resolveRoles(env: Env, user: string): Promise<string[]> {
+  const roles = inferRoles(user, env);
+  if (!env.DATABASE_URL) return roles;
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select role, status
+      from app_users
+      where lower(email) = ${user.toLowerCase()}
+      limit 1
+    `;
+    const row = rows[0];
+    if (row && String(row.status) === "active" && String(row.role)) {
+      const role = String(row.role);
+      if ((userRoles as readonly string[]).includes(role) && !roles.includes(role)) {
+        roles.push(role);
+      }
+    }
+  } catch (error) {
+    console.error("resolveRoles failed", sanitizeLog(error));
+  }
+  return roles;
+}
+
+async function requireAdmin(env: Env, user: string) {
+  if (!(await resolveRoles(env, user)).includes("admin")) {
     throw new ApiError("FORBIDDEN", "管理者権限が必要です。", 403);
   }
 }
 
-function requireSystemAdmin(user: string, env: Env) {
-  if (!inferRoles(user, env).includes("system_admin")) {
+async function requireSystemAdmin(env: Env, user: string) {
+  if (!(await resolveRoles(env, user)).includes("system_admin")) {
     throw new ApiError("FORBIDDEN", "システム管理者権限が必要です。", 403);
   }
 }
@@ -1375,8 +1719,8 @@ function isValidIdempotencyKey(key: string): boolean {
   return IDEMPOTENCY_KEY_PATTERN.test(key);
 }
 
-function redactIdeaForUser(idea: Idea, user: string, env: Env): Idea {
-  if (inferRoles(user, env).includes("admin")) return idea;
+async function redactIdeaForUser(idea: Idea, user: string, env: Env): Promise<Idea> {
+  if ((await resolveRoles(env, user)).includes("admin")) return idea;
   if (idea.submitterEmail && idea.submitterEmail.toLowerCase() === user.toLowerCase()) {
     return idea;
   }
@@ -1406,6 +1750,34 @@ function splitCsv(value?: string): string[] {
     .filter(Boolean);
 }
 
+export function writeRateLimitExceeded(count: number, windowStart: number, now: number): boolean {
+  return now - windowStart > WRITE_RATE_WINDOW_MS ? false : count > WRITE_RATE_LIMIT;
+}
+
+function assertWriteRateAllowed(c: AppContext) {
+  const forwarded = c.req.header("X-Forwarded-For")?.split(",")[0]?.trim();
+  const ip = c.req.header("CF-Connecting-IP") || forwarded || "unknown";
+  const now = Date.now();
+  if (writeRateBuckets.size > 10_000) {
+    for (const [key, bucket] of writeRateBuckets) {
+      if (now - bucket.windowStart > WRITE_RATE_WINDOW_MS) writeRateBuckets.delete(key);
+    }
+  }
+  const current = writeRateBuckets.get(ip);
+  if (!current || now - current.windowStart > WRITE_RATE_WINDOW_MS) {
+    writeRateBuckets.set(ip, { windowStart: now, count: 1 });
+    return;
+  }
+  current.count += 1;
+  if (writeRateLimitExceeded(current.count, current.windowStart, now)) {
+    throw new ApiError(
+      "RATE_LIMITED",
+      "短時間に多くの書き込みが行われたため、一時的に制限しています。",
+      429,
+    );
+  }
+}
+
 type UsageLimit = {
   subjectType: "user" | "global";
   subjectId: string;
@@ -1424,11 +1796,23 @@ type AiReservation = {
 
 async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promise<AiReservation> {
   const aiSettings = await getAiSettings(env);
+  if (aiSettings.provider === "demo") {
+    if (env.ALLOW_LOCAL_AUTH_BYPASS !== "true") {
+      throw new ApiError("AI_DISABLED", "デモ応答モードはMVP/Prototype環境でのみ利用できます。", 503);
+    }
+    // Deterministic local responses: no external API call and no cost, so no
+    // usage reservation or counter changes are needed.
+    return { dailyReservations: [], monthlyReservations: [] };
+  }
   if (env.AI_ENABLED !== "true" || !aiSettings.enabled) {
     throw new ApiError("AI_DISABLED", "AI機能は無効です。", 503);
   }
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new ApiError("AI_NOT_CONFIGURED", "ANTHROPIC_API_KEY is not configured.", 503);
+  if (!secretForProvider(env, aiSettings.provider)) {
+    throw new ApiError(
+      "AI_NOT_CONFIGURED",
+      `${aiSettings.provider === "deepseek" ? "DEEPSEEK_API_KEY" : "ANTHROPIC_API_KEY"} is not configured.`,
+      503,
+    );
   }
   const text = JSON.stringify(input);
   if (text.length > Number(env.MAX_INPUT_CHARS || 2000)) {
@@ -1589,8 +1973,9 @@ async function getEffectiveUsageLimits(
 
 async function generateQuestions(env: Env, input: IssueInput): Promise<AiQuestion[]> {
   const aiSettings = await getAiSettings(env);
+  if (aiSettings.provider === "demo") return buildDemoQuestions(input);
   const messages = buildPromptMessages("questions", JSON.stringify(maskIssue(input)));
-  const result = await callClaude(env, messages, aiSettings.model);
+  const result = await callAiModel(env, aiSettings.provider, messages, aiSettings.model);
   const parsed = parseJson<unknown>(result);
   const questionsSchema = z.array(
     z.object({
@@ -1613,12 +1998,13 @@ async function structureIdea(
   answers: Record<string, string>,
 ): Promise<StructuredIdea> {
   const aiSettings = await getAiSettings(env);
+  if (aiSettings.provider === "demo") return buildDemoStructure(input, answers);
   const payload = JSON.stringify({
     input: maskIssue(input),
     answers: maskSensitiveText(JSON.stringify(answers)),
   });
   const messages = buildPromptMessages("structure", payload);
-  const result = await callClaude(env, messages, aiSettings.model);
+  const result = await callAiModel(env, aiSettings.provider, messages, aiSettings.model);
   const structured = structuredIdeaSchema.safeParse(parseJson<unknown>(result));
   if (!structured.success) {
     throw new ApiError("AI_RESPONSE_INVALID", "AI応答の形式が不正です。", 502);
@@ -1658,6 +2044,27 @@ function buildPromptMessages(processType: "questions" | "structure", payload: st
   ];
 }
 
+function secretForProvider(env: Env, provider: AiProvider): string | undefined {
+  if (provider === "deepseek") return env.DEEPSEEK_API_KEY;
+  if (provider === "demo") return "";
+  return env.ANTHROPIC_API_KEY;
+}
+
+async function callAiModel(
+  env: Env,
+  provider: AiProvider,
+  messages: AiMessage[],
+  model: string,
+): Promise<string> {
+  if (provider === "demo") {
+    throw new ApiError("AI_DISABLED", "デモ応答モードでは外部AI APIを呼び出しません。", 503);
+  }
+  if (provider === "deepseek") {
+    return callDeepSeek(env, messages, model);
+  }
+  return callClaude(env, messages, model);
+}
+
 async function callClaude(env: Env, messages: AiMessage[], model: string): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
@@ -1693,12 +2100,55 @@ async function callClaude(env: Env, messages: AiMessage[], model: string): Promi
   }
 }
 
-async function testClaudeConnection(
+async function callDeepSeek(env: Env, messages: AiMessage[], model: string): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
+  try {
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${env.DEEPSEEK_API_KEY ?? ""}`,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1600,
+        messages,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new ApiError("AI_PROVIDER_ERROR", "DeepSeek API接続に失敗しました。", 502);
+    }
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    return data.choices?.[0]?.message?.content ?? "";
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new ApiError("AI_TIMEOUT", "DeepSeek APIの応答がタイムアウトしました。", 504);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function testAiConnection(
   env: Env,
+  provider: AiProvider,
   apiKey?: string,
   model?: string,
 ): Promise<AiConnectionTestResult> {
-  const key = apiKey || env.ANTHROPIC_API_KEY;
+  if (provider === "demo") {
+    return {
+      ok: true,
+      status: "connected",
+      message: "デモ応答モードです。外部AI APIは呼び出しません（課金なし）。",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  const key = apiKey || secretForProvider(env, provider);
   const checkedAt = new Date().toISOString();
   if (!key) {
     return {
@@ -1713,27 +2163,49 @@ async function testClaudeConnection(
     const timeoutId = setTimeout(() => controller.abort(), CLAUDE_TIMEOUT_MS);
     let response: Response;
     try {
-      response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": key,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: model || env.AI_MODEL,
-          max_tokens: 8,
-          messages: [{ role: "user", content: "Return OK." }],
-        }),
-        signal: controller.signal,
-      });
+      response =
+        provider === "deepseek"
+          ? await fetch("https://api.deepseek.com/chat/completions", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${key}`,
+              },
+              body: JSON.stringify({
+                model: model || "deepseek-chat",
+                max_tokens: 8,
+                messages: [{ role: "user", content: "Return OK." }],
+              }),
+              signal: controller.signal,
+            })
+          : await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-api-key": key,
+                "anthropic-version": "2023-06-01",
+              },
+              body: JSON.stringify({
+                model: model || env.AI_MODEL,
+                max_tokens: 8,
+                messages: [{ role: "user", content: "Return OK." }],
+              }),
+              signal: controller.signal,
+            });
     } finally {
       clearTimeout(timeoutId);
     }
     return {
       ok: response.ok,
       status: response.ok ? "connected" : "error",
-      message: response.ok ? "Claude API接続に成功しました。" : "Claude API接続に失敗しました。",
+      message:
+        provider === "deepseek"
+          ? response.ok
+            ? "DeepSeek API接続に成功しました。"
+            : "DeepSeek API接続に失敗しました。"
+          : response.ok
+            ? "Claude API接続に成功しました。"
+            : "Claude API接続に失敗しました。",
       keyLast4: key.slice(-4),
       checkedAt,
     };
@@ -1741,7 +2213,10 @@ async function testClaudeConnection(
     return {
       ok: false,
       status: "error",
-      message: "Claude APIへ接続できませんでした。",
+      message:
+        provider === "deepseek"
+          ? "DeepSeek APIへ接続できませんでした。"
+          : "Claude APIへ接続できませんでした。",
       keyLast4: key.slice(-4),
       checkedAt,
     };
@@ -1749,12 +2224,19 @@ async function testClaudeConnection(
 }
 
 async function getAiSettings(env: Env): Promise<AiSettings> {
+  const provider: AiProvider = (aiProviders as readonly string[]).includes(env.AI_PROVIDER)
+    ? (env.AI_PROVIDER as AiProvider)
+    : "claude";
+  const configuredKey = secretForProvider(env, provider);
   const fallback: AiSettings = {
-    provider: env.AI_PROVIDER,
+    provider,
     model: env.AI_MODEL,
     enabled: env.AI_ENABLED === "true",
-    status: env.AI_ENABLED === "true" && env.ANTHROPIC_API_KEY ? "connected" : "disabled",
-    keyLast4: env.ANTHROPIC_API_KEY ? env.ANTHROPIC_API_KEY.slice(-4) : undefined,
+    status:
+      env.AI_ENABLED === "true" && (configuredKey || provider === "demo")
+        ? "connected"
+        : "disabled",
+    keyLast4: configuredKey ? configuredKey.slice(-4) : undefined,
     dailyLimit: Number(env.DAILY_AI_LIMIT || 10),
     monthlyBudget: 0,
     updatedBy: "cloudflare-secret",
@@ -1793,6 +2275,7 @@ function maskIssue(input: IssueInput): IssueInput {
 }
 
 async function auditAi(env: Env, user: string, processType: string, input: unknown, output: unknown) {
+  const model = (await getAiSettings(env)).model;
   const inputText = JSON.stringify(maskSensitiveText(JSON.stringify(input)));
   const outputText = JSON.stringify(maskSensitiveText(JSON.stringify(output)));
   const usageCostEstimate = estimateAiCost(env, inputText.length, outputText.length);
@@ -1805,7 +2288,7 @@ async function auditAi(env: Env, user: string, processType: string, input: unkno
       result, usage_cost_estimate, prompt_version, input_hash
     )
     values (
-      ${user}, ${processType}, ${env.AI_MODEL}, ${inputText.length},
+      ${user}, ${processType}, ${model}, ${inputText.length},
       ${outputText.length}, 'success', ${usageCostEstimate}, ${promptVersionFor(processType)}, ${inputHash}
     )
   `;
@@ -1820,6 +2303,7 @@ async function auditAiFailure(
   error: unknown,
 ) {
   try {
+    const model = (await getAiSettings(env)).model;
     const inputText = JSON.stringify(maskSensitiveText(JSON.stringify(input)));
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(inputText));
     const inputHash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1830,7 +2314,7 @@ async function auditAiFailure(
         result, usage_cost_estimate, prompt_version, input_hash
       )
       values (
-        ${user}, ${processType}, ${env.AI_MODEL}, ${inputText.length},
+        ${user}, ${processType}, ${model}, ${inputText.length},
         0, ${error instanceof ApiError ? error.code : "failure"}, 0, ${promptVersionFor(processType)}, ${inputHash}
       )
     `;
@@ -1934,35 +2418,55 @@ async function audit(
   resourceId: string,
   metadata: Record<string, unknown>,
 ) {
-  const db = getDb(env);
-  const createdAt = new Date().toISOString();
-  const lastRows = await db`
-    select entry_hash
-    from audit_logs
-    where entry_hash is not null
-    order by created_at desc, id desc
-    limit 1
-  `;
-  const prevHash = lastRows[0]?.entry_hash ? String(lastRows[0].entry_hash) : "genesis";
-  const entryHash = await computeAuditEntryHash(prevHash, {
-    actor,
-    action,
-    resourceType,
-    resourceId,
-    result: "success",
-    metadata,
-    createdAt,
+  return serializeAudit(async () => {
+    const db = getDb(env);
+    const createdAt = new Date().toISOString();
+    const lastRows = await db`
+      select entry_hash
+      from audit_logs
+      where entry_hash is not null
+      order by created_at desc, id desc
+      limit 1
+    `;
+    const prevHash = lastRows[0]?.entry_hash ? String(lastRows[0].entry_hash) : "genesis";
+    const entryHash = await computeAuditEntryHash(prevHash, {
+      actor,
+      action,
+      resourceType,
+      resourceId,
+      result: "success",
+      metadata,
+      createdAt,
+    });
+    await db`
+      insert into audit_logs (
+        actor, action, resource_type, resource_id, result, metadata,
+        prev_hash, entry_hash, created_at
+      )
+      values (
+        ${actor}, ${action}, ${resourceType}, ${resourceId}, 'success',
+        ${JSON.stringify(metadata)}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
+      )
+    `;
   });
-  await db`
-    insert into audit_logs (
-      actor, action, resource_type, resource_id, result, metadata,
-      prev_hash, entry_hash, created_at
-    )
-    values (
-      ${actor}, ${action}, ${resourceType}, ${resourceId}, 'success',
-      ${JSON.stringify(metadata)}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
-    )
-  `;
+}
+
+/**
+ * Serializes audit-chain appends within this Worker isolate. Concurrent
+ * audited requests (e.g. the dashboard loading audit logs and AI usage in
+ * parallel) previously raced: both read the same previous hash and broke the
+ * chain. Cross-isolate concurrency is still best-effort and is documented in
+ * docs/28; verify detects any break and the chain can be re-anchored.
+ */
+let auditChainQueue: Promise<void> = Promise.resolve();
+
+function serializeAudit<T>(task: () => Promise<T>): Promise<T> {
+  const run = auditChainQueue.then(task, task);
+  auditChainQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 async function computeAuditEntryHash(
@@ -1984,13 +2488,38 @@ async function computeAuditEntryHash(
     fields.resourceType,
     fields.resourceId ?? "",
     fields.result,
-    JSON.stringify(fields.metadata ?? {}),
+    stableStringify(fields.metadata ?? {}),
     fields.createdAt,
   ].join("\n");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/**
+ * Canonical JSON serialization for the audit hash chain.
+ *
+ * metadata is stored as jsonb, which does not preserve object key order. If
+ * the write path hashed JSON.stringify(metadata) in insertion order while the
+ * verify path hashed the jsonb round-trip (different key order), every
+ * multi-key entry would fail verification. Sorting keys recursively makes the
+ * hash independent of how the value was serialized or read back.
+ */
+function stableStringify(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+      .join(",")}}`;
+  }
+  return "null";
 }
 
 function verifyAuditChain(
@@ -2283,20 +2812,29 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
 }
 
 function toIsoString(value: unknown): string {
+  // The Neon driver returns timestamptz columns as Date objects. Converting
+  // through String(Date) drops milliseconds, which would change audit-chain
+  // hashes for entries written at any time with a non-zero millisecond part.
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? new Date(0).toISOString() : value.toISOString();
+  }
   const date = new Date(String(value ?? ""));
   return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
 }
 
 function mapAiSettingsRow(row: Record<string, unknown>, env: Env): AiSettings {
   const enabled = Boolean(row.enabled) && env.AI_ENABLED === "true";
-  // Rows saved before the allowlist existed may hold retired model IDs;
-  // coerce them to the deployment default instead of calling the API with them.
+  const provider: AiProvider = (aiProviders as readonly string[]).includes(
+    String(row.provider ?? ""),
+  )
+    ? (String(row.provider) as AiProvider)
+    : "claude";
   const storedModel = String(row.model ?? env.AI_MODEL);
-  const model = (allowedAiModels as readonly string[]).includes(storedModel)
+  const model = modelAllowedForProvider(provider, storedModel)
     ? storedModel
-    : env.AI_MODEL;
+    : (aiProviderModels[provider][0] ?? env.AI_MODEL);
   return {
-    provider: String(row.provider ?? env.AI_PROVIDER),
+    provider,
     model,
     enabled,
     status: enabled && row.status === "connected" ? "connected" : enabled ? "error" : "disabled",
@@ -2305,6 +2843,19 @@ function mapAiSettingsRow(row: Record<string, unknown>, env: Env): AiSettings {
     monthlyBudget: Number(row.monthly_budget ?? 0),
     lastCheckedAt: row.last_checked_at ? new Date(String(row.last_checked_at)).toISOString() : undefined,
     updatedBy: row.updated_by ? String(row.updated_by) : undefined,
+  };
+}
+
+function mapUserRow(row: Record<string, unknown>): AppUser {
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    name: String(row.name ?? ""),
+    department: String(row.department ?? ""),
+    role: String(row.role) as AppUser["role"],
+    status: String(row.status) as AppUser["status"],
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
   };
 }
 
@@ -2323,6 +2874,7 @@ function arrayFromJson(value: unknown): string[] {
 
 function sanitizeLog(error: unknown) {
   return String(error)
+    .replace(/\bsk-[A-Za-z0-9_-]{10,}/g, "[AI_API_KEY]")
     .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[ANTHROPIC_API_KEY]")
     .replace(/xox[baprs]-[A-Za-z0-9-]+/g, "[SLACK_TOKEN]")
     .replace(/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/_-]+/g, "[SLACK_WEBHOOK_URL]")
@@ -2339,13 +2891,15 @@ class ApiError extends Error {
   constructor(
     public code: string,
     message: string,
-    public status: 400 | 401 | 403 | 404 | 413 | 422 | 429 | 500 | 502 | 503 | 504,
+    public status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 500 | 502 | 503 | 504,
   ) {
     super(message);
   }
 }
 
 export const workerSecurityTestHooks = {
+  buildDemoQuestions,
+  buildDemoStructure,
   computeAuditEntryHash,
   buildPromptMessages,
   formatAlertMessage,
@@ -2357,11 +2911,17 @@ export const workerSecurityTestHooks = {
   isAllowedStageTransition,
   isValidIdempotencyKey,
   isValidDatabaseUrl,
+  modelAllowedForProvider,
   redactIdeaForUser,
+  resolveRoles,
   resolveCorsOrigin,
   sanitizeLog,
+  serializeAudit,
   verifyAuditChain,
   verifyAccessJwt,
+  stableStringify,
+  toIsoString,
+  writeRateLimitExceeded,
 };
 
 type MinimalExecutionContext = {

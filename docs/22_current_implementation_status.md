@@ -1,5 +1,38 @@
 # 現在の実装・検証ステータス
 
+## 0.5 最新（2026-08-13: MVP/Prototype環境の新設と重大バグ修正）
+
+- **MVP/Prototype環境**を本番と分離して新設・デプロイ:
+  - URL: `https://dxidea-mvp.mirai-dx-platform.com`（Worker `construction-dx-idea-api-mvp`、wrangler `env.mvp`）
+  - DB: Neon branch `mvp`（parent main）にダミーデータ投入（ideas 14 / users 6 / audit_logs 26 / 履歴36 / 判定7 / コメント6等）
+  - 認証: `ALLOW_LOCAL_AUTH_BYPASS=true`（レビュー用・書き込みレート制限付き）、AI: `demo`プロバイダー（課金なし・決定的ローカル応答）
+- **重大バグ修正**（本番ideas 0件の原因と整合する不具合を含む）:
+  - 提出者メールを含む構造化保存が常に `PRIVACY_BLOCKED` になる不具合 → blockerのみブロック・submitter context除外
+  - 監査ハッシュチェーンがjsonbキー順序で破綻 → canonical serialization（stableStringify）へ統一
+  - `toIsoString` のDateミリ秒欠落 → 監査行ハッシュ不整合の修正
+  - 監査追記の並行競合（同じprevを2行が共有） → isolate内直列化＋フロント逐次化（PR #25）
+- オフライン下書き同期へIdempotency-Keyを追加（再送重複登録リスク解消、`src/lib/offlineDrafts.ts`）
+- 検証: `npm run verify` PASS（lint / test 71件 / build×2 / security:scan）、`mvp:smoke` ALL PASS（連続2回）、
+  登録→ステージ→承認→コメントのE2E PASS、監査verify `valid:true`
+- デモ手順: `docs/28_mvp_prototype_demo.md`。アセスメント: `docs/audit/2026-08-13-assessment.md`
+
+## 0.4 最新（2026-08-12: DeepSeek・ユーザー管理・監査エクスポート）
+
+- AI設定: DeepSeekプロバイダー（deepseek-chat / deepseek-reasoner）を追加し、接続テスト・設定保存・リセットを
+  プロバイダー対応で有効化。キーはCloudflare Secret（`DEEPSEEK_API_KEY`）で管理。
+- ログインユーザー管理: 新規追加・編集（氏名/部署/ロール/ステータス）・削除・一覧をAPI/UI実装（migration 005）。
+- 監査ログ: CSV・Excel（SpreadsheetML）・HTMLエクスポートを追加。
+- 検証: `npm run verify` PASS（test 56件）。PR #22 merge → 本番デプロイ（Version `d1edb3c4`）→ migration 005本番適用済み。
+- 残: `DEEPSEEK_API_KEY` のCloudflare Secret登録（ユーザー操作）、会社ドメイン管理者複数化。
+
+## 0.3 最新（2026-08-12: 本番反映完了）
+
+- PR #2 merge（main `86d216c`）→ `wrangler deploy` 成功（Version `0f311cb8`、custom domain + cron2本）。
+- Neon本番へ migration 003（idempotency_key）・004（承認フィールド＋監査ハッシュチェーン）適用済み。
+- バックアップ演習: `backup-20260812` ブランチで整合性確認（ideas 0 / audit_logs 19 / outbox 0 / counters 0）。
+- 承認UI（詳細画面）・Excel出力（SpreadsheetML）・検索API連携・オフライン下書きキューを追加（test 54件）。
+- 残課題: 会社ドメイン管理者複数化、CodeRabbit指摘対応、次期機能の実運用確認。
+
 ## 0.2 最新（2026-08-12: 最優先改善10件対応）
 
 - 承認フローAPI（依頼・判定・承認ゲート・理由必須）とmigration 004。

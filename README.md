@@ -16,15 +16,34 @@
 
 ## 🚦 現在の実装ステータス
 
+### 🧪 MVP/Prototype環境（2026-08-13 新設）
+
+本番と完全分離した「操作・評価できるMVP/Prototype」を公開しています。
+
+| 項目 | URL / 内容 |
+|---|---|
+| MVP/Prototype | **https://dxidea-mvp.mirai-dx-platform.com**（認証なし・右上にデモバッジ表示） |
+| 本番（既存・変更なし） | https://dxidea.mirai-dx-platform.com |
+| DB | Neon `mvp`ブランチ（本番から分離。架空ダミーデータ14アイデア/全ステージ・6ユーザー・監査チェーン等を投入済み） |
+| AI | `demo`プロバイダー（決定的ローカル応答・課金なし・外部API呼び出しなし） |
+| 検証 | `npm run verify`（test 71件）PASS、`mvp:smoke` 17チェック ALL PASS（連続2回・監査verify valid:true）、登録→承認→コメントのE2E PASS |
+
+デモ手順・ダミーデータ構成は [`docs/28_mvp_prototype_demo.md`](docs/28_mvp_prototype_demo.md)、
+総合アセスメントは [`docs/audit/2026-08-13-assessment.md`](docs/audit/2026-08-13-assessment.md) を参照。
+
+---
+
 | 領域 | 状態 | 実装内容 |
 |---|---|---|
 | 🖥️ WebUI | デザイン適用済み / 主要機能ブリッジ済み | `Construction DX Idea (standalone).html` を正本として100%表示。困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、ステージ変更、AI設定をWorker APIへ接続 |
 | ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Access JWT検証、AI利用制御、監査ログ、Slack通知・再送 |
 | 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
-| 🤖 AI連携 | 実装済み | Claude API呼び出し、最大3問の質問生成、構造化、プロンプトバージョン記録 |
+| 🤖 AI連携 | 実装済み | Claude / DeepSeek対応、最大3問の質問生成、構造化、プロンプトバージョン記録、プロバイダー別モデル許可リスト |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン、プロンプトインジェクション対策、PII最小化、冪等登録、React/ReactDOM自己ホスト化 |
 | 🧪 Verify | 通過 | `npm run verify`（lint / test 49件 / build / build:production-api / security:scan）、`worker:deploy:dry-run`、`npm audit` 0件、CORS/ロール判定テスト、Secretスキャン |
 | 📋 評価・改善 | 実施済み（2026-08-12） | 改善前55.5点→改善後62.4点、代替率54.5%→61.0%。第2サイクルで承認API・コメント/編集・評価ボードUI・監査ハッシュチェーン・PWA・アラート・Issue復元を追加。詳細は `docs/25`〜`docs/27` |
+| 👥 ユーザー管理 | 実装済み | ログインユーザーの追加・編集・削除・ロール（user/admin/system_admin）をAPI/UIで管理（migration 005） |
+| 🧾 監査エクスポート | 実装済み | 監査ログのCSV・Excel・HTML出力（システム管理者限定） |
 | 🌐 Release | 🎉 **Production Ready — 本番フル稼働＋AI有効**（2026-07-28更新） | 本番URL: **https://dxidea.mirai-dx-platform.com**。Cloudflare Access認証（管理者メール+`mirai-const.co.jp`ドメイン許可）、Neon DB接続、管理者ロール判定まで全部動作。**AI機能有効化済み**（`AI_ENABLED=true`、`ANTHROPIC_API_KEY` Secret登録済み、モデル `claude-sonnet-5`、接続テスト成功）。保守フェーズ（`phase_mode=maintenance`） |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
@@ -61,6 +80,8 @@ flowchart TD
 | 2026-07-28 | 保守サイクル（security/堅牢化） | ✅ Neon整合性確認（ideas 0件・ai_settings connected・通知失敗0件）。`release:monitor` 13/14 PASS（DATABASE_URLはSecret非保持設計のためローカル未設定=想定内）。`npm audit` 本番依存0件、eslint 10更新でdev含め0件達成 |
 | 2026-08-12 | 総合評価・改善サイクル | ✅ `npm run verify` PASS（test 49件）、`worker:deploy:dry-run` PASS（assets 12）、`npm audit` 0件、`release:monitor` 9/9 PASS。AI予約解放・監査API/UI・冪等化・PII・プロンプト対策・CDN自己ホスト化を実装。本番デプロイは承認待ち |
 | 2026-08-12 | 最優先10件対応 | ✅ `npm run verify` PASS（test 52件）。承認フローAPI・コメント/詳細/編集・ステージ/承認Slack通知・評価ボードUI/CSV・毎時アラート・監査ハッシュチェーン・PWA・バックアップ演習スクリプト・Dependabot・Issue 10件復元。PR #2へ反映、本番デプロイは承認待ち |
+| 2026-08-12 | **本番反映完了** | ✅ PR #2 merge → `wrangler deploy`（Version `0f311cb8`）→ migration 003/004本番適用 → バックアップ演習実施（`backup-20260812`）。承認UI・Excel出力・検索API連携・オフラインキューを追加し `npm run verify` PASS（test 54件） |
+| 2026-08-12 | DeepSeek・ユーザー管理・監査エクスポート | ✅ `npm run verify` PASS（test 56件）→ PR #22 merge → 本番デプロイ（Version `d1edb3c4`）→ migration 005適用。DeepSeek対応・ユーザー管理CRUD/ロール・監査CSV/Excel/HTML出力が本番稼働。`DEEPSEEK_API_KEY` Secret登録はユーザー操作待ち |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>

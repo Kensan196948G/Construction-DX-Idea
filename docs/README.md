@@ -30,6 +30,11 @@
 | 22 | [現在の実装・検証ステータス](22_current_implementation_status.md) | 実装済み範囲、検証結果、起動手順、残ゲート |
 | 23 | [リリース・デプロイRunbook](23_release_deploy_runbook.md) | 本番直前チェック、環境値、デプロイ、スモークテスト、ロールバック |
 | 24 | [自動化CTO実行ログ](24_autonomous_cto_execution_log.md) | 監視・開発サイクル結果、次アクション |
+| 25 | [ベースライン評価](25_baseline_evaluation.md) | 18カテゴリの統合評価（改善前） |
+| 26 | [改善台帳](26_improvement_ledger.md) | 改善項目と対応記録 |
+| 27 | [改善評価レポート](27_improvement_evaluation_report.md) | 改善後の再評価結果 |
+| 28 | [MVP/Prototypeデモ手順書](28_mvp_prototype_demo.md) | MVP環境URL・ダミーデータ構成・デモ手順・既知制約 |
+| — | [2026-08-13総合アセスメント](audit/2026-08-13-assessment.md) | 精査結果・P0〜P3・MVP実装記録 |
 
 ## 文書の優先順位
 
