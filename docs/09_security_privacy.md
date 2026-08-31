@@ -108,6 +108,15 @@ MVPでは、会社情報や個人情報を含まないアイデアに利用範�
 ## 11. ランタイムサプライチェーン（2026-08-12追加）
 
 - React/ReactDOMは `public/design/vendor/` に同梱し、同一オリジンから配信する（SRI一致確認済み）。
+
+## 12. レート制限と外部取得の堅牢化（2026-08-31追加）
+
+- 書き込みレート制限のIP決定は `clientRateLimitKey` に集約し、信頼順を
+  `CF-Connecting-IP` →（`ALLOW_LOCAL_AUTH_BYPASS=true` 時のみ）`x-real-ip` →
+  `X-Forwarded-For` 先頭 → `unknown` とする。
+- 本番（bypass=false）では `x-real-ip` を信頼しない（クライアント偽装による制限回避を防止）。
+  ローカルのdev serverは実ソケットIPを `x-real-ip` として常に設定し、クライアント送信値を上書きする。
+- Cloudflare Access JWKS取得には5秒のタイムアウトを設定し、証明書URLの応答不能時にリクエストがハングしないようにする。
 - Babelはデザインが `x-import` を使用していないためCDN参照のまま（将来利用時は同様に同梱すること）。
 
 ## 12. PII最小化（2026-08-12追加）
