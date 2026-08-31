@@ -1,5 +1,23 @@
 # 現在の実装・検証ステータス
 
+## 0.10 最新（2026-08-31: 本番・MVPデプロイ完了（ローカルsystemd + Cloudflare Tunnel））
+
+- 現行アーキテクチャを確認: 本番 `dxidea.mirai-dx-platform.com` と MVP `dxidea-mvp.mirai-dx-platform.com` は
+  Cloudflare Tunnel（`*.cfargotunnel.com` CNAME）経由でローカルPostgreSQL上のsystemdサービス
+  （`dx-idea-api.service` / `dx-idea-mvp-api.service`）へ配信されている。
+- デプロイ内容:
+  - 本番: モノレポ `DX-Project-Portfolio-Atlas/apps/dx-idea` へ当リポジトリの最新コード
+    （worker/index.ts・dev-server・src/lib・migration 003-005・migrate-local）を同期し、サービス再起動。
+  - MVP: `dx-idea-mvp-api.service` の `ExecStart` を旧パス `worker/dev-server.ts` から
+    `server/dev-server.ts`（PR #34で移動）へ修正して再起動。
+  - 本番ローカルDB `dx_idea` へ migration 005（app_users）を冪等適用（ideas 0件のまま）。
+  - Cloudflare Worker側も更新（コード＋スケジュール3本）。週次cronはCloudflare仕様に合わせ
+    `0 9 * * SUN` へ修正（`0 9 * * 0` は API 10100 で拒否されたため）。
+- 本番監査チェーン検証: 旧コードの `prev_hash` 参照バグにより3行が不整合だったため、
+  正規のprevで末尾チェーンを再計算して修復（checked 13 / legacy 19 / bad 0）。
+- 検証: 両サービスの health 200、Access保護（/api/me 401）維持、トンネル両方 active。
+  本番DBに対して一時bypassインスタンスで metrics / users / CSV を読み取り確認。
+
 ## 0.9 最新（2026-08-31: ローカル実DBスモーク自動化）
 
 - `npm run dev:smoke` を追加: `server/dev-server.ts` を一時ポートで自動起動し、
