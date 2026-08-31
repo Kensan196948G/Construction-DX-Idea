@@ -1025,46 +1025,7 @@ app.get("/api/admin/audit-logs", async (c) => {
 app.get("/api/admin/audit-logs/verify", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   await requireSystemAdmin(c.env, user);
-  const db = getDb(c.env);
-  const rows = await db`
-    select id, actor, action, resource_type, resource_id, result, metadata,
-           prev_hash, entry_hash, created_at
-    from audit_logs
-    order by created_at asc, id asc
-  `;
-  let prevHash = "genesis";
-  let legacyRows = 0;
-  const entries: Array<{
-    id: string;
-    storedPrev: string | null;
-    storedHash: string | null;
-    expectedPrev: string;
-    expectedHash: string;
-  }> = [];
-  for (const row of rows) {
-    if (!row.entry_hash) {
-      legacyRows += 1;
-      continue;
-    }
-    const expectedHash = await computeAuditEntryHash(prevHash, {
-      actor: String(row.actor),
-      action: String(row.action),
-      resourceType: String(row.resource_type),
-      resourceId: row.resource_id ? String(row.resource_id) : undefined,
-      result: String(row.result),
-      metadata: (row.metadata ?? {}) as Record<string, unknown>,
-      createdAt: toIsoString(row.created_at),
-    });
-    entries.push({
-      id: String(row.id),
-      storedPrev: row.prev_hash ? String(row.prev_hash) : null,
-      storedHash: row.entry_hash ? String(row.entry_hash) : null,
-      expectedPrev: prevHash,
-      expectedHash,
-    });
-    prevHash = String(row.entry_hash);
-  }
-  const result = verifyAuditChain(entries, legacyRows);
+  const result = await verifyAuditChainFromDb(c.env);
   await audit(c.env, user, "audit_logs.verify", "audit_logs", "chain", {
     checked: result.checked,
     legacyRows: result.legacyRows,
@@ -2563,6 +2524,81 @@ function verifyAuditChain(
   return { valid, checked: entries.length, legacyRows, firstBrokenId };
 }
 
+async function verifyAuditChainFromDb(env: Env): Promise<AuditChainVerifyResult> {
+  const db = getDb(env);
+  const rows = await db`
+    select id, actor, action, resource_type, resource_id, result, metadata,
+           prev_hash, entry_hash, created_at
+    from audit_logs
+    order by created_at asc, id asc
+  `;
+  let prevHash = "genesis";
+  let legacyRows = 0;
+  const entries: Array<{
+    id: string;
+    storedPrev: string | null;
+    storedHash: string | null;
+    expectedPrev: string;
+    expectedHash: string;
+  }> = [];
+  for (const row of rows) {
+    if (!row.entry_hash) {
+      legacyRows += 1;
+      continue;
+    }
+    const expectedHash = await computeAuditEntryHash(prevHash, {
+      actor: String(row.actor),
+      action: String(row.action),
+      resourceType: String(row.resource_type),
+      resourceId: row.resource_id ? String(row.resource_id) : undefined,
+      result: String(row.result),
+      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      createdAt: toIsoString(row.created_at),
+    });
+    entries.push({
+      id: String(row.id),
+      storedPrev: row.prev_hash ? String(row.prev_hash) : null,
+      storedHash: row.entry_hash ? String(row.entry_hash) : null,
+      expectedPrev: prevHash,
+      expectedHash,
+    });
+    prevHash = String(row.entry_hash);
+  }
+  return verifyAuditChain(entries, legacyRows);
+}
+
+function formatAuditChainAlert(result: AuditChainVerifyResult): string {
+  return [
+    "🚨 Construction-DX-Idea 監査チェーン検証エラー",
+    `checked=${result.checked}`,
+    `legacyRows=${result.legacyRows}`,
+    `firstBrokenId=${result.firstBrokenId ?? "(none)"}`,
+  ].join("\n");
+}
+
+async function checkAuditChainIntegrity(env: Env) {
+  try {
+    const result = await verifyAuditChainFromDb(env);
+    if (result.valid) return;
+    const message = formatAuditChainAlert(result);
+    if (!env.SLACK_WEBHOOK_URL) {
+      console.error(message);
+      return;
+    }
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, message);
+    await audit(env, "system:alert", "audit.chain.invalid.notified", "system", "audit-chain", {
+      checked: result.checked,
+      legacyRows: result.legacyRows,
+      firstBrokenId: result.firstBrokenId ?? null,
+      delivered: response.ok,
+    }).catch((error: unknown) =>
+      console.error("Audit chain alert audit failed", sanitizeLog(error)),
+    );
+  } catch (error) {
+    console.error("Audit chain check failed", sanitizeLog(error));
+  }
+}
+
 type NotificationStatus = "sent" | "skipped" | "failed";
 
 async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
@@ -2642,6 +2678,64 @@ function formatAlertMessage(counts: { aiFailures: number; notifyFailures: number
   if (counts.aiFailures > 0) items.push(`AI処理失敗: ${counts.aiFailures}件`);
   if (counts.notifyFailures > 0) items.push(`Slack通知失敗: ${counts.notifyFailures}件`);
   return `⚠️ Construction-DX-Idea 障害アラート（直近1時間）\n${items.join("\n")}`;
+}
+
+function formatWeeklyDigest(
+  stats: {
+    totalIdeas: number;
+    newIdeas: number;
+    aiCalls7d: number;
+    aiFailures7d: number;
+    notifyFailures7d: number;
+    activeUsers: number;
+  },
+  chainValid: boolean,
+): string {
+  return [
+    "📊 Construction-DX-Idea 週次レポート",
+    `登録アイデア: ${stats.totalIdeas}件（今週 +${stats.newIdeas}件）`,
+    `AI呼び出し: ${stats.aiCalls7d}回（失敗 ${stats.aiFailures7d}件）`,
+    `Slack通知失敗: ${stats.notifyFailures7d}件`,
+    `アクティブユーザー: ${stats.activeUsers}人`,
+    `監査チェーン: ${chainValid ? "正常" : "⚠️ 不正検出"}`,
+  ].join("\n");
+}
+
+async function sendWeeklyDigest(env: Env) {
+  if (!env.SLACK_WEBHOOK_URL) return;
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select
+        (select count(*) from ideas)::int as total_ideas,
+        (select count(*) from ideas where created_at >= now() - interval '7 days')::int as new_ideas,
+        (select count(*) from idea_ai_sessions where created_at >= now() - interval '7 days')::int as ai_calls_7d,
+        (select count(*) from idea_ai_sessions where created_at >= now() - interval '7 days' and result <> 'success')::int as ai_failures_7d,
+        (select count(*) from notification_outbox where created_at >= now() - interval '7 days' and status = 'failed')::int as notify_failures_7d,
+        (select count(*) from app_users where status = 'active')::int as active_users
+    `;
+    const chain = await verifyAuditChainFromDb(env);
+    const message = formatWeeklyDigest(
+      {
+        totalIdeas: Number(rows[0]?.total_ideas ?? 0),
+        newIdeas: Number(rows[0]?.new_ideas ?? 0),
+        aiCalls7d: Number(rows[0]?.ai_calls_7d ?? 0),
+        aiFailures7d: Number(rows[0]?.ai_failures_7d ?? 0),
+        notifyFailures7d: Number(rows[0]?.notify_failures_7d ?? 0),
+        activeUsers: Number(rows[0]?.active_users ?? 0),
+      },
+      chain.valid,
+    );
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, message);
+    await audit(env, "system:report", "report.weekly.sent", "system", "weekly", {
+      delivered: response.ok,
+      chainValid: chain.valid,
+    }).catch((error: unknown) =>
+      console.error("Weekly digest audit failed", sanitizeLog(error)),
+    );
+  } catch (error) {
+    console.error("Weekly digest failed", sanitizeLog(error));
+  }
 }
 
 async function checkAndAlertFailures(env: Env) {
@@ -2923,6 +3017,8 @@ export const workerSecurityTestHooks = {
   computeAuditEntryHash,
   buildPromptMessages,
   formatAlertMessage,
+  formatWeeklyDigest,
+  formatAuditChainAlert,
   estimateAiCost,
   csvCell,
   xmlCell,
@@ -2958,8 +3054,14 @@ export default {
     // A rejection escaping waitUntil is logged raw by the runtime, bypassing
     // sanitizeLog — keep this catch even though the retry has its own.
     ctx.waitUntil(
-      (cron === "0 * * * *" ? checkAndAlertFailures(env) : retrySlackNotifications(env)).catch((error: unknown) => {
-        console.error("Scheduled retry failed", sanitizeLog(error));
+      (
+        cron === "0 9 * * 0"
+          ? sendWeeklyDigest(env)
+          : cron === "0 * * * *"
+            ? Promise.all([checkAndAlertFailures(env), checkAuditChainIntegrity(env)])
+            : retrySlackNotifications(env)
+      ).catch((error: unknown) => {
+        console.error("Scheduled task failed", sanitizeLog(error));
       }),
     );
   },

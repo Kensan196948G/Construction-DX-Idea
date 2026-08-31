@@ -30,6 +30,7 @@ try {
 }
 
 const requestTimeoutMs = Number(process.env.SMOKE_REQUEST_TIMEOUT_MS || 10000);
+const accessJwt = process.env.SMOKE_CF_ACCESS_JWT ?? "";
 const results = [];
 console.log(`Target API: ${apiBase}`);
 
@@ -39,7 +40,11 @@ async function request(path, options = {}) {
   try {
     const response = await fetch(`${apiBase}${path}`, {
       ...options,
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(accessJwt ? { "CF-Access-Jwt-Assertion": accessJwt } : {}),
+        ...(options.headers || {}),
+      },
       signal: controller.signal,
     });
     const contentType = response.headers.get("content-type") ?? "";
@@ -77,6 +82,13 @@ const health = await request("/health");
 expect("health", health.ok && health.status === 200 && health.body?.ok === true);
 
 const me = await request("/me");
+if (!me.ok && me.status === 401 && !accessJwt) {
+  console.warn(
+    "NOTE: API returned 401 UNAUTHENTICATED. The deployed environment appears to require a " +
+      "Cloudflare Access JWT (ALLOW_LOCAL_AUTH_BYPASS is off or Access is enabled). " +
+      "Set SMOKE_CF_ACCESS_JWT to run the full smoke, or re-enable the local bypass for the public MVP.",
+  );
+}
 expect(
   "identity (local bypass => demo identity with admin/system_admin)",
   me.ok && Array.isArray(me.body?.roles) && me.body.roles.includes("admin") && me.body.roles.includes("system_admin"),
@@ -93,7 +105,7 @@ expect(
 const ideas = await request("/ideas?limit=200");
 expect("idea list is non-empty", ideas.ok && Array.isArray(ideas.body) && ideas.body.length >= 14, `count=${ideas.body?.length}`);
 
-const stages = new Set((ideas.body ?? []).map((idea) => idea.stage));
+const stages = new Set(Array.isArray(ideas.body) ? ideas.body.map((idea) => idea.stage) : []);
 expect(
   "idea list spans the lifecycle stages",
   ["draft", "submitted", "planning", "mvp", "verification", "production_candidate", "production", "rejected", "archived"].every((stage) => stages.has(stage)),
@@ -157,7 +169,10 @@ const auditHtml = await request("/admin/audit-logs/export.html");
 expect("audit log HTML export", auditHtml.ok && (auditHtml.contentType ?? "").includes("text/html"));
 
 const denied = await request("/admin/audit-logs/export.csv", { method: "POST" });
-expect("method allowlist enforced (POST to export route rejected)", denied.status === 404 || denied.status === 405 || denied.status === 404);
+expect(
+  "method allowlist enforced (POST to export route rejected)",
+  denied.status === 404 || denied.status === 405,
+);
 
 console.log(results.join("\n"));
 console.log(`\nMVP smoke: ${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);

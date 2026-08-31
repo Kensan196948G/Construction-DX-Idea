@@ -15,10 +15,14 @@ try {
 }
 
 const PORT = Number(process.env.PORT ?? 8791);
+const HOST = process.env.HOST ?? "127.0.0.1";
+// 受信ボディ上限（APIの入力長制約に対して十分大きい値。chunked送信のメモリ枯渇対策）。
+const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES ?? 1024 * 1024);
 
 const env: Env = {
   DATABASE_URL: process.env.DATABASE_URL,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL,
   AI_PROVIDER: process.env.AI_PROVIDER ?? 'claude',
   AI_MODEL: process.env.AI_MODEL ?? 'claude-sonnet-5',
@@ -47,9 +51,25 @@ const ctx = {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+  const contentLength = Number(req.headers['content-length'] ?? 0);
+  if (contentLength > MAX_BODY_BYTES) {
+    res.writeHead(413, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'payload_too_large' }));
+    return;
+  }
   const chunks: Buffer[] = [];
+  let received = 0;
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    for await (const chunk of req) chunks.push(chunk as Buffer);
+    for await (const chunk of req) {
+      received += chunk.length;
+      if (received > MAX_BODY_BYTES) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'payload_too_large' }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk as Buffer);
+    }
   }
   const request = new Request(url, {
     method: req.method,
@@ -77,11 +97,15 @@ const server = createServer(async (req, res) => {
 
 if (typeof worker.scheduled === 'function') {
   const TEN_MIN = 10 * 60 * 1000;
+  const ONE_HOUR = 60 * 60 * 1000;
   setInterval(() => {
-    worker.scheduled({}, env, ctx);
+    worker.scheduled({ cron: '*/10 * * * *' }, env, ctx);
   }, TEN_MIN);
+  setInterval(() => {
+    worker.scheduled({ cron: '0 * * * *' }, env, ctx);
+  }, ONE_HOUR);
 }
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Construction-DX-Idea MVP API: http://localhost:${PORT}/`);
+server.listen(PORT, HOST, () => {
+  console.log(`Construction-DX-Idea MVP API: http://${HOST}:${PORT}/`);
 });

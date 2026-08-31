@@ -15,8 +15,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 try {
-  process.loadEnvFile?.(".env");
+  // 実行CWDがどこでもリポジトリルートの .env を読む。
+  process.loadEnvFile?.(path.join(root, ".env"));
 } catch {
   // .env が無い場合は環境変数のみで動作する。
 }
@@ -31,7 +33,6 @@ if (!/^postgres(ql)?:\/\//i.test(databaseUrl)) {
   process.exit(1);
 }
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationsDir = path.join(root, "migrations");
 const files = (await readdir(migrationsDir))
   .filter((file) => file.endsWith(".sql"))
