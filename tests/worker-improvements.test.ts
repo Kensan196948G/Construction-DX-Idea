@@ -6,6 +6,7 @@ import type { Idea } from "../src/lib/shared";
 const {
   buildPromptMessages,
   computeAuditEntryHash,
+  clientRateLimitKey,
   formatAlertMessage,
   formatWeeklyDigest,
   formatAuditChainAlert,
@@ -314,6 +315,44 @@ describe("failure alert message", () => {
     assert.match(text, /登録アイデア: 15件（今週 \+3件）/);
     assert.match(text, /AI呼び出し: 42回（失敗 1件）/);
     assert.match(text, /監査チェーン: 正常/);
+  });
+});
+
+describe("client rate limit key", () => {
+  it("prefers the Cloudflare connecting IP when present", () => {
+    const request = new Request("http://api.local/ideas", {
+      headers: {
+        "CF-Connecting-IP": "203.0.113.5",
+        "x-real-ip": "127.0.0.1",
+        "X-Forwarded-For": "1.2.3.4",
+      },
+    });
+    assert.equal(
+      clientRateLimitKey(request, { ALLOW_LOCAL_AUTH_BYPASS: "false" }),
+      "203.0.113.5",
+    );
+  });
+
+  it("trusts x-real-ip only in local bypass mode", () => {
+    const request = new Request("http://api.local/ideas", {
+      headers: { "x-real-ip": "127.0.0.1", "X-Forwarded-For": "1.2.3.4" },
+    });
+    assert.equal(
+      clientRateLimitKey(request, { ALLOW_LOCAL_AUTH_BYPASS: "true" }),
+      "127.0.0.1",
+    );
+    assert.equal(
+      clientRateLimitKey(request, { ALLOW_LOCAL_AUTH_BYPASS: "false" }),
+      "1.2.3.4",
+    );
+  });
+
+  it("falls back to forwarded or unknown", () => {
+    const forwarded = new Request("http://api.local/ideas", {
+      headers: { "X-Forwarded-For": "10.0.0.9, 10.0.0.8" },
+    });
+    assert.equal(clientRateLimitKey(forwarded, { ALLOW_LOCAL_AUTH_BYPASS: "true" }), "10.0.0.9");
+    assert.equal(clientRateLimitKey(new Request("http://api.local/ideas"), {}), "unknown");
   });
 });
 

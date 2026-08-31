@@ -1622,7 +1622,7 @@ async function verifyAccessJwt(jwt: string, env: Env): Promise<AccessJwtPayload>
 async function getAccessKeys(certsUrl: string): Promise<AccessJwk[]> {
   const cached = jwksCache.get(certsUrl);
   if (cached && cached.expiresAt > Date.now()) return cached.keys;
-  const response = await fetch(certsUrl);
+  const response = await fetch(certsUrl, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) {
     throw new ApiError("ACCESS_CONFIG_MISSING", "Cloudflare Access certs could not be loaded.", 503);
   }
@@ -1735,9 +1735,28 @@ export function writeRateLimitExceeded(count: number, windowStart: number, now: 
   return now - windowStart > WRITE_RATE_WINDOW_MS ? false : count > WRITE_RATE_LIMIT;
 }
 
+/**
+ * レート制限キー（IP）の決定。
+ * Cloudflare配下では CF-Connecting-IP が信頼できる。ローカル認証バイパス時のみ
+ * dev server が設定する x-real-ip を信頼する（本番で x-real-ip を信頼すると
+ * クライアントが任意値で制限を回避できるため、bypass時限定）。
+ */
+export function clientRateLimitKey(
+  request: Request,
+  env: { ALLOW_LOCAL_AUTH_BYPASS?: string },
+): string {
+  const cfIp = request.headers.get("CF-Connecting-IP");
+  if (cfIp) return cfIp;
+  if (env.ALLOW_LOCAL_AUTH_BYPASS === "true") {
+    const realIp = request.headers.get("x-real-ip");
+    if (realIp) return realIp;
+  }
+  const forwarded = request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim();
+  return forwarded || "unknown";
+}
+
 function assertWriteRateAllowed(c: AppContext) {
-  const forwarded = c.req.header("X-Forwarded-For")?.split(",")[0]?.trim();
-  const ip = c.req.header("CF-Connecting-IP") || forwarded || "unknown";
+  const ip = clientRateLimitKey(c.req.raw, c.env);
   const now = Date.now();
   if (writeRateBuckets.size > 10_000) {
     for (const [key, bucket] of writeRateBuckets) {
@@ -3016,6 +3035,7 @@ export const workerSecurityTestHooks = {
   buildDemoStructure,
   computeAuditEntryHash,
   buildPromptMessages,
+  clientRateLimitKey,
   formatAlertMessage,
   formatWeeklyDigest,
   formatAuditChainAlert,
