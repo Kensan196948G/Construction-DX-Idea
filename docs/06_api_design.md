@@ -25,6 +25,16 @@
 
 ログインユーザー情報を返す。
 
+### GET `/api/metrics`
+
+認証ユーザー向けダッシュボード指標。アイデア総数・アクティブ数・MVP数・セキュリティ要検討数・
+当日AI呼び出し数・ステージ別件数・直近7日登録数・却下数・平均優先度スコアを返す。
+
+### POST `/api/privacy/inspect`
+
+入力テキストの機密情報候補（メール・電話・個人名・金額・資格情報等）を検査し、
+blocker / warning の検出結果を返す。blocker検出時はAI送信・保存を呼び出し側で停止する。
+
 ### POST `/api/ideas/drafts`
 
 下書きを保存する。
@@ -74,9 +84,10 @@
 （0〜10点: ステージ・セキュリティ要検討・MVP案・実装方式候補・懸念事項なし・新しさ）を
 付与し、スコア降順で返す。
 
-### GET `/api/ideas/export.csv`
+### GET `/api/ideas/export.csv` / `export.xls`
 
-全アイデアをCSV（BOM付きUTF-8）で出力する。CSVインジェクション対策済み。
+全アイデアをCSV（BOM付きUTF-8）またはExcel（SpreadsheetML）で出力する（管理者限定）。
+CSV/Excelとも式インジェクション対策済み。
 
 ### GET `/api/ideas`
 
