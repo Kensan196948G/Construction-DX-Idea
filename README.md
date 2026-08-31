@@ -123,6 +123,7 @@ npm run dev
 npm run db:migrate   # migrations/*.sql を冪等に適用（create if not exists / add column if not exists）
 npm run db:seed      # MVPデモ用ダミーデータを upsert（--reset で初期化）
 PORT=8791 npm run dev:server   # Node 直実行サーバー（http://localhost:8791/）
+npm run dev:smoke    # dev:server を一時ポートで自動起動し、主要API・監査チェーン・ボディ上限を検証して停止
 ```
 
 `dev:server` は `.env` を自動読込します。Cloudflare Access を経由せずローカルで認証なし動作を
