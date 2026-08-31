@@ -7,6 +7,7 @@ const {
   buildPromptMessages,
   computeAuditEntryHash,
   formatAlertMessage,
+  formatWeeklyDigest,
   formatAuditChainAlert,
   isAllowedStageTransition,
   isValidIdempotencyKey,
@@ -295,6 +296,24 @@ describe("failure alert message", () => {
     assert.match(text, /監査チェーン検証エラー/);
     assert.match(text, /checked=82/);
     assert.match(text, /firstBrokenId=broken-entry-1/);
+  });
+
+  it("formats a weekly digest with counts and chain status", () => {
+    const text = formatWeeklyDigest(
+      {
+        totalIdeas: 15,
+        newIdeas: 3,
+        aiCalls7d: 42,
+        aiFailures7d: 1,
+        notifyFailures7d: 0,
+        activeUsers: 5,
+      },
+      true,
+    );
+    assert.match(text, /週次レポート/);
+    assert.match(text, /登録アイデア: 15件（今週 \+3件）/);
+    assert.match(text, /AI呼び出し: 42回（失敗 1件）/);
+    assert.match(text, /監査チェーン: 正常/);
   });
 });
 
