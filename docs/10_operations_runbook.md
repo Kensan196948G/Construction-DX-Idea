@@ -80,6 +80,10 @@ psql "$TEMPORARY_URL" -c "select count(*) from ideas; select count(*) from audit
 
 - Worker cron（毎時 `0 * * * *`）が直近1時間のAI処理失敗・Slack通知失敗を集計し、
   0件超の場合はSlackへアラートを送信し、`alert.failure.notified` を監査ログへ記録する。
+- 毎時cronは監査チェーン整合性も自動検証し、不正時は `audit.chain.invalid.notified` として
+  Slackへ通知・監査記録する（2026-08-31追加）。
+- 週次cron（毎週日曜 `0 9 * * 0` = JST 18:00）は主要KPIと監査チェーン状態を
+  `report.weekly.sent` としてSlackへ送信する（2026-08-31追加）。
 - アラートのしきい値変更・停止はシステム管理者が判断する（現状は失敗1件以上で通知）。
 
 ## 8. 監査ログの改ざん検知
@@ -87,3 +91,21 @@ psql "$TEMPORARY_URL" -c "select count(*) from ideas; select count(*) from audit
 - `GET /api/admin/audit-logs/verify` でSHA-256チェーンを検証する（システム管理者限定）。
 - `valid=false` の場合は `firstBrokenId` を確認し、原因（DB改変・スクリプト直接更新等）を調査する。
 - 既存レガシー行は `legacyRows` として報告される（チェーン化前の行）。
+- 毎時cronが自動検証・通知するため、Slack未設定環境では `checkAuditChainIntegrity` のログ
+  （`監査チェーン検証エラー` がconsoleへ出る）も確認する。
+- ローカル環境では `npm run dev:smoke` で主要APIと監査チェーンを一括検証できる。
+
+## 9. ローカル実行環境（2026-08-31追加）
+
+ローカルPostgreSQL（例: `dx_idea_mvp`）でAPIを動かす場合:
+
+```bash
+npm run db:migrate   # migrations/*.sql を冪等適用
+npm run db:seed      # MVPデモ用ダミーデータを upsert（--reset で初期化）
+PORT=8791 npm run dev:server   # Node直実行APIサーバー（既定127.0.0.1にbind）
+npm run dev:smoke    # 一時ポートで自動起動→主要API・監査チェーン・413等を検証→停止
+```
+
+- 認証なしで操作確認する場合は `ALLOW_LOCAL_AUTH_BYPASS=true`（書き込みはレート制限あり）。
+- 外部インターフェースへの公開は `HOST=0.0.0.0` を明示した場合のみ（既定はloopback）。
+- 接続先は `neon.tech` 以外ならpostgres.js（TCP）、`neon.tech` ならNeon serverless driverを自動選択する。
