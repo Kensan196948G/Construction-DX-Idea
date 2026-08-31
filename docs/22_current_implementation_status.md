@@ -1,5 +1,12 @@
 # 現在の実装・検証ステータス
 
+## 0.9 最新（2026-08-31: ローカル実DBスモーク自動化）
+
+- `npm run dev:smoke` を追加: `server/dev-server.ts` を一時ポートで自動起動し、
+  health / identity / metrics / ideas / evaluation / users / 監査チェーンverify / CSV出力 /
+  ボディ上限413 / メソッド許可を検証して確実に停止する（`scripts/local-smoke.mjs`）。
+- ローカル実行結果: 10チェック ALL PASS（監査チェーン `valid:true`）。
+
 ## 0.8 最新（2026-08-31: 週次レポート）
 
 - 毎週日曜 09:00 UTC（18:00 JST）にSlackへ週次レポートを送信する `sendWeeklyDigest` を追加
