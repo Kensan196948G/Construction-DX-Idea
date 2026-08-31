@@ -5,9 +5,12 @@
 | 用途 | URL | 状態 |
 |---|---|---|
 | 本番（既存・変更なし） | https://dxidea.mirai-dx-platform.com | 稼働中（Cloudflare Access認証） |
-| **MVP/Prototype（レビュー用）** | **https://dxidea-mvp.mirai-dx-platform.com** | 稼働中（認証なし・ダミーデータ投入済み） |
+| **MVP/Prototype（レビュー用）** | **https://dxidea-mvp.mirai-dx-platform.com** | 稼働中（2026-08-31確認: Cloudflare Access JWT必須。認証なし公開へ戻す場合は `ALLOW_LOCAL_AUTH_BYPASS=true` で再デプロイ） |
 
-MVP環境は誰でも開いてすぐ全機能を操作できます。右上に「MVPデモ環境（ダミーデータ）」のバッジが表示されます。
+MVP環境は認証バイパス有効時には誰でも開いてすぐ全機能を操作でき、右上に「MVPデモ環境（ダミーデータ）」の
+バッジが表示されます。2026-08-31時点ではAccess JWT必須の状態を確認しているため、JWTなしの場合は
+`UNAUTHENTICATED`（401）が返ります。レビュー用に公開継続する場合は bypass の再デプロイ、
+保護を意図する場合は Access JWT 付きでの運用を選択してください。
 
 ## 2. 環境分離
 
@@ -15,7 +18,7 @@ MVP環境は誰でも開いてすぐ全機能を操作できます。右上に�
 |---|---|---|
 | Worker | `construction-dx-idea-api` | `construction-dx-idea-api-mvp`（wrangler `env.mvp`） |
 | DB | Neon `main` | Neon branch `mvp`（本番データと完全分離） |
-| 認証 | Cloudflare Access | `ALLOW_LOCAL_AUTH_BYPASS=true` |
+| 認証 | Cloudflare Access | 現在はAccess JWT必須（従来の認証なし公開は `ALLOW_LOCAL_AUTH_BYPASS=true`） |
 | AI | Claude実API | `demo`プロバイダー（決定的ローカル応答・課金なし・外部送信なし） |
 | Slack | webhook接続 | 未接続（通知はoutboxに記録されskipped） |
 
@@ -73,14 +76,16 @@ DATABASE_URL="<postgres://...>" npm run mvp:seed
 
 # デプロイ済みMVPのスモーク（読み取り専用・冪等）
 SMOKE_API_BASE_URL=https://dxidea-mvp.mirai-dx-platform.com/api npm run mvp:smoke
+# Access JWT必須状態の場合はJWTを付与して実行
+# SMOKE_CF_ACCESS_JWT=<Cloudflare Access JWT> SMOKE_API_BASE_URL=... npm run mvp:smoke
 ```
 
 ## 6. 既知の制約
 
-- **レート制限**: `ALLOW_LOCAL_AUTH_BYPASS` 時の書き込み制限（60回/分/IP）はWorkerプロセスの
+- **レート制限**: `ALLOW_LOCAL_AUTH_BYPASS` 有効時の書き込み制限（60回/分/IP）はWorkerプロセスの
   per-isolateカウンタのため、複数isolateへ分散すると閾値未満で制限がかからないことがある。
-  公開MVPの保護は「ダミーデータのみ・Secretなし・AI課金なし」という設計で担保し、
-  本格的な公開にはWAFレート制限/認証の導入を推奨する。
+  公開時は「ダミーデータのみ・Secretなし・AI課金なし」に加えてAccess認証またはWAFレート制限の導入を推奨する。
+  （2026-08-31時点のデプロイはAccess JWT必須で保護されている）
 - **CSP**: standaloneデザインが `new Function` を使用するため、厳格なCSPは未適用
   （`X-Frame-Options: SAMEORIGIN`、nosniff等のヘッダーは適用済み）。
 - **AI**: MVPのAI応答はデモ用の決定的ローカル生成であり、実Claude/DeepSeekの品質を示すものではない。
