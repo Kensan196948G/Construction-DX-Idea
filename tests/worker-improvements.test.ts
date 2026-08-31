@@ -7,6 +7,7 @@ const {
   buildPromptMessages,
   computeAuditEntryHash,
   formatAlertMessage,
+  formatAuditChainAlert,
   isAllowedStageTransition,
   isValidIdempotencyKey,
   modelAllowedForProvider,
@@ -282,6 +283,18 @@ describe("failure alert message", () => {
     const text = formatAlertMessage({ aiFailures: 2, notifyFailures: 1 });
     assert.match(text, /AI処理失敗: 2件/);
     assert.match(text, /Slack通知失敗: 1件/);
+  });
+
+  it("formats an audit-chain alert with the first broken entry id", () => {
+    const text = formatAuditChainAlert({
+      valid: false,
+      checked: 82,
+      legacyRows: 0,
+      firstBrokenId: "broken-entry-1",
+    });
+    assert.match(text, /監査チェーン検証エラー/);
+    assert.match(text, /checked=82/);
+    assert.match(text, /firstBrokenId=broken-entry-1/);
   });
 });
 

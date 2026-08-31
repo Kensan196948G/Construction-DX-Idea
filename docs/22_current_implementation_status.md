@@ -1,5 +1,17 @@
 # 現在の実装・検証ステータス
 
+## 0.7 最新（2026-08-31: 監査チェーン定期検証とスモーク堅牢化）
+
+- 監査チェーンverifyロジックを `verifyAuditChainFromDb` に共通化し、毎時cronで自動検証・不正時にSlack通知する
+  `checkAuditChainIntegrity` を追加（`audit.chain.invalid.notified` で監査記録）。
+- `mvp:smoke` を認証モード変化に耐えるよう堅牢化: 401時に診断メッセージを出力、`SMOKE_CF_ACCESS_JWT` 対応、
+  レスポンス形式想定外でクラッシュしないよう防御。
+- 検証: `npm run verify` PASS（test 75件）。ローカルDBでチェーン1行改変→Slack通知（captureサーバーで受信）→
+  監査記録→ハッシュ復元→`valid:true`（checked 86）までE2E確認。
+- 環境メモ: MVP URL（dxidea-mvp）は2026-08-31時点で `UNAUTHENTICATED`（Access JWT要求）を確認。
+  レビュー用に公開継続する場合は `ALLOW_LOCAL_AUTH_BYPASS=true` の再デプロイ、保護が意図なら
+  `SMOKE_CF_ACCESS_JWT` を設定してスモークを実行する。
+
 ## 0.6 最新（2026-08-31: ローカルPostgreSQL実行対応）
 
 - ローカルPostgreSQL（`dx_idea_mvp`）向け実行基盤を整備:
