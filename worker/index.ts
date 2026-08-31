@@ -1025,46 +1025,7 @@ app.get("/api/admin/audit-logs", async (c) => {
 app.get("/api/admin/audit-logs/verify", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   await requireSystemAdmin(c.env, user);
-  const db = getDb(c.env);
-  const rows = await db`
-    select id, actor, action, resource_type, resource_id, result, metadata,
-           prev_hash, entry_hash, created_at
-    from audit_logs
-    order by created_at asc, id asc
-  `;
-  let prevHash = "genesis";
-  let legacyRows = 0;
-  const entries: Array<{
-    id: string;
-    storedPrev: string | null;
-    storedHash: string | null;
-    expectedPrev: string;
-    expectedHash: string;
-  }> = [];
-  for (const row of rows) {
-    if (!row.entry_hash) {
-      legacyRows += 1;
-      continue;
-    }
-    const expectedHash = await computeAuditEntryHash(prevHash, {
-      actor: String(row.actor),
-      action: String(row.action),
-      resourceType: String(row.resource_type),
-      resourceId: row.resource_id ? String(row.resource_id) : undefined,
-      result: String(row.result),
-      metadata: (row.metadata ?? {}) as Record<string, unknown>,
-      createdAt: toIsoString(row.created_at),
-    });
-    entries.push({
-      id: String(row.id),
-      storedPrev: row.prev_hash ? String(row.prev_hash) : null,
-      storedHash: row.entry_hash ? String(row.entry_hash) : null,
-      expectedPrev: prevHash,
-      expectedHash,
-    });
-    prevHash = String(row.entry_hash);
-  }
-  const result = verifyAuditChain(entries, legacyRows);
+  const result = await verifyAuditChainFromDb(c.env);
   await audit(c.env, user, "audit_logs.verify", "audit_logs", "chain", {
     checked: result.checked,
     legacyRows: result.legacyRows,
@@ -2563,6 +2524,81 @@ function verifyAuditChain(
   return { valid, checked: entries.length, legacyRows, firstBrokenId };
 }
 
+async function verifyAuditChainFromDb(env: Env): Promise<AuditChainVerifyResult> {
+  const db = getDb(env);
+  const rows = await db`
+    select id, actor, action, resource_type, resource_id, result, metadata,
+           prev_hash, entry_hash, created_at
+    from audit_logs
+    order by created_at asc, id asc
+  `;
+  let prevHash = "genesis";
+  let legacyRows = 0;
+  const entries: Array<{
+    id: string;
+    storedPrev: string | null;
+    storedHash: string | null;
+    expectedPrev: string;
+    expectedHash: string;
+  }> = [];
+  for (const row of rows) {
+    if (!row.entry_hash) {
+      legacyRows += 1;
+      continue;
+    }
+    const expectedHash = await computeAuditEntryHash(prevHash, {
+      actor: String(row.actor),
+      action: String(row.action),
+      resourceType: String(row.resource_type),
+      resourceId: row.resource_id ? String(row.resource_id) : undefined,
+      result: String(row.result),
+      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      createdAt: toIsoString(row.created_at),
+    });
+    entries.push({
+      id: String(row.id),
+      storedPrev: row.prev_hash ? String(row.prev_hash) : null,
+      storedHash: row.entry_hash ? String(row.entry_hash) : null,
+      expectedPrev: prevHash,
+      expectedHash,
+    });
+    prevHash = String(row.entry_hash);
+  }
+  return verifyAuditChain(entries, legacyRows);
+}
+
+function formatAuditChainAlert(result: AuditChainVerifyResult): string {
+  return [
+    "🚨 Construction-DX-Idea 監査チェーン検証エラー",
+    `checked=${result.checked}`,
+    `legacyRows=${result.legacyRows}`,
+    `firstBrokenId=${result.firstBrokenId ?? "(none)"}`,
+  ].join("\n");
+}
+
+async function checkAuditChainIntegrity(env: Env) {
+  try {
+    const result = await verifyAuditChainFromDb(env);
+    if (result.valid) return;
+    const message = formatAuditChainAlert(result);
+    if (!env.SLACK_WEBHOOK_URL) {
+      console.error(message);
+      return;
+    }
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, message);
+    await audit(env, "system:alert", "audit.chain.invalid.notified", "system", "audit-chain", {
+      checked: result.checked,
+      legacyRows: result.legacyRows,
+      firstBrokenId: result.firstBrokenId ?? null,
+      delivered: response.ok,
+    }).catch((error: unknown) =>
+      console.error("Audit chain alert audit failed", sanitizeLog(error)),
+    );
+  } catch (error) {
+    console.error("Audit chain check failed", sanitizeLog(error));
+  }
+}
+
 type NotificationStatus = "sent" | "skipped" | "failed";
 
 async function notifySlack(env: Env, idea: Idea): Promise<NotificationStatus> {
@@ -2923,6 +2959,7 @@ export const workerSecurityTestHooks = {
   computeAuditEntryHash,
   buildPromptMessages,
   formatAlertMessage,
+  formatAuditChainAlert,
   estimateAiCost,
   csvCell,
   xmlCell,
@@ -2958,8 +2995,11 @@ export default {
     // A rejection escaping waitUntil is logged raw by the runtime, bypassing
     // sanitizeLog — keep this catch even though the retry has its own.
     ctx.waitUntil(
-      (cron === "0 * * * *" ? checkAndAlertFailures(env) : retrySlackNotifications(env)).catch((error: unknown) => {
-        console.error("Scheduled retry failed", sanitizeLog(error));
+      (cron === "0 * * * *"
+        ? Promise.all([checkAndAlertFailures(env), checkAuditChainIntegrity(env)])
+        : retrySlackNotifications(env)
+      ).catch((error: unknown) => {
+        console.error("Scheduled task failed", sanitizeLog(error));
       }),
     );
   },
