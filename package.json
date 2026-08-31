@@ -37,7 +37,7 @@
   "dependencies": {
     "@hono/zod-validator": "^0.7.2",
     "@neondatabase/serverless": "^1.0.2",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.1",
     "hono": "^4.10.7",
     "lucide-react": "^0.561.0",
     "postgres": "^3.4.9",
