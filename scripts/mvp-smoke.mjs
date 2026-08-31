@@ -169,7 +169,10 @@ const auditHtml = await request("/admin/audit-logs/export.html");
 expect("audit log HTML export", auditHtml.ok && (auditHtml.contentType ?? "").includes("text/html"));
 
 const denied = await request("/admin/audit-logs/export.csv", { method: "POST" });
-expect("method allowlist enforced (POST to export route rejected)", denied.status === 404 || denied.status === 405 || denied.status === 404);
+expect(
+  "method allowlist enforced (POST to export route rejected)",
+  denied.status === 404 || denied.status === 405,
+);
 
 console.log(results.join("\n"));
 console.log(`\nMVP smoke: ${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
