@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import postgres from "postgres";
 import { zValidator } from "@hono/zod-validator";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -32,7 +33,7 @@ import {
   userRoles,
 } from "../src/lib/shared";
 
-type Env = {
+export type Env = {
   DATABASE_URL?: string;
   ANTHROPIC_API_KEY?: string;
   DEEPSEEK_API_KEY?: string;
@@ -72,6 +73,9 @@ type JwksResponse = {
 const app = new Hono<{ Bindings: Env }>();
 const jwksCache = new Map<string, { expiresAt: number; keys: AccessJwk[] }>();
 const writeRateBuckets = new Map<string, { windowStart: number; count: number }>();
+// 接続クライアントはURL単位で再利用する。postgres.js のプールをリクエスト毎に
+// 生成すると Node 直実行サーバーで接続リークになるため、ここでキャッシュする。
+const dbClients = new Map<string, DbSql>();
 const WRITE_RATE_WINDOW_MS = 60_000;
 const WRITE_RATE_LIMIT = 60;
 const SLACK_TIMEOUT_MS = 5000;
@@ -127,7 +131,8 @@ app.get("/api/metrics", async (c) => {
       count(*)::int as total_ideas,
       count(*) filter (where stage not in ('rejected', 'archived'))::int as active_ideas,
       count(*) filter (where stage = 'mvp')::int as mvp_ideas,
-      coalesce(sum(jsonb_array_length(security_notes)), 0)::int as security_warnings
+      coalesce(sum(case when jsonb_typeof(security_notes) = 'array'
+                        then jsonb_array_length(security_notes) else 0 end), 0)::int as security_warnings
     from ideas
   `;
   const aiRows = await db`
@@ -160,11 +165,11 @@ app.get("/api/metrics", async (c) => {
     ? Number((scored.reduce((sum, value) => sum + value, 0) / scored.length).toFixed(2))
     : 0;
   const metrics: DashboardMetrics = {
-    totalIdeas: rows[0]?.total_ideas ?? 0,
-    activeIdeas: rows[0]?.active_ideas ?? 0,
-    mvpIdeas: rows[0]?.mvp_ideas ?? 0,
-    securityWarnings: rows[0]?.security_warnings ?? 0,
-    aiCallsToday: aiRows[0]?.ai_calls_today ?? 0,
+    totalIdeas: Number(rows[0]?.total_ideas ?? 0),
+    activeIdeas: Number(rows[0]?.active_ideas ?? 0),
+    mvpIdeas: Number(rows[0]?.mvp_ideas ?? 0),
+    securityWarnings: Number(rows[0]?.security_warnings ?? 0),
+    aiCallsToday: Number(aiRows[0]?.ai_calls_today ?? 0),
     stageCounts: Object.fromEntries(
       stageRows.map((row) => [String(row.stage), Number(row.n ?? 0)]),
     ),
@@ -487,11 +492,11 @@ app.patch(
         current_workflow = ${merged.currentWorkflow},
         improvement_idea = ${merged.improvementIdea},
         expected_effects = ${merged.expectedEffects},
-        required_data = ${JSON.stringify(merged.requiredData)}::jsonb,
-        related_systems = ${JSON.stringify(merged.relatedSystems)}::jsonb,
-        implementation_options = ${JSON.stringify(merged.implementationOptions)}::jsonb,
-        security_notes = ${JSON.stringify(merged.securityNotes)}::jsonb,
-        open_questions = ${JSON.stringify(merged.openQuestions)}::jsonb,
+        required_data = ${merged.requiredData}::jsonb,
+        related_systems = ${merged.relatedSystems}::jsonb,
+        implementation_options = ${merged.implementationOptions}::jsonb,
+        security_notes = ${merged.securityNotes}::jsonb,
+        open_questions = ${merged.openQuestions}::jsonb,
         mvp_candidate = ${merged.mvpCandidate},
         mvp_done_definition = ${merged.mvpDoneDefinition},
         department = ${merged.department ?? ""},
@@ -1470,11 +1475,11 @@ async function insertIdea(
     values (
       ${structured.title}, ${structured.currentIssue}, ${structured.targetBusiness},
       ${structured.targetUsers}, ${structured.currentWorkflow}, ${structured.improvementIdea},
-      ${structured.expectedEffects}, ${JSON.stringify(structured.requiredData)}::jsonb,
-      ${JSON.stringify(structured.relatedSystems)}::jsonb,
-      ${JSON.stringify(structured.implementationOptions)}::jsonb,
-      ${JSON.stringify(structured.securityNotes)}::jsonb,
-      ${JSON.stringify(structured.openQuestions)}::jsonb,
+      ${structured.expectedEffects}, ${structured.requiredData}::jsonb,
+      ${structured.relatedSystems}::jsonb,
+      ${structured.implementationOptions}::jsonb,
+      ${structured.securityNotes}::jsonb,
+      ${structured.openQuestions}::jsonb,
       ${structured.mvpCandidate}, ${structured.mvpDoneDefinition},
       ${structured.department ?? ""}, ${structured.submitterName ?? ""},
       ${structured.submitterEmail ?? ""}, ${structured.coordinationNeeded ?? ""},
@@ -1521,7 +1526,11 @@ function readIdempotencyKey(c: AppContext): string | undefined {
   return key;
 }
 
-function getDb(env: Env) {
+function selectDbDriver(databaseUrl: string): "neon" | "postgres" {
+  return /neon\.tech(:\d+)?$/.test(new URL(databaseUrl).host) ? "neon" : "postgres";
+}
+
+function getDb(env: Env): DbSql {
   if (!env.DATABASE_URL) {
     throw new ApiError("DATABASE_NOT_CONFIGURED", "DATABASE_URL is not configured.", 503);
   }
@@ -1535,8 +1544,19 @@ function getDb(env: Env) {
       503,
     );
   }
-  return neon(env.DATABASE_URL);
+  const databaseUrl = env.DATABASE_URL;
+  const cached = dbClients.get(databaseUrl);
+  if (cached) return cached;
+  // ローカル Postgres 等 neon.tech 以外のホストは pg TCP ドライバ (postgres.js) を使う。
+  // タグ付きテンプレート呼び出し（await db`select ...`）の互換性があるためドロップイン置換可能。
+  const client = (selectDbDriver(databaseUrl) === "neon"
+    ? neon(databaseUrl)
+    : postgres(databaseUrl, { max: 5 })) as unknown as DbSql;
+  dbClients.set(databaseUrl, client);
+  return client;
 }
+
+type DbSql = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<Record<string, unknown>[]>;
 
 function isValidDatabaseUrl(value: string): boolean {
   try {
@@ -2445,7 +2465,7 @@ async function audit(
       )
       values (
         ${actor}, ${action}, ${resourceType}, ${resourceId}, 'success',
-        ${JSON.stringify(metadata)}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
+        ${metadata}::jsonb, ${prevHash}, ${entryHash}, ${createdAt}
       )
     `;
   });
@@ -2727,7 +2747,7 @@ async function createNotificationOutbox(
       )
       values (
         ${event.eventType}, ${event.resourceType}, ${event.resourceId},
-        ${event.idempotencyKey}, ${JSON.stringify(event.payload)}::jsonb, 'processing'
+        ${event.idempotencyKey}, ${event.payload}::jsonb, 'processing'
       )
       on conflict (idempotency_key) do update
       set status = 'processing',
@@ -2916,6 +2936,7 @@ export const workerSecurityTestHooks = {
   resolveRoles,
   resolveCorsOrigin,
   sanitizeLog,
+  selectDbDriver,
   serializeAudit,
   verifyAuditChain,
   verifyAccessJwt,

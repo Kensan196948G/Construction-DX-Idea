@@ -17,6 +17,13 @@
  */
 import { createHash } from "node:crypto";
 import { neon } from "@neondatabase/serverless";
+import postgres from "postgres";
+
+try {
+  process.loadEnvFile?.(".env");
+} catch {
+  // .env が無い場合は環境変数のみで動作する。
+}
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -29,7 +36,14 @@ if (!/^postgres(ql)?:\/\//i.test(databaseUrl)) {
 }
 
 const reset = process.argv.includes("--reset");
-const sql = neon(databaseUrl);
+// neon.tech 以外（ローカル PostgreSQL 等）は TCP ドライバ (postgres.js) を使う。
+const isNeon = /neon\.tech(:\d+)?$/.test(new URL(databaseUrl).host);
+const sql = isNeon ? neon(databaseUrl) : postgres(databaseUrl, { max: 5 });
+const runQuery = (text, values) =>
+  isNeon ? sql.query(text, values) : sql.unsafe(text, values);
+// postgres.js は jsonb キャストのパラメータを文字列で渡すと二重エンコードされる。
+// ローカルでは JS 配列/オブジェクトをそのまま渡す（Neon は従来どおり JSON 文字列）。
+const jsonb = (value) => (isNeon ? JSON.stringify(value) : value);
 
 /** Fixed, stable IDs make the seed idempotent and re-runnable. */
 const uid = (n) =>
@@ -852,11 +866,11 @@ async function upsertIdeas() {
       values (
         ${idea.id}, ${idea.title}, ${idea.currentIssue}, ${idea.targetBusiness},
         ${idea.targetUsers}, ${idea.currentWorkflow}, ${idea.improvementIdea},
-        ${idea.expectedEffects}, ${JSON.stringify(idea.requiredData)}::jsonb,
-        ${JSON.stringify(idea.relatedSystems)}::jsonb,
-        ${JSON.stringify(idea.implementationOptions)}::jsonb,
-        ${JSON.stringify(idea.securityNotes)}::jsonb,
-        ${JSON.stringify(idea.openQuestions)}::jsonb,
+        ${idea.expectedEffects}, ${jsonb(idea.requiredData)}::jsonb,
+        ${jsonb(idea.relatedSystems)}::jsonb,
+        ${jsonb(idea.implementationOptions)}::jsonb,
+        ${jsonb(idea.securityNotes)}::jsonb,
+        ${jsonb(idea.openQuestions)}::jsonb,
         ${idea.mvpCandidate}, ${idea.mvpDoneDefinition}, ${idea.stage},
         ${idea.createdBy}, ${idea.ownerId}, ${idea.department}, ${idea.submitterName},
         ${idea.submitterEmail}, ${idea.coordinationNeeded}, ${idea.idempotencyKey},
@@ -896,13 +910,11 @@ async function upsertSimple(table, rows, columns, conflict = "id") {
     const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
     const values = columns.map((column) => {
       const value = row[column];
-      return typeof value === "object" && value !== null
-      ? JSON.stringify(value)
-      : value === undefined
-        ? null
-        : value;
+      if (value === undefined) return null;
+      if (typeof value === "object" && value !== null && !isNeon) return value;
+      return typeof value === "object" && value !== null ? JSON.stringify(value) : value;
     });
-    await sql.query(
+    await runQuery(
       `insert into ${table} (${columns.join(", ")})
        values (${placeholders})
        on conflict (${conflict}) do nothing`,
@@ -922,7 +934,7 @@ async function seedAuditLogs() {
       )
       values (
         ${entry.id}, ${entry.actor}, ${entry.action}, ${entry.resourceType},
-        ${entry.resourceId}, ${entry.result}, ${JSON.stringify(entry.metadata)}::jsonb,
+        ${entry.resourceId}, ${entry.result}, ${jsonb(entry.metadata)}::jsonb,
         ${entry.prevHash}, ${entry.entryHash}, ${entry.createdAt}
       )
       on conflict (id) do nothing
@@ -1003,7 +1015,11 @@ async function main() {
   console.log("Done. Dummy data is kept in place for the MVP demo.");
 }
 
-main().catch((error) => {
-  console.error("MVP seed failed:", error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+main()
+  .then(async () => {
+    if (!isNeon) await sql.end();
+  })
+  .catch((error) => {
+    console.error("MVP seed failed:", error instanceof Error ? error.message : error);
+    process.exit(1);
+  });

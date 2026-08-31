@@ -1,5 +1,16 @@
 # 現在の実装・検証ステータス
 
+## 0.6 最新（2026-08-31: ローカルPostgreSQL実行対応）
+
+- ローカルPostgreSQL（`dx_idea_mvp`）向け実行基盤を整備:
+  - WorkerのDB接続をドライバ自動選択に（`neon.tech` → Neon serverless / それ以外 → postgres.js TCP）+ URL単位の接続キャッシュ
+  - Node直実行APIサーバー `server/dev-server.ts`（`.env`自動読込、cron相当の定期処理対応）
+  - npmスクリプト `dev:server` / `db:migrate` / `db:seed` を追加
+- postgres.js の jsonb 二重エンコード問題を修正（アイデア登録・編集・監査metadata・通知payload で配列/オブジェクトを直接バインド）。
+  ローカルDBで監査ハッシュチェーン `GET /api/admin/audit-logs/verify` が `valid:true` になることを実測確認。
+- metricsの `security_notes` 集計を非配列jsonbでも500にならないよう防御的に修正。
+- 検証: `npm run verify` PASS（test 74件）、ローカル実APIスモーク（health / me / ideas / metrics / users / audit verify / 登録E2E）PASS。
+
 ## 0.5 最新（2026-08-13: MVP/Prototype環境の新設と重大バグ修正）
 
 - **MVP/Prototype環境**を本番と分離して新設・デプロイ:

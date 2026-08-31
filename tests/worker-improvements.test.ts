@@ -12,11 +12,13 @@ const {
   modelAllowedForProvider,
   redactIdeaForUser,
   resolveRoles,
+  selectDbDriver,
   serializeAudit,
   stableStringify,
   toIsoString,
   verifyAuditChain,
   writeRateLimitExceeded,
+  isValidDatabaseUrl,
   xmlCell,
 } = workerSecurityTestHooks;
 
@@ -100,6 +102,28 @@ describe("idea registration idempotency key validation", () => {
     assert.equal(isValidIdempotencyKey(""), false);
     assert.equal(isValidIdempotencyKey("key with space"), false);
     assert.equal(isValidIdempotencyKey("key.with.dot"), false);
+  });
+});
+
+describe("database driver selection", () => {
+  it("uses the Neon HTTP driver for neon.tech hosts", () => {
+    assert.equal(
+      selectDbDriver("postgresql://user@ep-example.region.aws.neon.tech/neondb"),
+      "neon",
+    );
+  });
+
+  it("uses the postgres.js TCP driver for local hosts", () => {
+    assert.equal(selectDbDriver("postgresql://user@127.0.0.1:5432/dx_idea"), "postgres");
+    assert.equal(selectDbDriver("postgresql://user@db.local:5432/dx_idea"), "postgres");
+  });
+
+  it("accepts only well-formed postgres URLs", () => {
+    assert.equal(isValidDatabaseUrl("postgresql://user@host:5432/db"), true);
+    assert.equal(isValidDatabaseUrl("postgres://user@host:5432/db"), true);
+    assert.equal(isValidDatabaseUrl("npg_abc123"), false);
+    assert.equal(isValidDatabaseUrl("https://host/db"), false);
+    assert.equal(isValidDatabaseUrl(""), false);
   });
 });
 
