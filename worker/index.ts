@@ -2680,6 +2680,64 @@ function formatAlertMessage(counts: { aiFailures: number; notifyFailures: number
   return `⚠️ Construction-DX-Idea 障害アラート（直近1時間）\n${items.join("\n")}`;
 }
 
+function formatWeeklyDigest(
+  stats: {
+    totalIdeas: number;
+    newIdeas: number;
+    aiCalls7d: number;
+    aiFailures7d: number;
+    notifyFailures7d: number;
+    activeUsers: number;
+  },
+  chainValid: boolean,
+): string {
+  return [
+    "📊 Construction-DX-Idea 週次レポート",
+    `登録アイデア: ${stats.totalIdeas}件（今週 +${stats.newIdeas}件）`,
+    `AI呼び出し: ${stats.aiCalls7d}回（失敗 ${stats.aiFailures7d}件）`,
+    `Slack通知失敗: ${stats.notifyFailures7d}件`,
+    `アクティブユーザー: ${stats.activeUsers}人`,
+    `監査チェーン: ${chainValid ? "正常" : "⚠️ 不正検出"}`,
+  ].join("\n");
+}
+
+async function sendWeeklyDigest(env: Env) {
+  if (!env.SLACK_WEBHOOK_URL) return;
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select
+        (select count(*) from ideas)::int as total_ideas,
+        (select count(*) from ideas where created_at >= now() - interval '7 days')::int as new_ideas,
+        (select count(*) from idea_ai_sessions where created_at >= now() - interval '7 days')::int as ai_calls_7d,
+        (select count(*) from idea_ai_sessions where created_at >= now() - interval '7 days' and result <> 'success')::int as ai_failures_7d,
+        (select count(*) from notification_outbox where created_at >= now() - interval '7 days' and status = 'failed')::int as notify_failures_7d,
+        (select count(*) from app_users where status = 'active')::int as active_users
+    `;
+    const chain = await verifyAuditChainFromDb(env);
+    const message = formatWeeklyDigest(
+      {
+        totalIdeas: Number(rows[0]?.total_ideas ?? 0),
+        newIdeas: Number(rows[0]?.new_ideas ?? 0),
+        aiCalls7d: Number(rows[0]?.ai_calls_7d ?? 0),
+        aiFailures7d: Number(rows[0]?.ai_failures_7d ?? 0),
+        notifyFailures7d: Number(rows[0]?.notify_failures_7d ?? 0),
+        activeUsers: Number(rows[0]?.active_users ?? 0),
+      },
+      chain.valid,
+    );
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, message);
+    await audit(env, "system:report", "report.weekly.sent", "system", "weekly", {
+      delivered: response.ok,
+      chainValid: chain.valid,
+    }).catch((error: unknown) =>
+      console.error("Weekly digest audit failed", sanitizeLog(error)),
+    );
+  } catch (error) {
+    console.error("Weekly digest failed", sanitizeLog(error));
+  }
+}
+
 async function checkAndAlertFailures(env: Env) {
   if (!env.SLACK_WEBHOOK_URL) return;
   try {
@@ -2959,6 +3017,7 @@ export const workerSecurityTestHooks = {
   computeAuditEntryHash,
   buildPromptMessages,
   formatAlertMessage,
+  formatWeeklyDigest,
   formatAuditChainAlert,
   estimateAiCost,
   csvCell,
@@ -2995,9 +3054,12 @@ export default {
     // A rejection escaping waitUntil is logged raw by the runtime, bypassing
     // sanitizeLog — keep this catch even though the retry has its own.
     ctx.waitUntil(
-      (cron === "0 * * * *"
-        ? Promise.all([checkAndAlertFailures(env), checkAuditChainIntegrity(env)])
-        : retrySlackNotifications(env)
+      (
+        cron === "0 9 * * 0"
+          ? sendWeeklyDigest(env)
+          : cron === "0 * * * *"
+            ? Promise.all([checkAndAlertFailures(env), checkAuditChainIntegrity(env)])
+            : retrySlackNotifications(env)
       ).catch((error: unknown) => {
         console.error("Scheduled task failed", sanitizeLog(error));
       }),

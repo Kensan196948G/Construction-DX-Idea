@@ -1,5 +1,13 @@
 # 現在の実装・検証ステータス
 
+## 0.8 最新（2026-08-31: 週次レポート）
+
+- 毎週日曜 09:00 UTC（18:00 JST）にSlackへ週次レポートを送信する `sendWeeklyDigest` を追加
+  （登録アイデア数・今週の新規・AI呼び出し/失敗・Slack通知失敗・アクティブユーザー・監査チェーン状態）。
+- `wrangler.toml` のcronへ `0 9 * * 0` を追加。
+- 検証: `npm run verify` PASS（test 76件）、`worker:deploy:dry-run` PASS。
+  ローカルE2Eで週次レポート送信（capture serverで受信）と `report.weekly.sent` 監査記録を確認。
+
 ## 0.7 最新（2026-08-31: 監査チェーン定期検証とスモーク堅牢化）
 
 - 監査チェーンverifyロジックを `verifyAuditChainFromDb` に共通化し、毎時cronで自動検証・不正時にSlack通知する
