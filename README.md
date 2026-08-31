@@ -128,6 +128,9 @@ PORT=8791 npm run dev:server   # Node 直実行サーバー（http://localhost:8
 `dev:server` は `.env` を自動読込します。Cloudflare Access を経由せずローカルで認証なし動作を
 確認する場合は、`.env` の `ALLOW_LOCAL_AUTH_BYPASS=true` を設定してください（書き込みはレート制限あり）。
 フロントエンドから接続する場合は `VITE_API_BASE_URL=http://localhost:<PORT>` を指定します。
+サーバーは既定で `127.0.0.1` にbindします（LAN等へ公開する場合は `HOST=0.0.0.0` を明示指定。
+認証バイパス時は管理権限が付与されるため、外部bindは必要な場合のみ）。
+受信ボディは既定1MBまでで、超過時は413を返します（`MAX_BODY_BYTES` で変更可）。
 
 DB接続は `neon.tech` ホスト以外（ローカルPostgreSQL等）を postgres.js（TCP）で、
 `neon.tech` を Neon serverless driver で自動選択します。接続クライアントはURL単位でキャッシュされます。
