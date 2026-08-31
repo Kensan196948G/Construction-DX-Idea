@@ -6,6 +6,10 @@ compatibility_flags = ["nodejs_compat"]
 # Same-origin production: this Worker serves both the SPA static assets and
 # the /api/* routes on https://dxidea.mirai-dx-platform.com.
 # Custom Domains take a hostname-only pattern with no zone_name (Cloudflare docs).
+# NOTE (2026-08-31): 現行本番は Cloudflare Tunnel（cfargotunnel.com CNAME）経由で
+# ローカルsystemdサービス（dx-idea-api.service）へ配信しているため、wrangler deploy 時に
+# このcustom domain再割当は code:100117（DNSレコードがトンネルに管理されている）で失敗する。
+# Worker配信へ戻す場合はトンネルCNAME削除後にこの設定が有効になる。
 routes = [
   { pattern = "dxidea.mirai-dx-platform.com", custom_domain = true }
 ]
@@ -16,7 +20,7 @@ not_found_handling = "single-page-application"
 run_worker_first = ["/api/*"]
 
 [triggers]
-crons = ["*/10 * * * *", "0 * * * *", "0 9 * * 0"]
+crons = ["*/10 * * * *", "0 * * * *", "0 9 * * SUN"]
 
 [vars]
 AI_PROVIDER = "claude"
