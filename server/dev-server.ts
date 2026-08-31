@@ -73,7 +73,12 @@ const server = createServer(async (req, res) => {
   }
   const request = new Request(url, {
     method: req.method,
-    headers: req.headers as Record<string, string>,
+    // ローカル認証バイパス時のレート制限で使う実IPをサーバー側から設定する。
+    // クライアントが送った x-real-ip は常に上書きする。
+    headers: {
+      ...(req.headers as Record<string, string>),
+      'x-real-ip': req.socket.remoteAddress ?? 'unknown',
+    },
     body: chunks.length ? Buffer.concat(chunks) : undefined,
   });
   try {
