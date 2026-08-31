@@ -114,6 +114,24 @@ npm run dev
 
 起動後、表示された `http://<IPアドレス>:<ポート番号>/` を開きます。ローカルWebUIは初期状態ではモックAPIで動作します。
 
+### ローカルPostgreSQL + 実APIサーバー（ローカル実DB動作）
+
+ローカルPostgreSQL（例: `dx_idea_mvp`）へ実際に接続してAPIを動かす場合は、ルート `.env` に
+`DATABASE_URL` を設定したうえで次のコマンドを使います。
+
+```bash
+npm run db:migrate   # migrations/*.sql を冪等に適用（create if not exists / add column if not exists）
+npm run db:seed      # MVPデモ用ダミーデータを upsert（--reset で初期化）
+PORT=8791 npm run dev:server   # Node 直実行サーバー（http://localhost:8791/）
+```
+
+`dev:server` は `.env` を自動読込します。Cloudflare Access を経由せずローカルで認証なし動作を
+確認する場合は、`.env` の `ALLOW_LOCAL_AUTH_BYPASS=true` を設定してください（書き込みはレート制限あり）。
+フロントエンドから接続する場合は `VITE_API_BASE_URL=http://localhost:<PORT>` を指定します。
+
+DB接続は `neon.tech` ホスト以外（ローカルPostgreSQL等）を postgres.js（TCP）で、
+`neon.tech` を Neon serverless driver で自動選択します。接続クライアントはURL単位でキャッシュされます。
+
 ### 検証コマンド
 
 | コマンド | 内容 |

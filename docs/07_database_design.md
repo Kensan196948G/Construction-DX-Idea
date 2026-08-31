@@ -163,3 +163,11 @@ erDiagram
 - audit_logs(resource_type, resource_id)
 - notification_outbox(status, next_attempt_at)
 - ai_monthly_usage_counters(subject_type, subject_id, usage_month)
+
+## 5. ローカル開発DB
+
+- ローカルPostgreSQLには `dx_idea` / `dx_idea_mvp` 等のDBと専用ロールを用意し、接続情報は `.env` の `DATABASE_URL` で管理する（リポジトリへSecretを保存しない）。
+- `npm run db:migrate` で `migrations/*.sql` をファイル名順に冪等適用できる（`create table if not exists` / `add column if not exists` / DOブロック前提）。
+- `npm run db:seed` でMVPデモ用ダミーデータをupsertできる（`--reset` で初期化）。
+- Worker は接続先ホストでドライバを自動選択する: `neon.tech` は `@neondatabase/serverless`、それ以外（ローカルPostgreSQL等）は postgres.js（TCP）。接続クライアントはURL単位で再利用される。
+- postgres.js 経由の jsonb 書き込みは、JS配列/オブジェクトを直接パラメータとして渡す（`JSON.stringify` した文字列を `::jsonb` へ渡すと二重エンコードされ、監査ハッシュ検証などが壊れる）。

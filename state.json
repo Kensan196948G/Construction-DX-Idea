@@ -7,7 +7,7 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "2026-08-18: DSH統合ラウンド。MVP稼働再確認（URL 200・ideas 15/users 6/監査verify valid:true・evaluation 13件）。npm run verify PASS（test 71件）・npm audit 0・worker/mvp dry-run PASS。Neon一時ブランチでMigration 001-005再実行+Seed --reset再実行を実証（users 6/ideas 14/comments 6/histories 36/decisions 7/aiSessions 4/outbox 2/auditLogs 26・監査ハッシュ欠損0）。ルールセットcentral-auto-mergeの必須チェック改行バグ（\"verify\\n\"）を修正→PR #28 auto-merge完了（78bcd69）。 2026-08-13:  本番から分離した操作可能なMVP/Prototypeの完成。MVPサブドメイン（dxidea-mvp.mirai-dx-platform.com）＋Neon mvpブランチ＋架空ダミーデータ投入・保持＋demo AIプロバイダー＋重大バグ3件修正（PRIVACY_BLOCKED/監査チェーンjsonb順序/Dateミリ秒）。verify PASS（test 68件）・mvp:smoke ALL PASS・書込みE2E PASS・監査verify valid:true。次: PR作成→CI→マージ→最終報告。",
+  "goal": "2026-08-31: ローカルPostgreSQL実行対応（ドライバ自動選択・接続キャッシュ・server/dev-server.ts・dev:server/db:migrate/db:seed）。postgres.jsのjsonb二重エンコード問題を修正し、ローカル監査チェーンverify valid:trueを実測。npm run verify PASS（test 74件）・npm audit 0・worker/mvp dry-run PASS・ローカル実APIスモーク（health/me/ideas/metrics/users/audit verify/登録E2E）PASS。GitHubリポジトリ復旧を確認（gh issue/PR操作可）。 2026-08-18: DSH統合ラウンド。MVP稼働再確認（URL 200・ideas 15/users 6/監査verify valid:true・evaluation 13件）。npm run verify PASS（test 71件）・npm audit 0・worker/mvp dry-run PASS。Neon一時ブランチでMigration 001-005再実行+Seed --reset再実行を実証（users 6/ideas 14/comments 6/histories 36/decisions 7/aiSessions 4/outbox 2/auditLogs 26・監査ハッシュ欠損0）。ルールセットcentral-auto-mergeの必須チェック改行バグ（\"verify\\n\"）を修正→PR #28 auto-merge完了（78bcd69）。 2026-08-13:  本番から分離した操作可能なMVP/Prototypeの完成。MVPサブドメイン（dxidea-mvp.mirai-dx-platform.com）＋Neon mvpブランチ＋架空ダミーデータ投入・保持＋demo AIプロバイダー＋重大バグ3件修正（PRIVACY_BLOCKED/監査チェーンjsonb順序/Dateミリ秒）。verify PASS（test 68件）・mvp:smoke ALL PASS・書込みE2E PASS・監査verify valid:true。次: PR作成→CI→マージ→最終報告。",
   "phase": "Verify",
   "mvp": {
     "url": "https://dxidea-mvp.mirai-dx-platform.com",
@@ -48,8 +48,8 @@
     "test_pass_rate": 1.0,
     "security_critical": 0,
     "blocker_count": 0,
-    "verified_at": "2026-08-18",
-    "verified_by": "2026-08-18再検証: npm run verify PASS（lint / test 71件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。MVP URL稼働+ダミーデータ実測確認。Neon Migration/Seed再実行を一時ブランチで実証。PR #28 merge（78bcd69）"
+    "verified_at": "2026-08-31",
+    "verified_by": "2026-08-31再検証: npm run verify PASS（lint / test 74件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。ローカルPostgreSQL（dx_idea_mvp）でmigration 005適用・seed upsert・監査チェーンverify valid:true・実APIスモーク・登録E2Eを確認。 2026-08-18再検証: npm run verify PASS（lint / test 71件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。MVP URL稼働+ダミーデータ実測確認。Neon Migration/Seed再実行を一時ブランチで実証。PR #28 merge（78bcd69）"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -77,9 +77,7 @@
     14
   ],
   "in_progress_issues": [],
-  "blocked_issues": [
-    "github_repo_missing"
-  ],
+  "blocked_issues": [],
   "stale_prs": [],
   "learning": {
     "failure_patterns": [
@@ -110,9 +108,9 @@
   },
   "open_issues_triage": {
     "github_repo_missing": {
-      "severity": "High(infra)",
-      "impact": "GitHubリポジトリ Kensan196948G/Construction-DX-Idea が404（削除済みまたはリネーム）。Issue/PR/CI/Projectsが利用不能。ローカルgit履歴（44コミット・29ブランチ・tag v0.1.0）と本番（Cloudflare/Neon/Access）は健全",
-      "plan": "ユーザー確認: リポジトリ再作成（gh repo create --private + push --all）または別名リポジトリへ移行。ユーザー判断待ち（外部への永続的書き込みのため自律実行しない）"
+      "severity": "Resolved",
+      "impact": "解消済み。2026-08-31時点で gh issue list / gh pr list / rulesets API が正常動作することを確認",
+      "plan": "以後は通常のGitHub運用（branch/PR/CI）へ戻す"
     },
     "25": {
       "severity": "High(security)",

@@ -6,6 +6,7 @@
   "description": "AI-assisted DX idea management system for civil engineering and construction teams.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:server": "tsx server/dev-server.ts",
     "build": "tsc -b && vite build",
     "build:frontend": "vite build",
     "build:production-api": "VITE_USE_MOCK_API=false npm run build",
@@ -25,6 +26,8 @@
     "mvp:deploy": "npm run build:mvp && wrangler deploy --env mvp",
     "mvp:seed": "node scripts/mvp-seed.mjs",
     "mvp:smoke": "node scripts/mvp-smoke.mjs",
+    "db:migrate": "node scripts/migrate-local.mjs",
+    "db:seed": "node scripts/mvp-seed.mjs",
     "release:prepare": "npm run build:production-api && npm run predeploy:check && npm run worker:deploy:dry-run",
     "release:smoke": "node scripts/release-smoke-test.mjs",
     "release:gate": "npm run release:monitor && npm run release:prepare && npm run release:smoke",
@@ -36,6 +39,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "hono": "^4.10.7",
     "lucide-react": "^0.561.0",
+    "postgres": "^3.4.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.2.1"
