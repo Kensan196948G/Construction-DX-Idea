@@ -7,7 +7,7 @@
     "release_deadline": "2026-12-17",
     "phase_mode": "maintenance"
   },
-  "goal": "2026-08-31: ローカルPostgreSQL実行対応（ドライバ自動選択・接続キャッシュ・server/dev-server.ts・dev:server/db:migrate/db:seed）。postgres.jsのjsonb二重エンコード問題を修正し、ローカル監査チェーンverify valid:trueを実測。npm run verify PASS（test 74件）・npm audit 0・worker/mvp dry-run PASS・ローカル実APIスモーク（health/me/ideas/metrics/users/audit verify/登録E2E）PASS。GitHubリポジトリ復旧を確認（gh issue/PR操作可）。 2026-08-18: DSH統合ラウンド。MVP稼働再確認（URL 200・ideas 15/users 6/監査verify valid:true・evaluation 13件）。npm run verify PASS（test 71件）・npm audit 0・worker/mvp dry-run PASS。Neon一時ブランチでMigration 001-005再実行+Seed --reset再実行を実証（users 6/ideas 14/comments 6/histories 36/decisions 7/aiSessions 4/outbox 2/auditLogs 26・監査ハッシュ欠損0）。ルールセットcentral-auto-mergeの必須チェック改行バグ（\"verify\\n\"）を修正→PR #28 auto-merge完了（78bcd69）。 2026-08-13:  本番から分離した操作可能なMVP/Prototypeの完成。MVPサブドメイン（dxidea-mvp.mirai-dx-platform.com）＋Neon mvpブランチ＋架空ダミーデータ投入・保持＋demo AIプロバイダー＋重大バグ3件修正（PRIVACY_BLOCKED/監査チェーンjsonb順序/Dateミリ秒）。verify PASS（test 68件）・mvp:smoke ALL PASS・書込みE2E PASS・監査verify valid:true。次: PR作成→CI→マージ→最終報告。",
+  "goal": "2026-08-31(4th): ローカル実DBスモーク自動化（npm run dev:smoke、10チェックALL PASS・監査valid:true）。依存更新PR #30-33をCI確認済み（マージ待ち）。 2026-08-31(3rd): 週次レポート（cron 0 9 * * 0・Slack送信・監査記録）。verify PASS（test 76件）・worker dry-run PASS・ローカルE2Eで送信確認。 2026-08-31(2nd): 監査チェーン定期検証（毎時cron・Slack通知）とmvp:smoke堅牢化（401診断・JWT対応・クラッシュ防止）。verify PASS（test 75件）。ローカルで改変→Slack通知→監査記録→復元のE2E確認。MVP URLはAccess保護（401）状態を確認。 2026-08-31: ローカルPostgreSQL実行対応（ドライバ自動選択・接続キャッシュ・server/dev-server.ts・dev:server/db:migrate/db:seed）。postgres.jsのjsonb二重エンコード問題を修正し、ローカル監査チェーンverify valid:trueを実測。npm run verify PASS（test 74件）・npm audit 0・worker/mvp dry-run PASS・ローカル実APIスモーク（health/me/ideas/metrics/users/audit verify/登録E2E）PASS。GitHubリポジトリ復旧を確認（gh issue/PR操作可）。 2026-08-18: DSH統合ラウンド。MVP稼働再確認（URL 200・ideas 15/users 6/監査verify valid:true・evaluation 13件）。npm run verify PASS（test 71件）・npm audit 0・worker/mvp dry-run PASS。Neon一時ブランチでMigration 001-005再実行+Seed --reset再実行を実証（users 6/ideas 14/comments 6/histories 36/decisions 7/aiSessions 4/outbox 2/auditLogs 26・監査ハッシュ欠損0）。ルールセットcentral-auto-mergeの必須チェック改行バグ（\"verify\\n\"）を修正→PR #28 auto-merge完了（78bcd69）。 2026-08-13:  本番から分離した操作可能なMVP/Prototypeの完成。MVPサブドメイン（dxidea-mvp.mirai-dx-platform.com）＋Neon mvpブランチ＋架空ダミーデータ投入・保持＋demo AIプロバイダー＋重大バグ3件修正（PRIVACY_BLOCKED/監査チェーンjsonb順序/Dateミリ秒）。verify PASS（test 68件）・mvp:smoke ALL PASS・書込みE2E PASS・監査verify valid:true。次: PR作成→CI→マージ→最終報告。",
   "phase": "Verify",
   "mvp": {
     "url": "https://dxidea-mvp.mirai-dx-platform.com",
@@ -49,7 +49,7 @@
     "security_critical": 0,
     "blocker_count": 0,
     "verified_at": "2026-08-31",
-    "verified_by": "2026-08-31再検証: npm run verify PASS（lint / test 74件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。ローカルPostgreSQL（dx_idea_mvp）でmigration 005適用・seed upsert・監査チェーンverify valid:true・実APIスモーク・登録E2Eを確認。 2026-08-18再検証: npm run verify PASS（lint / test 71件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。MVP URL稼働+ダミーデータ実測確認。Neon Migration/Seed再実行を一時ブランチで実証。PR #28 merge（78bcd69）"
+    "verified_by": "2026-08-31(4th): npm run dev:smoke 10チェック ALL PASS（監査valid:true・413・メソッド許可含む）。 2026-08-31(3rd): npm run verify PASS（lint / test 76件 / build x2 / security:scan）。worker:deploy:dry-run PASS（cron3本）。週次レポート送信E2E PASS（capture受信・report.weekly.sent監査）。 2026-08-31(2nd): npm run verify PASS（lint / test 75件 / build x2 / security:scan）。監査チェーン改変→Slack通知→復元E2E PASS。MVP URLはAccess保護（401）を確認（JWTなしsmokeは診断付きFAIL）。 2026-08-31再検証: npm run verify PASS（lint / test 74件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。ローカルPostgreSQL（dx_idea_mvp）でmigration 005適用・seed upsert・監査チェーンverify valid:true・実APIスモーク・登録E2Eを確認。 2026-08-18再検証: npm run verify PASS（lint / test 71件 / build x2 / security:scan）。npm audit 0件・worker:deploy:dry-run PASS・mvp:dry-run PASS。MVP URL稼働+ダミーデータ実測確認。Neon Migration/Seed再実行を一時ブランチで実証。PR #28 merge（78bcd69）"
   },
   "execution": {
     "max_duration_minutes": 300,
@@ -81,6 +81,9 @@
   "stale_prs": [],
   "learning": {
     "failure_patterns": [
+      "postgres.js は ::jsonb キャストのパラメータに文字列（JSON.stringify済み）を渡すと二重エンコードし、jsonb列が文字列スカラーになる。監査metadataが壊れるとハッシュチェーンverifyが false になる。配列/オブジェクトを直接バインドするのが両ドライバ（Neon/postgres.js）共通の正解（2026-08-31検証）。",
+      "mvp:smoke はAPIの認証モード変化（ALLOW_LOCAL_AUTH_BYPASS→Access JWT必須）で /ideas が配列以外を返し、Array.isArray未チェックの .map が TypeError でクラッシュしていた。スモークはレスポンス形式・認証モードを防御的に扱う（2026-08-31修正）。",
+      "tsconfig.worker.json に types:['@cloudflare/workers-types'] しか無い状態で node:http / Buffer を使うdev serverを worker/ 配下に置くと tsc が失敗する。Node実行専用スクリプトは server/ 等へ分離し、types:['node'] + allowImportingTsExtensions の専用tsconfigにする（2026-08-31）。",
       "tsx --test はUnix domain socketを使うため、Claude Codeのスクラッチパス(長いUUID付きパス)をTMPDIRにするとEINVAL/EPERMで失敗する。短いTMPDIR(例: /tmp/cdx-verify)を指定すれば回避可能。",
       "release:smoke / release:monitor は本番ドメイン dxidea.mirai-dx-platform.com のDNSが未登録のため恒常的にBLOCKED。実運用インフラ未接続が根本原因であり、コード側の問題ではない。",
       "外部インフラ依存でBLOCKEDなIssueに対し、進捗がないまま同一内容の状況報告コメントを繰り返すとIssueが読みにくくなる（Issue #6に1日で20件超の類似コメントが蓄積した）。状態不変ならコメント追加を控え、state.jsonの記録のみで十分。",
@@ -90,7 +93,11 @@
       "sanitizeLogのマスクは『正しい形式』のパターンだけでは不十分。壊れた形式の秘密値（npg_パスワード単体等）はpostgres://パターンに一致せず素通りする。発生源での形式検証（getDbのURL検証）と個別トークンパターンの両方が必要（Issue #25/PR #32）。",
       "rulesetのrequired_status_checksに末尾改行付きcontext（\"verify\\n\"）が登録されると、実在チェックと永遠に一致せずPRが恒常BLOCKEDになる（2026-08-15作成・2026-08-18発見/修正）。作成後はGET /repos/{owner}/{repo}/rulesets/{id} でcontext文字列を確認する。"
     ],
-    "success_patterns": [
+  "success_patterns": [
+      "DBドライバは接続URLのホストで自動選択（neon.tech→Neon serverless / それ以外→postgres.js TCP）し、クライアントをURL単位でキャッシュすると、Cloudflare WorkersとNode直実行の両方で同一コードが動く（2026-08-31 PR #34）。",
+      "ローカルのNode直実行サーバーは process.loadEnvFile（リポジトリルート基準）、HOST既定127.0.0.1、ボディ上限413、cron文字列付きscheduled呼び出しにすることで、本番同等の定期処理（再送・毎時・週次）を再現できる（PR #34/#36）。",
+      "監査チェーンを壊す検証（改ざん通知E2E）は、対象行の元ハッシュを退避→改変→通知確認→復元→後続行を正しいprevで再計算、の順で行うとローカルDBを整合状態に戻せる（2026-08-31）。",
+      "CodeRabbit等のレビュー指摘は必ず実測と照合する。jsonb直接バインドを否定する指摘はローカルE2E（登録→jsonb_typeof=array）で反証できた。採用可否をPR本文へ明記すると判断が追跡できる（2026-08-31 PR #36）。",
       "wrangler.toml の routes 設定は custom_domain=true をオブジェクト内に含める形式が正しい（トップレベル custom_domain キーは誤り）。Codexレビューで指摘・修正済み。",
       "release-smoke-test.mjs は実行前にDNS事前チェックを行うことで、無意味なHTTPタイムアウト待ちを避け、失敗原因を即座に特定できる設計にしている。",
       "TeammateIdle フックは公式仕様で matcher 非対応（常時発火）。settings.json 設定例で matcher を書くと誤解を招くため省略する。TaskCreated/TaskCompleted は matcher 指定可。",
@@ -138,19 +145,34 @@
       "plan": "上流生成物のため保留。再発時に評価"
     },
     "36": {
-      "severity": "P1(feature)",
-      "impact": "評価ボードAPIは実装・本番反映済みだが、standaloneデザイン正本に評価ボード画面がなくUI未接続",
-      "plan": "デザイン正本の画面追加を伴うため、UIは将来のデザイン改修で対応（APIは利用可能）"
+      "severity": "Resolved",
+      "impact": "解消済み。評価ボードUIはIMP-19でstandaloneデザインとsrc/App.tsxへ実装・API接続済み（2026-08-31にコード確認）",
+      "plan": "なし"
     },
     "37": {
-      "severity": "P1(feature)",
-      "impact": "API検索は実装済み。フロントはクライアントサイド検索で代替中",
-      "plan": "UIのサーバーサイド検索連携はデザイン改修時に実施"
+      "severity": "Resolved",
+      "impact": "解消済み。一覧検索はIMP-28でAPI（qパラメータ）へデバウンス連携済み",
+      "plan": "なし"
     },
     "40": {
-      "severity": "P2(feature)",
-      "impact": "CSVエクスポートAPIは実装・本番反映済み（CSVインジェクション対策済み）",
-      "plan": "一覧画面からのダウンロード導線はデザイン改修時に実施"
+      "severity": "Resolved",
+      "impact": "解消済み。一覧・評価ボード・監査画面にCSV/Excel/HTML出力ボタンを実装済み",
+      "plan": "なし"
+    },
+    "6": {
+      "severity": "Partial",
+      "impact": "ステージ変更・承認のSlack通知APIとOutbox再送は実装・本番反映済み。週次ダイジェストも実装（2026-08-31）",
+      "plan": "実Slack Webhookでの本番通知確認はユーザー操作（webhook設定と実操作）"
+    },
+    "7": {
+      "severity": "Partial",
+      "impact": "毎時障害アラート・監査チェーン不正通知（2026-08-31）・週次レポート（2026-08-31）を実装",
+      "plan": "しきい値設定UIとCloudflare Observabilityダッシュボードは将来設計で対応"
+    },
+    "10": {
+      "severity": "Partial",
+      "impact": "migration 004本番適用済み（2026-08-12）。定期検証は毎時cron+Slack通知を実装（2026-08-31）",
+      "plan": "本番デプロイ（wrangler認証復旧後・承認後）とJWT付きverify APIによる本番確認"
     }
   }
 }

@@ -1,5 +1,32 @@
 # 現在の実装・検証ステータス
 
+## 0.9 最新（2026-08-31: ローカル実DBスモーク自動化）
+
+- `npm run dev:smoke` を追加: `server/dev-server.ts` を一時ポートで自動起動し、
+  health / identity / metrics / ideas / evaluation / users / 監査チェーンverify / CSV出力 /
+  ボディ上限413 / メソッド許可を検証して確実に停止する（`scripts/local-smoke.mjs`）。
+- ローカル実行結果: 10チェック ALL PASS（監査チェーン `valid:true`）。
+
+## 0.8 最新（2026-08-31: 週次レポート）
+
+- 毎週日曜 09:00 UTC（18:00 JST）にSlackへ週次レポートを送信する `sendWeeklyDigest` を追加
+  （登録アイデア数・今週の新規・AI呼び出し/失敗・Slack通知失敗・アクティブユーザー・監査チェーン状態）。
+- `wrangler.toml` のcronへ `0 9 * * 0` を追加。
+- 検証: `npm run verify` PASS（test 76件）、`worker:deploy:dry-run` PASS。
+  ローカルE2Eで週次レポート送信（capture serverで受信）と `report.weekly.sent` 監査記録を確認。
+
+## 0.7 最新（2026-08-31: 監査チェーン定期検証とスモーク堅牢化）
+
+- 監査チェーンverifyロジックを `verifyAuditChainFromDb` に共通化し、毎時cronで自動検証・不正時にSlack通知する
+  `checkAuditChainIntegrity` を追加（`audit.chain.invalid.notified` で監査記録）。
+- `mvp:smoke` を認証モード変化に耐えるよう堅牢化: 401時に診断メッセージを出力、`SMOKE_CF_ACCESS_JWT` 対応、
+  レスポンス形式想定外でクラッシュしないよう防御。
+- 検証: `npm run verify` PASS（test 75件）。ローカルDBでチェーン1行改変→Slack通知（captureサーバーで受信）→
+  監査記録→ハッシュ復元→`valid:true`（checked 86）までE2E確認。
+- 環境メモ: MVP URL（dxidea-mvp）は2026-08-31時点で `UNAUTHENTICATED`（Access JWT要求）を確認。
+  レビュー用に公開継続する場合は `ALLOW_LOCAL_AUTH_BYPASS=true` の再デプロイ、保護が意図なら
+  `SMOKE_CF_ACCESS_JWT` を設定してスモークを実行する。
+
 ## 0.6 最新（2026-08-31: ローカルPostgreSQL実行対応）
 
 - ローカルPostgreSQL（`dx_idea_mvp`）向け実行基盤を整備:
