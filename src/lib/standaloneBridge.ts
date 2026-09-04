@@ -78,6 +78,13 @@ export type StandaloneIntakeForm = {
   coordinationNeeded: string;
 };
 
+export type StandaloneGateDraft = {
+  gateNo: number | string;
+  authority: string;
+  approverEmail: string;
+  reason: string;
+};
+
 export type StandaloneState = {
   view: string;
   selectedIdeaId: string | number | null;
@@ -104,6 +111,10 @@ export type StandaloneState = {
   searchQueryIssue: string;
   searchQueryIdea: string;
   approvalDraft: { approverEmail: string; reason: string };
+  // Gate1-5（#50/#57）: 選択中アイデアの承認データ。実APIでは items+summary。
+  gateDraft: StandaloneGateDraft;
+  gateData: { items: unknown[]; summary: unknown[] | null } | null;
+  gateBusy: boolean;
   userForm: {
     email: string;
     name: string;
