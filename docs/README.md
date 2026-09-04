@@ -36,6 +36,10 @@
 | 28 | [MVP/Prototypeデモ手順書](28_mvp_prototype_demo.md) | MVP環境URL・ダミーデータ構成・デモ手順・既知制約 |
 | — | [2026-08-13総合アセスメント](audit/2026-08-13-assessment.md) | 精査結果・P0〜P3・MVP実装記録 |
 
+## 全社Idea-to-Valueプロセスにおける位置付け
+
+全社の「Idea to Value」プロセス（`docs/New/ai-dx-dev-process.md`、Gate1〜5・3 Authority・案件ID`DX-YYYY-NNNN`を規定）において、本リポジトリ（`Construction-DX-Idea`）はPhase 10〜17（開発案件化〜Production Deploy）を担う「Engineering SoR（System of Record）」の一実装である。全社Gate1〜5承認や案件ID体系そのものは`docs/New`配下の文書を正本とし、本docsはその範囲内でのシステム要件・設計・実装・運用を扱う。
+
 ## 文書の優先順位
 
 1. 要件定義書
