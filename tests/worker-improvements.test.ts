@@ -10,6 +10,7 @@ const {
   formatAlertMessage,
   formatWeeklyDigest,
   formatAuditChainAlert,
+  formatCaseId,
   isAllowedStageTransition,
   isValidIdempotencyKey,
   modelAllowedForProvider,
@@ -105,6 +106,17 @@ describe("idea registration idempotency key validation", () => {
     assert.equal(isValidIdempotencyKey(""), false);
     assert.equal(isValidIdempotencyKey("key with space"), false);
     assert.equal(isValidIdempotencyKey("key.with.dot"), false);
+  });
+});
+
+describe("case ID formatting (#48)", () => {
+  it("zero-pads the sequence to 4 digits", () => {
+    assert.equal(formatCaseId(2026, 1), "DX-2026-0001");
+    assert.equal(formatCaseId(2026, 42), "DX-2026-0042");
+  });
+
+  it("does not truncate sequences beyond 4 digits", () => {
+    assert.equal(formatCaseId(2026, 12345), "DX-2026-12345");
   });
 });
 
