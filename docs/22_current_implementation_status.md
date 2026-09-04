@@ -1,5 +1,26 @@
 # 現在の実装・検証ステータス
 
+## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
+
+- **DB はローカル PostgreSQL（Neon 廃止済み）で運用**: 本番 `.env`（`dx_idea`@127.0.0.1:5432）と
+  MVP `.env`（`dx_idea_mvp`@127.0.0.1:5432）の両方が既にローカルPostgreSQLを指していることを確認。
+- **本番ローカルDB `dx_idea` へ migration 001-009 を冪等適用**（006 case_id / 007 authority /
+  008 gate_approvals / 009 複数Authorityポリシー+SoD列）。適用後スモークで
+  health 200・監査チェーン `valid:true`（checked 13 / legacy 19）・metrics/users 正常を確認。
+- **Gate Policy Engine v2（複数Authority共同承認＋SoD）を実装**:
+  - migration 009: `idea_gate_approvals` を (idea_id, gate_no, required_authority) 単位の行へ拡張
+    （旧 unique(idea_id, gate_no) を置換）、`requested_by`（SoD監査）・`approval_seq` を追加。
+  - `gateAuthorityPolicy`（docs/New/ai-dx-dev-process.md #05の「承認の主な関与者」に基づく
+    Gate別必要Authority組合せ）と `summarizeGateApprovals`（全必要Authority承認でGate通過の集約）、
+    `evaluateGateSoD`（申請者≠承認者・提案者≠承認者・判定者）を src/lib/shared.ts に追加。
+  - worker: `/gates/init` はポリシー行を冪等生成（旧1行データへ不足Authority行を自動補完）、
+    request-approval/approval は Authority 行単位で処理し、前Gateは必要Authority全員の承認を必須化。
+  - 検証: `npm run verify` PASS（test 103件）・`npm audit` 0件。ローカル実API E2Eで
+    「Gate1の3Authority(business/domain/engineering)全員承認 → Gate1 approved → Gate2申請解禁」と
+    「提案者本人の判定はSoD 403」を実機確認（scripts/gate-policy-e2e.mjs）。
+- 本番モノレポ `DX-Project-Portfolio-Atlas/apps/dx-idea`（systemdが実行するコード）への
+  最新コード同期は別途（本番反映は承認後）。
+
 ## 0.10 最新（2026-08-31: 本番・MVPデプロイ完了（ローカルsystemd + Cloudflare Tunnel））
 
 - 現行アーキテクチャを確認: 本番 `dxidea.mirai-dx-platform.com` と MVP `dxidea-mvp.mirai-dx-platform.com` は

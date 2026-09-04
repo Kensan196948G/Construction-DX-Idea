@@ -5,7 +5,7 @@
 ![Status](https://img.shields.io/badge/status-Release%20Ready-brightgreen)
 ![Target](https://img.shields.io/badge/target-construction%20DX-green)
 ![AI](https://img.shields.io/badge/AI-Claude%20API-purple)
-![Infra](https://img.shields.io/badge/infra-Cloudflare%20%2B%20Neon-orange)
+![Infra](https://img.shields.io/badge/infra-Cloudflare%20%2B%20Local%20PostgreSQL-orange)
 ![Docs](https://img.shields.io/badge/docs-ready-brightgreen)
 
 `Construction-DX-Idea` は、土木建設の現場・技術・管理業務で出てくる「困りごと」を、AIとの壁打ちで整理し、DXアイデアとして登録・評価・進捗管理するためのWebシステム構想です。
@@ -24,7 +24,7 @@
 |---|---|
 | MVP/Prototype | **https://dxidea-mvp.mirai-dx-platform.com**（認証なし・右上にデモバッジ表示） |
 | 本番（既存・変更なし） | https://dxidea.mirai-dx-platform.com |
-| DB | Neon `mvp`ブランチ（本番から分離。架空ダミーデータ14アイデア/全ステージ・6ユーザー・監査チェーン等を投入済み） |
+| DB | **ローカル PostgreSQL** `dx_idea_mvp`（本番 `dx_idea` と分離。Neon は2026-08-31に廃止・ローカルPostgreSQLへ移行済み。架空ダミーデータ・6ユーザー・監査チェーン等を投入済み） |
 | AI | `demo`プロバイダー（決定的ローカル応答・課金なし・外部API呼び出しなし） |
 | 検証 | `npm run verify`（test 71件）PASS、`mvp:smoke` 17チェック ALL PASS（連続2回・監査verify valid:true）、登録→承認→コメントのE2E PASS |
 
@@ -37,14 +37,14 @@
 |---|---|---|
 | 🖥️ WebUI | デザイン適用済み / 主要機能ブリッジ済み | `Construction DX Idea (standalone).html` を正本として100%表示。困りごと入力、入力検査、AI質問、構造化、下書き保存、正式登録、ステージ変更、AI設定をWorker APIへ接続 |
 | ⚙️ Backend API | 実装済み | Cloudflare Workers + Hono API、Cloudflare Access JWT検証、AI利用制御、監査ログ、Slack通知・再送 |
-| 🗄️ Database | 実装済み | Neon PostgreSQL向け初期SQLマイグレーション |
+| 🗄️ Database | 実装済み | ローカル PostgreSQL（`dx_idea`=本番 / `dx_idea_mvp`=MVP、migration 001-009 冪等適用済み）。接続URLのホストでドライバ自動選択（neon.tech 以外は postgres.js TCP） |
 | 🤖 AI連携 | 実装済み | Claude / DeepSeek対応、最大3問の質問生成、構造化、プロンプトバージョン記録、プロバイダー別モデル許可リスト |
 | 🔐 Security | 実装済み | Secret分離、Access JWT検証、AI接続テスト、入力検査、マスキング、利用上限、ログ秘匿、ローカルSecretスキャン、プロンプトインジェクション対策、PII最小化、冪等登録、React/ReactDOM自己ホスト化 |
 | 🧪 Verify | 通過 | `npm run verify`（lint / test 49件 / build / build:production-api / security:scan）、`worker:deploy:dry-run`、`npm audit` 0件、CORS/ロール判定テスト、Secretスキャン |
 | 📋 評価・改善 | 実施済み（2026-08-12） | 改善前55.5点→改善後62.4点、代替率54.5%→61.0%。第2サイクルで承認API・コメント/編集・評価ボードUI・監査ハッシュチェーン・PWA・アラート・Issue復元を追加。詳細は `docs/25`〜`docs/27` |
 | 👥 ユーザー管理 | 実装済み | ログインユーザーの追加・編集・削除・ロール（user/admin/system_admin）をAPI/UIで管理（migration 005） |
 | 🧾 監査エクスポート | 実装済み | 監査ログのCSV・Excel・HTML出力（システム管理者限定） |
-| 🌐 Release | 🎉 **Production Ready — 本番フル稼働＋AI有効**（2026-07-28更新） | 本番URL: **https://dxidea.mirai-dx-platform.com**。Cloudflare Access認証（管理者メール+`mirai-const.co.jp`ドメイン許可）、Neon DB接続、管理者ロール判定まで全部動作。**AI機能有効化済み**（`AI_ENABLED=true`、`ANTHROPIC_API_KEY` Secret登録済み、モデル `claude-sonnet-5`、接続テスト成功）。保守フェーズ（`phase_mode=maintenance`） |
+| 🌐 Release | 🎉 **Production Ready — 本番フル稼働＋AI有効**（2026-07-28更新、DBは2026-08-31にローカルPostgreSQLへ移行） | 本番URL: **https://dxidea.mirai-dx-platform.com**。Cloudflare Access認証（管理者メール+`mirai-const.co.jp`ドメイン許可）、**ローカルPostgreSQL接続**（Neon廃止済み）、管理者ロール判定まで全部動作。**AI機能有効化済み**（`AI_ENABLED=true`、`ANTHROPIC_API_KEY` Secret登録済み、モデル `claude-sonnet-5`、接続テスト成功）。保守フェーズ（`phase_mode=maintenance`） |
 | 📌 GitHub Projects | 更新済み | [Construction-DX-Idea 開発司令盤](https://github.com/users/Kensan196948G/projects/42) |
 
 ```mermaid
@@ -83,6 +83,7 @@ flowchart TD
 | 2026-08-12 | **本番反映完了** | ✅ PR #2 merge → `wrangler deploy`（Version `0f311cb8`）→ migration 003/004本番適用 → バックアップ演習実施（`backup-20260812`）。承認UI・Excel出力・検索API連携・オフラインキューを追加し `npm run verify` PASS（test 54件） |
 | 2026-08-12 | DeepSeek・ユーザー管理・監査エクスポート | ✅ `npm run verify` PASS（test 56件）→ PR #22 merge → 本番デプロイ（Version `d1edb3c4`）→ migration 005適用。DeepSeek対応・ユーザー管理CRUD/ロール・監査CSV/Excel/HTML出力が本番稼働。`DEEPSEEK_API_KEY` Secret登録はユーザー操作待ち |
 | 2026-09-04 | 全社Idea-to-Valueプロセス対応（案件ID・Authority・Gate拡張） | ✅ ユーザー提供の全社DX開発プロセス資料（`docs/New/`）を反映。PR #51（docs対応関係）・#52（案件ID`DX-YYYY-NNNN`採番、migration 006、Issue #48）・#53（Authority Business/Domain/Engineering拡張、migration 007、Issue #49）・#54（Gate1-5多段階承認フロー、migration 008、Issue #50。WebUIは対象外でフォローアップ扱い）・#55（browserslist high脆弱性修正）を全てmerge。`npm run verify` PASS（test 87件）・`npm audit` 0件。本番migration適用・デプロイは未実施（承認待ち） |
+| 2026-09-04 | **本番ローカルDB移行＋Gate Policy Engine v2** | ✅ ユーザー指示でDBをローカルPostgreSQLへ移行確認。両`.env`が既にローカルPostgreSQL（本番`dx_idea`/MVP`dx_idea_mvp`@127.0.0.1、Neon廃止済み）であることを確認し、**本番DB `dx_idea` へ migration 001-009 を冪等適用**（health 200・監査チェーン`valid:true`）。複数Authority共同承認＋SoDの**Gate Policy Engine v2**を実装（migration 009、`gateAuthorityPolicy`/`summarizeGateApprovals`/`evaluateGateSoD`、workerのAuthority行単位処理）。`npm run verify` PASS（test 103件）・実API E2EでGate1=3Authority全員承認→Gate2解禁とSoD 403を確認。Neon前提記述をwrangler.toml/.env.example/READMEへ反映 |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>
@@ -268,12 +269,12 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    U["👤 利用者"] --> A["Cloudflare Access"]
-    A --> W["Cloudflare Workers API"]
+    U["👤 利用者"] --> A["Cloudflare Access / Tunnel"]
+    A --> W["API（Worker / ローカルsystemd）"]
     W --> S["入力検査・匿名化"]
     S --> AI["Claude API"]
     AI --> R["AI整理結果"]
-    R --> DB["Neon PostgreSQL"]
+    R --> DB["ローカル PostgreSQL"]
     DB --> N["Slack通知"]
     W --> L["監査ログ・利用量記録"]
 ```
@@ -285,7 +286,7 @@ flowchart TD
 | WebUI JavaScript | 禁止 |
 | HTML・設定ファイル | 禁止 |
 | GitHub | 禁止 |
-| Neon PostgreSQL | APIキー本体は禁止 |
+| ローカル PostgreSQL（旧Neon） | APIキー本体は禁止 |
 | Cloudflare Worker Secret | MVPで推奨 |
 | Cloudflare Secrets Store | 運用版で推奨 |
 
@@ -309,13 +310,13 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["利用者"] --> B["Construction-DX-Idea"]
-    B --> C["Cloudflare Access"]
-    C --> D["Cloudflare Workers<br/>SPA静的アセット + /api/* 同一オリジン"]
+    B --> C["Cloudflare Access / Tunnel"]
+    C --> D["API（Worker またはローカルsystemd）<br/>SPA静的アセット + /api/* 同一オリジン"]
     D --> E["入力検査・匿名化"]
     E --> F["Claude API"]
     F --> G["AI整理結果"]
     G --> H["利用者による確認"]
-    H --> I["Neon PostgreSQL"]
+    H --> I["ローカル PostgreSQL"]
     I --> J["Slack通知"]
 ```
 

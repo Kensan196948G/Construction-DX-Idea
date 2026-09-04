@@ -11,7 +11,9 @@ import type {
   AiSettingsPatch,
   AiUsageSummary,
   AuditLogEntry,
+  Authority,
   DashboardMetrics,
+  GateListResult,
   GateNo,
   Idea,
   IdeaComment,
@@ -24,7 +26,12 @@ import type {
   StructuredIdea,
   UserProfile,
 } from "./shared";
-import { gateNumbers, gateRequiredAuthority } from "./shared";
+import {
+  defaultGateApprovalRows,
+  gateNumbers,
+  gateAuthorityPolicy,
+  summarizeGateApprovals,
+} from "./shared";
 
 const gateApprovals = new Map<string, IdeaGateApproval[]>();
 
@@ -263,49 +270,77 @@ export const mockApi = {
     };
   },
 
-  async initGates(id: string): Promise<{ items: IdeaGateApproval[] }> {
-    if (!gateApprovals.has(id)) {
-      gateApprovals.set(
-        id,
-        gateNumbers.map((gateNo) => ({
-          id: `gate-${id}-${gateNo}`,
-          ideaId: id,
-          gateNo,
-          requiredAuthority: gateRequiredAuthority[gateNo],
-          status: "pending",
+  async initGates(id: string): Promise<GateListResult> {
+    if (!gateApprovals.has(id) || gateApprovals.get(id)!.length === 0) {
+      gateApprovals.set(id, [
+        ...defaultGateApprovalRows(id).map((row, index) => ({
+          ...row,
+          id: `gate-${id}-${row.gateNo}-${row.requiredAuthority}-${index}`,
           createdAt: now(),
           updatedAt: now(),
         })),
-      );
+      ]);
+    } else {
+      // 既存データへ不足Authority行を補完（worker の ensure 相当）。
+      const rows = gateApprovals.get(id)!;
+      const keys = new Set(rows.map((r) => `${r.gateNo}:${r.requiredAuthority}`));
+      let index = 0;
+      for (const gateNo of gateNumbers) {
+        for (const authority of gateAuthorityPolicy[gateNo]) {
+          if (!keys.has(`${gateNo}:${authority}`)) {
+            rows.push({
+              id: `gate-${id}-${gateNo}-${authority}-backfill-${index++}`,
+              ideaId: id,
+              gateNo,
+              requiredAuthority: authority,
+              status: "pending",
+              createdAt: now(),
+              updatedAt: now(),
+            });
+          }
+        }
+      }
     }
-    return { items: gateApprovals.get(id) ?? [] };
+    const items = gateApprovals.get(id) ?? [];
+    return { items, summary: summarizeGateApprovals(items) };
   },
 
-  async getGates(id: string): Promise<{ items: IdeaGateApproval[] }> {
-    return { items: gateApprovals.get(id) ?? [] };
+  async getGates(id: string): Promise<GateListResult> {
+    const items = gateApprovals.get(id) ?? [];
+    return { items, summary: summarizeGateApprovals(items) };
   },
 
-  async requestGateApproval(id: string, gateNo: GateNo, payload: ApprovalRequest): Promise<IdeaGateApproval> {
+  async requestGateApproval(id: string, gateNo: GateNo, payload: ApprovalRequest & { authority?: Authority }): Promise<IdeaGateApproval> {
     const gates = gateApprovals.get(id);
-    const gate = gates?.find((g) => g.gateNo === gateNo);
+    const authority = payload.authority ?? gateAuthorityPolicy[gateNo][0];
+    const gate = gates?.find((g) => g.gateNo === gateNo && g.requiredAuthority === authority);
     if (!gate) throw new Error("Gate not found");
     Object.assign(gate, {
       status: "requested",
       approverEmail: payload.approverEmail,
       requestedAt: now(),
+      requestedBy: "demo.user@example.com",
       reason: payload.reason ?? "",
       updatedAt: now(),
     });
     return gate;
   },
 
-  async decideGateApproval(id: string, gateNo: GateNo, payload: ApprovalDecision): Promise<IdeaGateApproval> {
+  async decideGateApproval(id: string, gateNo: GateNo, payload: ApprovalDecision & { authority?: Authority }): Promise<IdeaGateApproval> {
     const gates = gateApprovals.get(id);
-    const gate = gates?.find((g) => g.gateNo === gateNo);
+    // authority 未指定時は requested の行が1件のみならそれへフォールバック（worker準拠）。
+    let authority = payload.authority;
+    if (!authority) {
+      const requested = gates?.filter((g) => g.gateNo === gateNo && g.status === "requested") ?? [];
+      if (requested.length === 1) authority = requested[0].requiredAuthority;
+      else throw new Error(requested.length === 0 ? "Gate not requested" : "Authority ambiguous");
+    }
+    const gate = gates?.find((g) => g.gateNo === gateNo && g.requiredAuthority === authority);
     if (!gate) throw new Error("Gate not found");
     Object.assign(gate, {
       status: payload.decision === "approve" ? "approved" : payload.decision === "reject" ? "rejected" : "returned",
       actedAt: now(),
+      actedBy: "demo.user@example.com",
       reason: payload.reason,
       updatedAt: now(),
     });

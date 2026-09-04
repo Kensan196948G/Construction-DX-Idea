@@ -41,7 +41,7 @@ MVP:
 
 1. Cloudflare DashboardまたはCLIでSecretを更新する。
 2. 管理画面で接続テストを行う。
-3. Neonのキー識別情報、最終確認日時、更新者を更新する。
+3. DB（ローカルPostgreSQL）のキー識別情報、最終確認日時、更新者を更新する。
 4. 監査ログを確認する。
 
 運用版:
@@ -60,12 +60,27 @@ AI利用に情報漏えい、異常課金、誤設定の疑いがある場合:
 4. 影響範囲を整理する。
 5. 再開条件を管理者が承認する。
 
-## 6. バックアップ・復旧（2026-08-12追加）
+## 6. バックアップ・復旧（2026-08-12追加 / 2026-08-31ローカルPostgreSQL移行で更新）
 
-Neonは自動バックアップ（PITR）を提供する。復旧手順の検証は四半期に1回以上実施する。
+**【現行・2026-08-31以降】DBはローカルPostgreSQL**（Neonは廃止済み）。本番 `dx_idea` は
+ローカルPostgreSQL 16.14 上にあり、systemd（dx-idea-api.service）が postgres.js（TCP）で接続する。
 
 ```bash
-# Neon CLI（例。実行前に Neon プロジェクトIDを確認）
+# ローカルPostgreSQLのスナップショット（バックアップ）
+pg_dump "postgresql://<user>@127.0.0.1:5432/dx_idea" -Fc -f /backup/dx_idea_$(date +%Y%m%d).dump
+# 整合性確認（監査チェーン等）
+psql "postgresql://<user>@127.0.0.1:5432/dx_idea" -c "select count(*) from ideas; select count(*) from audit_logs;"
+```
+
+- 復旧手順の検証（ダンプ→一時DB `dx_idea_restore` へリストア→監査チェーンverify→スモーク）を
+  四半期に1回以上実施する（`scripts/neon-backup-drill.sh` はNeon時代の演習スクリプト。ローカル用に
+  接続先を読み替えて利用可能）。
+- RTO目標: 4時間 / RPO目標: 5分（ローカルPostgreSQLのWAL/スナップショット前提。ユーザー承認で確定）。
+
+（旧・Neon時代の記録）Neonは自動バックアップ（PITR）を提供していた。復旧手順の検証は四半期に1回以上実施していた。
+
+```bash
+# Neon CLI（旧・実行前に Neon プロジェクトIDを確認）
 neonctl branches create --name backup-YYYYMMDD --project-id twilight-cloud-06040828
 # バックアップブランチから一時接続URLを取得し、整合性SQLを実行
 neonctl connection-string --branch backup-YYYYMMDD --project-id twilight-cloud-06040828

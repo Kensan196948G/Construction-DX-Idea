@@ -33,7 +33,9 @@ import {
   authorities,
   gateLabels,
   gateNumbers,
-  gateRequiredAuthority,
+  gateAuthorityPolicy,
+  summarizeGateApprovals,
+  evaluateGateSoD,
   ideaStages,
   issueInputSchema,
   structuredIdeaSchema,
@@ -699,9 +701,11 @@ app.post(
   },
 );
 
-// Gate拡張・Authority制 多段階承認フロー（#50）。
-// 既存の単一承認（/api/ideas/:id/approval等）とは独立して動作し、
-// 全社Gate1〜5・3 Authority相当の段階承認を必要とするアイデアのみ
+// Gate Policy Engine v2 — 複数Authority共同承認フロー（#50/#57）。
+// 既存の単一承認（/api/ideas/:id/approval等）とは独立して動作する。
+// idea_gate_approvals は (idea_id, gate_no, required_authority) 単位の行を持ち、
+// gateAuthorityPolicy（src/lib/shared.ts）が定める必要Authority全員の承認が
+// 揃った時点で Gate が approved（通過）となる（migration 009）。
 // /gates/init で明示的に開始する（既存フローとの後方互換のため）。
 
 function parseGateNo(raw: string): GateNo {
@@ -712,6 +716,53 @@ function parseGateNo(raw: string): GateNo {
   return n as GateNo;
 }
 
+// Gate全体の現在状態を DB から取得し、集約サマリ付きで返す。
+async function loadGateSummary(db: DbSql, ideaId: string): Promise<{ rows: IdeaGateApproval[]; summary: ReturnType<typeof summarizeGateApprovals> }> {
+  const rows = (await db`
+    select * from idea_gate_approvals where idea_id = ${ideaId} order by gate_no asc, required_authority asc
+  `).map(mapGateApprovalRow);
+  return { rows, summary: summarizeGateApprovals(rows) };
+}
+
+// 必須Authorityの承認行が全て揃っているか（部分初期化データの補完が必要か）を判定。
+async function ensureGateRowsInitialized(
+  db: DbSql,
+  env: Env,
+  user: string,
+  ideaId: string,
+): Promise<IdeaGateApproval[]> {
+  const existing = await db`
+    select idea_id, gate_no, required_authority
+    from idea_gate_approvals
+    where idea_id = ${ideaId}
+  `;
+  const existingKeys = new Set(existing.map((r) => `${String(r.gate_no)}:${String(r.required_authority)}`));
+  const missing: Array<{ gateNo: GateNo; authority: Authority }> = [];
+  for (const gateNo of gateNumbers) {
+    for (const authority of gateAuthorityPolicy[gateNo]) {
+      if (!existingKeys.has(`${gateNo}:${authority}`)) {
+        missing.push({ gateNo, authority });
+      }
+    }
+  }
+  if (missing.length > 0) {
+    for (const { gateNo, authority } of missing) {
+      await db`
+        insert into idea_gate_approvals (idea_id, gate_no, required_authority, status)
+        values (${ideaId}, ${gateNo}, ${authority}, 'pending')
+        on conflict (idea_id, gate_no, required_authority) do nothing
+      `;
+    }
+    await audit(env, user, "idea.gates.backfilled", "idea", ideaId, {
+      addedRows: missing.map((m) => `Gate${m.gateNo}:${m.authority}`),
+    });
+  }
+  const rows = (await db`
+    select * from idea_gate_approvals where idea_id = ${ideaId} order by gate_no asc, required_authority asc
+  `).map(mapGateApprovalRow);
+  return rows;
+}
+
 app.post("/api/ideas/:id/gates/init", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   await requireAdmin(c.env, user);
@@ -719,32 +770,23 @@ app.post("/api/ideas/:id/gates/init", async (c) => {
   const id = c.req.param("id");
   const idea = await db`select id from ideas where id = ${id} limit 1`;
   if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
-  const existing = await db`select gate_no from idea_gate_approvals where idea_id = ${id}`;
-  if (existing.length > 0) {
-    throw new ApiError("GATES_ALREADY_INITIALIZED", "このアイデアのゲート承認は初期化済みです。", 409);
-  }
-  for (const gateNo of gateNumbers) {
-    await db`
-      insert into idea_gate_approvals (idea_id, gate_no, required_authority, status)
-      values (${id}, ${gateNo}, ${gateRequiredAuthority[gateNo]}, 'pending')
-      on conflict (idea_id, gate_no) do nothing
-    `;
-  }
-  const rows = await db`
-    select * from idea_gate_approvals where idea_id = ${id} order by gate_no asc
-  `;
-  await audit(c.env, user, "idea.gates.initialized", "idea", id, { gateCount: rows.length });
-  return c.json({ items: rows.map(mapGateApprovalRow) }, 201);
+  // 既存データ（008形式: Gate1行=主Authorityのみ）があれば不足Authority行を補完する。
+  // 全行揃っている場合は何もしない（冪等）。
+  await ensureGateRowsInitialized(db, c.env, user, id);
+  const { rows, summary } = await loadGateSummary(db, id);
+  await audit(c.env, user, "idea.gates.initialized", "idea", id, {
+    gateCount: rows.length,
+    policy: Object.fromEntries(gateNumbers.map((g) => [g, gateAuthorityPolicy[g]])),
+  });
+  return c.json({ items: rows, summary }, 201);
 });
 
 app.get("/api/ideas/:id/gates", async (c) => {
   await getUser(c.req.raw, c.env);
   const db = getDb(c.env);
   const id = c.req.param("id");
-  const rows = await db`
-    select * from idea_gate_approvals where idea_id = ${id} order by gate_no asc
-  `;
-  return c.json({ items: rows.map(mapGateApprovalRow) });
+  const { rows, summary } = await loadGateSummary(db, id);
+  return c.json({ items: rows, summary });
 });
 
 app.post(
@@ -752,6 +794,8 @@ app.post(
   zValidator(
     "json",
     z.object({
+      // 対象Authority行。省略時は主承認Authority（gateAuthorityPolicy[gateNo][0]）へ後方互換。
+      authority: z.enum(authorities).optional(),
       approverEmail: z.string().email().max(320),
       reason: z.string().max(500).optional(),
     }),
@@ -761,38 +805,53 @@ app.post(
     const db = getDb(c.env);
     const id = c.req.param("id");
     const gateNo = parseGateNo(c.req.param("gateNo"));
-    const request = c.req.valid("json") as ApprovalRequest;
+    const request = c.req.valid("json") as ApprovalRequest & { authority?: Authority };
     const idea = await db`select id, created_by from ideas where id = ${id} limit 1`;
     if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const ideaCreator = String(idea[0].created_by);
     const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
-    const isOwner = String(idea[0].created_by).toLowerCase() === user.toLowerCase();
+    const isOwner = ideaCreator.toLowerCase() === user.toLowerCase();
     if (!isAdmin && !isOwner) {
       throw new ApiError("FORBIDDEN", "承認依頼は提出者本人または管理者のみ可能です。", 403);
     }
+    // SoD: 申請者自身・アイデア提案者を承認者にできない。
+    const requiredAuthority = request.authority ?? gateAuthorityPolicy[gateNo][0];
+    const sodMessage = evaluateGateSoD({
+      ideaCreator,
+      requester: user,
+      approverEmail: request.approverEmail,
+      requiredAuthority,
+    });
+    if (sodMessage) {
+      throw new ApiError("GATE_SOD_VIOLATION", sodMessage, 403);
+    }
+    // 依頼対象Authority行の存在確認とロック。
     const locked = await db`
       select * from idea_gate_approvals
-      where idea_id = ${id} and gate_no = ${gateNo}
+      where idea_id = ${id} and gate_no = ${gateNo} and required_authority = ${requiredAuthority}
       for update
     `;
     if (!locked[0]) {
       throw new ApiError(
         "GATE_NOT_INITIALIZED",
-        "このアイデアのゲート承認は未初期化です。先に /gates/init を実行してください。",
+        `Gate${gateNo}の${requiredAuthority}承認は未初期化です。先に /gates/init を実行してください。`,
         422,
       );
     }
     const current = mapGateApprovalRow(locked[0]);
     if (current.status !== "pending" && current.status !== "rejected" && current.status !== "returned") {
-      throw new ApiError("GATE_INVALID_STATE", `Gate${gateNo}は現在${current.status}のため依頼できません。`, 422);
+      throw new ApiError("GATE_INVALID_STATE", `Gate${gateNo}（${requiredAuthority}）は現在${current.status}のため依頼できません。`, 422);
     }
+    // 前Gate（gateNo-1）は必要Authority全てが approved であること。
     if (gateNo > 1) {
-      const prev = await db`
-        select status from idea_gate_approvals where idea_id = ${id} and gate_no = ${gateNo - 1} limit 1
+      const prevRows = await db`
+        select * from idea_gate_approvals where idea_id = ${id} and gate_no = ${gateNo - 1}
       `;
-      if (!prev[0] || String(prev[0].status) !== "approved") {
+      const prevSummary = summarizeGateApprovals(prevRows.map(mapGateApprovalRow)).find((s) => s.gateNo === gateNo - 1);
+      if (!prevSummary || prevSummary.status !== "approved") {
         throw new ApiError(
           "GATE_PREREQUISITE_NOT_MET",
-          `Gate${gateNo - 1}の承認が完了するまでGate${gateNo}を依頼できません。`,
+          `Gate${gateNo - 1}の承認（必要Authority全員）が完了するまでGate${gateNo}を依頼できません。`,
           422,
         );
       }
@@ -803,18 +862,20 @@ app.post(
       set status = 'requested',
           approver_email = ${request.approverEmail.toLowerCase()},
           requested_at = now(),
+          requested_by = ${user},
           acted_at = null,
           acted_by = null,
           reason = ${reason},
           updated_at = now()
-      where idea_id = ${id} and gate_no = ${gateNo}
+      where idea_id = ${id} and gate_no = ${gateNo} and required_authority = ${requiredAuthority}
       returning *
     `;
     const gate = mapGateApprovalRow(rows[0]);
     await audit(c.env, user, "idea.gate.approval.requested", "idea", id, {
       gateNo,
-      approverEmail: gate.approverEmail,
       requiredAuthority: gate.requiredAuthority,
+      approverEmail: gate.approverEmail,
+      requestedBy: user,
     });
     void notifySlackEvent(
       c.env,
@@ -829,7 +890,7 @@ app.post(
         `理由: ${reason}`,
         `${c.env.APP_BASE_URL}/ideas/${id}`,
       ].join("\n"),
-      `gate.approval.requested:idea:${id}:gate${gateNo}:${gate.approverEmail ?? ""}`,
+      `gate.approval.requested:idea:${id}:gate${gateNo}:${gate.requiredAuthority}:${gate.approverEmail ?? ""}`,
     );
     return c.json(gate);
   },
@@ -840,6 +901,8 @@ app.post(
   zValidator(
     "json",
     z.object({
+      // 対象Authority行。省略時は「requestedの行が1件のみ」の場合だけ主承認へフォールバック。
+      authority: z.enum(authorities).optional(),
       decision: z.enum(["approve", "reject", "return"]),
       reason: z.string().min(1).max(500),
     }),
@@ -849,16 +912,36 @@ app.post(
     const db = getDb(c.env);
     const id = c.req.param("id");
     const gateNo = parseGateNo(c.req.param("gateNo"));
-    const decision = c.req.valid("json") as ApprovalDecision;
+    const body = c.req.valid("json") as ApprovalDecision & { authority?: Authority };
+    const idea = await db`select id, created_by from ideas where id = ${id} limit 1`;
+    if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const ideaCreator = String(idea[0].created_by);
+
+    // 対象Authorityの解決: 明示指定 or 単一requested行へフォールバック。
+    let authority = body.authority;
+    if (!authority) {
+      const requestedRows = await db`
+        select required_authority from idea_gate_approvals
+        where idea_id = ${id} and gate_no = ${gateNo} and status = 'requested'
+      `;
+      if (requestedRows.length === 1) {
+        authority = String(requestedRows[0].required_authority) as Authority;
+      } else if (requestedRows.length === 0) {
+        throw new ApiError("GATE_NOT_REQUESTED", "承認依頼中のGate行がありません。", 422);
+      } else {
+        throw new ApiError("GATE_AUTHORITY_AMBIGUOUS", "判定対象のAuthorityを指定してください。", 422);
+      }
+    }
+
     const locked = await db`
       select * from idea_gate_approvals
-      where idea_id = ${id} and gate_no = ${gateNo}
+      where idea_id = ${id} and gate_no = ${gateNo} and required_authority = ${authority}
       for update
     `;
-    if (!locked[0]) throw new ApiError("NOT_FOUND", "Gate not found.", 404);
+    if (!locked[0]) throw new ApiError("NOT_FOUND", `Gate${gateNo}（${authority}）が見つかりません。`, 404);
     const current = mapGateApprovalRow(locked[0]);
     if (current.status !== "requested") {
-      throw new ApiError("GATE_NOT_REQUESTED", "承認依頼中のGateのみ判定できます。", 422);
+      throw new ApiError("GATE_NOT_REQUESTED", `承認依頼中のGate行のみ判定できます（現在: ${current.status}）。`, 422);
     }
     const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
     const isAssignedApprover = current.approverEmail?.toLowerCase() === user.toLowerCase();
@@ -867,9 +950,22 @@ app.post(
     if (!isAdmin && !hasRequiredAuthority) {
       throw new ApiError(
         "FORBIDDEN",
-        `Gate${gateNo}の承認には${current.requiredAuthority} Authorityを持つ承認者本人、または管理者権限が必要です。`,
+        `Gate${gateNo}（${current.requiredAuthority}）の承認には${current.requiredAuthority} Authorityを持つ承認者本人、または管理者権限が必要です。`,
         403,
       );
+    }
+    // SoD: 提案者自身による判定は管理者でも禁止（docs/New/ai-dx-dev-process.md #06）。
+    const sodMessage = evaluateGateSoD({
+      ideaCreator,
+      requester: current.requestedBy ?? "",
+      approverEmail: current.approverEmail,
+      actor: user,
+      actorAuthority,
+      requiredAuthority: current.requiredAuthority,
+      isAdmin,
+    });
+    if (sodMessage) {
+      throw new ApiError("GATE_SOD_VIOLATION", sodMessage, 403);
     }
     const statusMap = {
       approve: "approved" as const,
@@ -878,32 +974,37 @@ app.post(
     };
     const rows = await db`
       update idea_gate_approvals
-      set status = ${statusMap[decision.decision]},
+      set status = ${statusMap[body.decision]},
           acted_at = now(),
           acted_by = ${user},
-          reason = ${decision.reason},
+          reason = ${body.reason},
           updated_at = now()
-      where idea_id = ${id} and gate_no = ${gateNo}
+      where idea_id = ${id} and gate_no = ${gateNo} and required_authority = ${authority}
       returning *
     `;
     const gate = mapGateApprovalRow(rows[0]);
     await audit(c.env, user, "idea.gate.approval.decided", "idea", id, {
       gateNo,
-      decision: decision.decision,
       requiredAuthority: gate.requiredAuthority,
+      decision: body.decision,
+      decidedBy: user,
     });
     // 全社Gate1〜5の集約結果を、既存の単一承認フィールド（migration 004）へ反映する。
-    // Gate5承認完了で全体approved、いずれかのGateで却下・差戻しがあれば全体もそれに従う。
-    if (decision.decision === "approve" && gateNo === gateNumbers[gateNumbers.length - 1]) {
+    // 集約は summarizeGateApprovals に従い「必要Authority全員がapproved」でGate通過とする。
+    const { summary } = await loadGateSummary(db, id);
+    const decidedGate = summary.find((s) => s.gateNo === gateNo);
+    const gateApproved = decidedGate?.status === "approved";
+    const allGatesApproved = summary.every((s) => s.status === "approved");
+    if (body.decision === "approve" && gateApproved && allGatesApproved) {
       await db`
         update ideas
-        set approval_status = 'approved', approval_acted_at = now(), approval_reason = ${decision.reason}
+        set approval_status = 'approved', approval_acted_at = now(), approval_reason = ${body.reason}
         where id = ${id}
       `;
-    } else if (decision.decision !== "approve") {
+    } else if (body.decision !== "approve") {
       await db`
         update ideas
-        set approval_status = ${statusMap[decision.decision]}, approval_acted_at = now(), approval_reason = ${decision.reason}
+        set approval_status = ${statusMap[body.decision]}, approval_acted_at = now(), approval_reason = ${body.reason}
         where id = ${id}
       `;
     }
@@ -914,12 +1015,13 @@ app.post(
       id,
       [
         `${gateLabels[gateNo]} 判定`,
-        `判定: ${decision.decision}`,
+        `Authority: ${gate.requiredAuthority}`,
+        `判定: ${body.decision}`,
         `判定者: ${user}`,
-        `理由: ${decision.reason}`,
+        `理由: ${body.reason}`,
         `${c.env.APP_BASE_URL}/ideas/${id}`,
       ].join("\n"),
-      `gate.approval.decided:idea:${id}:gate${gateNo}:${decision.decision}:${decision.reason}`,
+      `gate.approval.decided:idea:${id}:gate${gateNo}:${gate.requiredAuthority}:${body.decision}:${body.reason}`,
     );
     return c.json(gate);
   },
@@ -3247,6 +3349,8 @@ function mapGateApprovalRow(row: Record<string, unknown>): IdeaGateApproval {
     requestedAt: row.requested_at ? toIsoString(row.requested_at) : undefined,
     actedAt: row.acted_at ? toIsoString(row.acted_at) : undefined,
     actedBy: row.acted_by ? String(row.acted_by) : undefined,
+    requestedBy: row.requested_by ? String(row.requested_by) : undefined,
+    approvalSeq: row.approval_seq != null ? Number(row.approval_seq) : undefined,
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
   };
