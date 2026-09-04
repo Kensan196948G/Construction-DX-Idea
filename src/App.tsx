@@ -15,7 +15,7 @@ import {
   validateIssueInput,
 } from "./lib/standaloneBridge";
 import type { StandaloneState } from "./lib/standaloneBridge";
-import type { AuditLogEntry, Authority, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
+import type { AuditLogEntry, Authority, GateNo, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
 import { authorities } from "./lib/shared";
 
 const designPath = "/design/construction-dx-idea.html";
@@ -45,6 +45,10 @@ type StandaloneComponent = {
   exportExcel?: () => void;
   requestApproval?: () => void;
   decideApproval?: (decision: string) => () => void;
+  loadGatesForSelected?: () => Promise<void>;
+  initGates?: () => Promise<void>;
+  requestGateApproval?: () => Promise<void>;
+  decideGateApproval?: (decision: string) => () => Promise<void>;
   saveUser?: () => void;
   deleteUser?: (id: string | number) => void;
   toggleUserStatus?: (id: string | number) => void;
@@ -166,6 +170,11 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.decideApproval = (decision: string) => () => {
     void decideApprovalThroughApi(component, decision);
   };
+  component.loadGatesForSelected = () => loadGatesForSelected(component);
+  component.initGates = () => initGatesThroughApi(component);
+  component.requestGateApproval = () => requestGateApprovalThroughApi(component);
+  component.decideGateApproval = (decision: string) => () =>
+    decideGateApprovalThroughApi(component, decision);
   component.saveUser = () => {
     void saveUserThroughApi(component);
   };
@@ -199,6 +208,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     component.setState({ view });
     if (view === "detail") {
       void loadCommentsForSelected(component);
+      void loadGatesForSelected(component);
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
@@ -890,6 +900,121 @@ async function decideApprovalThroughApi(component: StandaloneComponent, decision
     }));
     component.pushAudit?.("承認判定", `「${mapped.title}」を${decision}`);
   } catch (error) {
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+// ---- Gate1-5 承認フロー APIブリッジ（#50/#57）----
+// standalone HTML はローカル状態遷移（モック）を持ち、実API接続時は
+// このブリッジが component の gate メソッドを差し替えてAPIを呼ぶ。
+
+function selectedIdeaForGate(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  return idea && idea.apiStage ? idea : null;
+}
+
+function setGateData(
+  component: StandaloneComponent,
+  data: { items: unknown[]; summary: unknown[] | null },
+) {
+  component.setState({ gateData: data, gateBusy: false });
+}
+
+function setGateBusy(component: StandaloneComponent, busy: boolean) {
+  component.setState({ gateBusy: busy });
+}
+
+async function loadGatesForSelected(component: StandaloneComponent) {
+  const idea = selectedIdeaForGate(component);
+  if (!idea) return;
+  try {
+    const result = await api.getGates(String(idea.id));
+    // itemsが空 = まだ /gates/init されていない。開始ボタンを表示するため null に戻す。
+    const initialized = result.items.length > 0;
+    setGateData(component, {
+      items: initialized ? result.items : [],
+      summary: initialized ? (result.summary ?? null) : null,
+    });
+    if (!initialized) {
+      // gateData=null 相当にする（gateInitEnabled=true で開始ボタン表示）。
+      component.setState({ gateData: null, gateBusy: false });
+    }
+  } catch (error) {
+    showToast(component, `Gate状態を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function initGatesThroughApi(component: StandaloneComponent) {
+  const idea = selectedIdeaForGate(component);
+  if (!idea) return;
+  setGateBusy(component, true);
+  try {
+    const result = await api.initGates(String(idea.id));
+    setGateData(component, { items: result.items, summary: result.summary ?? null });
+    component.pushAudit?.("Gate初期化", `「${idea.title}」のGate1〜5承認を開始`);
+  } catch (error) {
+    setGateBusy(component, false);
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function requestGateApprovalThroughApi(component: StandaloneComponent) {
+  const idea = selectedIdeaForGate(component);
+  if (!idea) return;
+  const { gateNo, authority, approverEmail, reason } = component.state.gateDraft;
+  const authorityValue = authority || "business";
+  if (!approverEmail.trim()) {
+    showToast(component, "承認者メールを入力してください。");
+    return;
+  }
+  setGateBusy(component, true);
+  try {
+    await api.requestGateApproval(String(idea.id), Number(gateNo) as GateNo, {
+      authority: authorityValue as Authority,
+      approverEmail: approverEmail.trim(),
+      reason: reason.trim() || undefined,
+    });
+    await loadGatesForSelected(component);
+    setGateBusy(component, false);
+    component.setState((state) => ({
+      gateDraft: { ...state.gateDraft, approverEmail: "", reason: "" },
+      toast: { message: `Gate${gateNo}（${authorityValue}）の承認依頼を送信しました。` },
+    }));
+    component.pushAudit?.("Gate承認依頼", `「${idea.title}」Gate${gateNo}/${authorityValue}`);
+  } catch (error) {
+    setGateBusy(component, false);
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function decideGateApprovalThroughApi(component: StandaloneComponent, decision: string) {
+  const idea = selectedIdeaForGate(component);
+  if (!idea) return;
+  const { gateNo, authority, reason } = component.state.gateDraft;
+  const authorityValue = authority || "business";
+  if (!reason.trim()) {
+    showToast(component, "判定理由を入力してください。");
+    return;
+  }
+  if (!["approve", "return", "reject"].includes(decision)) return;
+  setGateBusy(component, true);
+  try {
+    await api.decideGateApproval(String(idea.id), Number(gateNo) as GateNo, {
+      authority: authorityValue as Authority,
+      decision: decision as "approve" | "return" | "reject",
+      reason: reason.trim(),
+    });
+    await loadGatesForSelected(component);
+    setGateBusy(component, false);
+    component.setState((state) => ({
+      gateDraft: { ...state.gateDraft, reason: "" },
+      toast: { message: `Gate${gateNo}（${authorityValue}）の判定を記録しました: ${decision}` },
+    }));
+    component.pushAudit?.("Gate判定", `「${idea.title}」Gate${gateNo}/${authorityValue}: ${decision}`);
+  } catch (error) {
+    setGateBusy(component, false);
     showToast(component, toErrorMessage(error));
   }
 }

@@ -608,9 +608,69 @@ a:hover { text-decoration: underline; }
                   <sc-if value="{{ selectedIdeaView.approvalShowDecision }}" hint-placeholder-val="{{ false }}">
                     <textarea value="{{ approvalDraft.reason }}" onChange="{{ onApprovalReasonChange }}" rows="2" placeholder="判定理由（必須）" style="font-size:12.5px;padding:8px 10px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;resize:none;box-sizing:border-box;width:100%;"></textarea>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                      <button onClick="{{ decideApproval('approve') }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">承認</button>
-                      <button onClick="{{ decideApproval('return') }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #B5701A;background:#B5701A;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">差戻し</button>
-                      <button onClick="{{ decideApproval('reject') }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #C5392F;background:#C5392F;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">却下</button>
+                      <button onClick="{{ decideApprove }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">承認</button>
+                      <button onClick="{{ decideReturn }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #B5701A;background:#B5701A;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">差戻し</button>
+                      <button onClick="{{ decideReject }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #C5392F;background:#C5392F;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">却下</button>
+                    </div>
+                  </sc-if>
+                </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="font-size:14px;font-weight:600;color:#1A2433;">🚪 Gate1〜5 承認フロー</div>
+                    <sc-if value="{{ gateInitEnabled }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ initGates }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;">Gate承認を開始</button>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ gateInitEnabled }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:12px;color:#8A97A8;">Gate1（企画承認）から順に、必要なAuthority（Business / Domain / Engineering）の承認を進めます。</div>
+                  </sc-if>
+                  <sc-if value="{{ gateEnabled }}" hint-placeholder-val="{{ false }}">
+                    <sc-for list="{{ gateRows }}" as="gr" hint-placeholder-count="5">
+                      <div style="border:1px solid #EEF1F5;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                          <span style="font-size:12px;font-weight:600;color:#1A2433;">{{ gr.label }}</span>
+                          <span style="{{ gr.statusStyle }}">{{ gr.statusLabel }}</span>
+                        </div>
+                        <sc-for list="{{ gr.approvals }}" as="ap" hint-placeholder-count="2">
+                          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;">
+                            <span style="{{ ap.authorityStyle }}">{{ ap.authorityLabel }}</span>
+                            <span style="color:#5A6678;display:flex;align-items:center;gap:6px;min-width:0;">
+                              <span style="{{ ap.statusStyle }}">{{ ap.statusLabel }}</span>
+                              <sc-if value="{{ ap.approverEmail }}" hint-placeholder-val="{{ false }}">
+                                <span style="color:#8A97A8;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;">{{ ap.approverEmail }}</span>
+                              </sc-if>
+                            </span>
+                          </div>
+                        </sc-for>
+                        <sc-if value="{{ gr.canRequest }}" hint-placeholder-val="{{ false }}">
+                          <div style="font-size:11px;color:#2E5AAC;font-weight:600;">✓ 申請可能（次の承認者を選択して依頼）</div>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                    <div style="border-top:1px solid #EEF1F5;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
+                      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <select value="{{ gateDraft.gateNo }}" onChange="{{ onGateNoChange }}" style="flex:1;font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                          <option value="1">Gate1 企画承認</option>
+                          <option value="2">Gate2 開発承認</option>
+                          <option value="3">Gate3 MVP承認</option>
+                          <option value="4">Gate4 本番移行承認</option>
+                          <option value="5">Gate5 Release承認</option>
+                        </select>
+                        <select value="{{ gateDraft.authority }}" onChange="{{ onGateAuthorityChange }}" style="flex:1;font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                          <option value="business">Business（経営企画）</option>
+                          <option value="domain">Domain（建設土木技術）</option>
+                          <option value="engineering">Engineering（IT・DX）</option>
+                        </select>
+                      </div>
+                      <input value="{{ gateDraft.approverEmail }}" onChange="{{ onGateApproverChange }}" placeholder="承認者メール（そのAuthority保有者）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                      <textarea value="{{ gateDraft.reason }}" onChange="{{ onGateReasonChange }}" rows="2" placeholder="依頼理由／判定理由" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:none;box-sizing:border-box;width:100%;"></textarea>
+                      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button onClick="{{ requestGateApproval }}" disabled="{{ gateRequestDraftInvalid }}" style="{{ gateDecisionStyle('#E08A2B') }}">承認を依頼</button>
+                        <button onClick="{{ decideGateApprove }}" disabled="{{ gateReasonInvalid }}" style="{{ gateDecisionStyle('#1F8255') }}">承認</button>
+                        <button onClick="{{ decideGateReturn }}" disabled="{{ gateReasonInvalid }}" style="{{ gateDecisionStyle('#B5701A') }}">差戻し</button>
+                        <button onClick="{{ decideGateReject }}" disabled="{{ gateReasonInvalid }}" style="{{ gateDecisionStyle('#C5392F') }}">却下</button>
+                      </div>
+                      <div style="font-size:11px;color:#8A97A8;">Gateの通過には、そのGateに必要なAuthority全員の承認が必要です（SoD: 提案者・申請者は承認できません）。</div>
                     </div>
                   </sc-if>
                 </div>
@@ -1001,6 +1061,11 @@ class Component extends DCLogic {
     adminSettings: { provider: 'claude', model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false, keyLast4: '', keyStatus: 'not_configured' },
     commentDraft: '',
     approvalDraft: { approverEmail: '', reason: '' },
+    gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '' },
+    // 選択中アイデアのGate1-5承認データ（初期化されていなければnull）。
+    // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
+    gateData: null,
+    gateBusy: false,
     userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null },
     users: this.makeSeedUsers(),
     integrations: this.makeSeedIntegrations(),
@@ -1030,7 +1095,11 @@ class Component extends DCLogic {
 
   goTo = (view) => { this.setState({ view }); };
   goToIntake = () => this.goTo('intake');
-  selectIdea = (id) => this.setState({ selectedIdeaId: id, view: 'detail' });
+  selectIdea = (id) => {
+    this.setState({ selectedIdeaId: id, view: 'detail' });
+    // 実API接続時はブリッジが loadGatesForSelected を差し替え、Gate状態を読み込む。
+    if (this.loadGatesForSelected) void this.loadGatesForSelected();
+  };
   backToList = () => {
     const idea = this.state.ideas.find((i) => i.id === this.state.selectedIdeaId);
     this.goTo(idea && idea.type === 'idea' ? 'listIdea' : 'list');
@@ -1117,6 +1186,103 @@ class Component extends DCLogic {
       ideas: s.ideas.map((i) => (i.id === id ? { ...i, approvalStatus: status } : i)),
       approvalDraft: { ...s.approvalDraft, reason: '' },
       toast: { message: `承認判定を記録しました（モック表示。本番はAPI経由）: ${status}` },
+    }));
+  };
+
+  // ---- Gate1-5 承認フロー（#50/#57）----
+  // 実API接続時は src/App.tsx ブリッジが下記メソッドを差し替え、
+  // initGates / requestGateApproval / decideGateApproval を API 経由にする。
+  // スタンドアロン（モック）時はローカル状態遷移で動作する。
+
+  // モック用: 選択中アイデアのGate行を生成する（pending の必要Authority行一式）。
+  buildMockGateData = () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return null;
+    const policy = {
+      1: ['business', 'domain', 'engineering'],
+      2: ['domain', 'engineering'],
+      3: ['domain', 'engineering', 'business'],
+      4: ['business', 'domain'],
+      5: ['engineering'],
+    };
+    const nowIso = new Date().toISOString();
+    const items = [1, 2, 3, 4, 5].flatMap((gateNo) =>
+      policy[gateNo].map((authority) => ({
+        id: `gate-${id}-${gateNo}-${authority}`,
+        ideaId: String(id),
+        gateNo,
+        requiredAuthority: authority,
+        status: 'pending',
+        reason: undefined,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      })),
+    );
+    return { items, summary: null };
+  };
+
+  // 詳細表示時に選択中アイデアのGate状態を読み込む（ブリッジがAPI版へ差し替え）。
+  // モック時は「未初期化（開始ボタン表示）」のまま維持し、開始後に buildMockGateData を適用する。
+  loadGatesForSelected = async () => {
+    // no-op: モックでは initGates が gateData を生成する。
+  };
+
+  updateGateDraftField = (key) => (e) => {
+    this.setState({ gateDraft: { ...this.state.gateDraft, [key]: e.target.value } });
+  };
+
+  gateStatusLabel = (status) =>
+    ({ pending: '未依頼', requested: '承認依頼中', approved: '承認済み', rejected: '却下', returned: '差戻し' }[status] || status);
+
+  // Gate承認を開始（初期化）。実APIでは /gates/init（管理者）。
+  initGates = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    this.setState({ gateData: this.buildMockGateData(), toast: { message: 'Gate1〜5承認を開始しました（モック表示。本番はAPI経由）。' } });
+  };
+
+  // 選択中のGate行へ承認依頼を送る（実APIでは authority を指定）。
+  requestGateApproval = async () => {
+    const { gateNo, authority, approverEmail, reason } = this.state.gateDraft;
+    const id = this.state.selectedIdeaId;
+    if (!approverEmail.trim() || id == null) {
+      this.setState({ toast: { message: '承認者メールを入力してください。' } });
+      return;
+    }
+    this.setState((s) => ({
+      gateData: s.gateData && {
+        ...s.gateData,
+        items: s.gateData.items.map((g) =>
+          g.gateNo === Number(gateNo) && g.requiredAuthority === authority
+            ? { ...g, status: 'requested', approverEmail: approverEmail.trim(), requestedAt: new Date().toISOString(), requestedBy: 'local.dev@example.com', reason: reason || '（理由未記載）' }
+            : g,
+        ),
+      },
+      gateDraft: { ...s.gateDraft, approverEmail: '', reason: '' },
+      toast: { message: `Gate${gateNo}（${authority}）の承認を依頼しました（モック表示。本番はAPI経由）。` },
+    }));
+  };
+
+  // 判定（approve / return / reject）。実APIでは Gate と authority を指定。
+  decideGateApproval = (decision) => async () => {
+    const { gateNo, authority, reason } = this.state.gateDraft;
+    const id = this.state.selectedIdeaId;
+    if (!reason.trim() || id == null) {
+      this.setState({ toast: { message: '判定理由を入力してください。' } });
+      return;
+    }
+    const status = decision === 'approve' ? 'approved' : decision === 'return' ? 'returned' : 'rejected';
+    this.setState((s) => ({
+      gateData: s.gateData && {
+        ...s.gateData,
+        items: s.gateData.items.map((g) =>
+          g.gateNo === Number(gateNo) && g.requiredAuthority === authority
+            ? { ...g, status, actedAt: new Date().toISOString(), actedBy: 'local.dev@example.com', reason: reason.trim() }
+            : g,
+        ),
+      },
+      gateDraft: { ...s.gateDraft, reason: '' },
+      toast: { message: `Gate${gateNo}（${authority}）の判定を記録しました（モック表示。本番はAPI経由）: ${status}` },
     }));
   };
 
@@ -1625,6 +1791,77 @@ class Component extends DCLogic {
     const commentDraftInvalid = !s.commentDraft.trim();
     const submitCommentStyle = 'align-self:flex-end;background:#E08A2B;color:#fff;border:1px solid #E08A2B;padding:8px 14px;border-radius:8px;font-weight:600;font-size:12px;cursor:' + (commentDraftInvalid ? 'not-allowed' : 'pointer') + ';opacity:' + (commentDraftInvalid ? '.5' : '1') + ';';
 
+    // ---- Gate1-5 view-model（#50/#57）----
+    const gateLabelsMap = {
+      1: 'Gate1 企画承認', 2: 'Gate2 開発承認', 3: 'Gate3 MVP承認',
+      4: 'Gate4 本番移行承認', 5: 'Gate5 Release承認',
+    };
+    const gatePolicyMap = {
+      1: ['business', 'domain', 'engineering'],
+      2: ['domain', 'engineering'],
+      3: ['domain', 'engineering', 'business'],
+      4: ['business', 'domain'],
+      5: ['engineering'],
+    };
+    const gateAuthorityLabelMap = { business: 'Business', domain: 'Domain', engineering: 'Engineering' };
+    const gateStatusStyleMap = {
+      pending: this.badgeStyle('#8A97A8', '#F2F4F8'),
+      requested: this.badgeStyle('#2E5AAC', '#E9F0FB'),
+      approved: this.badgeStyle('#1F8255', '#E4F3EC'),
+      rejected: this.badgeStyle('#C5392F', '#FCE9E7'),
+      returned: this.badgeStyle('#B5701A', '#FDEFE0'),
+    };
+    const gateData = selectedIdeaRaw ? s.gateData : null;
+    const gateItems = gateData ? (gateData.items || []) : [];
+    // 選択中アイデアのGate別サマリ（必要Authority行を含む）。API summary が有ればそれを優先。
+    const gateRows = (selectedIdeaRaw ? [1, 2, 3, 4, 5] : []).map((gateNo) => {
+      const policy = gatePolicyMap[gateNo];
+      const rowsForGate = gateItems.filter((g) => Number(g.gateNo) === gateNo);
+      const approvals = policy.map((authority) => {
+        const existing = rowsForGate.find((g) => g.requiredAuthority === authority);
+        return existing
+          ? { ...existing }
+          : { gateNo, requiredAuthority: authority, status: 'pending', approverEmail: undefined, reason: undefined, requestedAt: undefined, actedAt: undefined, actedBy: undefined };
+      });
+      const status = approvals.every((a) => a.status === 'approved')
+        ? 'approved'
+        : approvals.some((a) => a.status === 'rejected')
+          ? 'rejected'
+          : approvals.some((a) => a.status === 'returned')
+            ? 'returned'
+            : approvals.some((a) => a.status === 'requested')
+              ? 'requested'
+              : 'pending';
+      // 前Gate（gateNo-1）の必要Authorityが全てapprovedなら申請可能（Gate1は常に可）。
+      const prevRows = gateItems.filter((g) => Number(g.gateNo) === gateNo - 1);
+      const prevApproved = gateNo === 1 || (prevRows.length > 0 && prevRows.every((g) => g.status === 'approved'));
+      // 前Gateが通過済みで、このGate内に承認依頼可能（pending/returned/rejected）な行が残る場合のみ申請可能
+      const canRequest = prevApproved && approvals.some((a) => ['pending', 'returned', 'rejected'].includes(a.status));
+      const hasRequested = approvals.some((a) => a.status === 'requested');
+      return {
+        gateNo,
+        label: gateLabelsMap[gateNo],
+        status,
+        statusLabel: this.gateStatusLabel(status),
+        statusStyle: gateStatusStyleMap[status] || gateStatusStyleMap.pending,
+        approvals: approvals.map((a) => ({
+          ...a,
+          authorityLabel: gateAuthorityLabelMap[a.requiredAuthority] || a.requiredAuthority,
+          authorityStyle: this.badgeStyle('#B5701A', '#FDEFE0'),
+          statusLabel: this.gateStatusLabel(a.status),
+          statusStyle: gateStatusStyleMap[a.status] || gateStatusStyleMap.pending,
+        })),
+        hasData: rowsForGate.length > 0,
+        canRequest,
+        hasRequested,
+      };
+    });
+    const gateEnabled = !!selectedIdeaRaw && !!gateData;
+    const gateInitEnabled = !!selectedIdeaRaw && !gateData && !s.gateBusy;
+    const gateRequestDraftInvalid = !(s.gateDraft.approverEmail && s.gateDraft.approverEmail.trim());
+    const gateReasonInvalid = !s.gateDraft.reason.trim();
+    const gateDecisionStyle = (fg, bg) => 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid ' + fg + ';background:' + fg + ';color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;';
+
     const authorityLabelMap = { business: 'Business', domain: 'Domain', engineering: 'Engineering' };
     const userRows = s.users.map((u) => {
       const active = u.status === 'active';
@@ -1792,7 +2029,32 @@ class Component extends DCLogic {
       onApprovalReasonChange: this.updateApprovalField('reason'),
       requestApproval: this.requestApproval,
       decideApproval: this.decideApproval,
+      // dc-runtime は引数付き呼び出し式（decideApproval('approve') 等）を解決できないため、
+      // 判定はクロージャで渡す（renderVals 経由の関数参照のみ解決可能）。
+      decideApprove: () => this.decideApproval('approve')(),
+      decideReturn: () => this.decideApproval('return')(),
+      decideReject: () => this.decideApproval('reject')(),
       exportExcel: this.exportExcel,
+
+      // Gate1-5（#50/#57）
+      gateDraft: s.gateDraft,
+      gateRows,
+      gateEnabled,
+      gateInitEnabled,
+      gateBusy: s.gateBusy,
+      gateRequestDraftInvalid,
+      gateReasonInvalid,
+      gateDecisionStyle,
+      onGateNoChange: this.updateGateDraftField('gateNo'),
+      onGateAuthorityChange: this.updateGateDraftField('authority'),
+      onGateApproverChange: this.updateGateDraftField('approverEmail'),
+      onGateReasonChange: this.updateGateDraftField('reason'),
+      initGates: this.initGates,
+      requestGateApproval: this.requestGateApproval,
+      // dc-runtime は引数付き呼び出し式を解決できないため、判定はクロージャで渡す。
+      decideGateApprove: () => this.decideGateApproval('approve')(),
+      decideGateReturn: () => this.decideGateApproval('return')(),
+      decideGateReject: () => this.decideGateApproval('reject')(),
 
       userRows, integrationRows,
       userForm: s.userForm,
