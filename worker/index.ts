@@ -1038,7 +1038,7 @@ app.post(
   const { stage, reason: rawReason } = c.req.valid("json");
   const reason = (rawReason ?? "").trim() || "（理由未記載）";
   const locked = await db`
-    select id, stage
+    select id, stage, case_id
     from ideas
     where id = ${id}
     for update
@@ -1052,6 +1052,9 @@ app.post(
       422,
     );
   }
+  // 下書きから正式ステージへ初めて進む際に案件IDを採番する（#48）。
+  const caseIdToAssign =
+    fromStage === "draft" && stage !== "draft" && !locked[0].case_id ? await issueCaseId(db) : null;
   if (
     String(locked[0].approval_status ?? "none") === "requested" &&
     ["mvp", "verification", "production_candidate", "production"].includes(stage)
@@ -1067,7 +1070,8 @@ app.post(
   }
   const rows = await db`
     update ideas
-    set stage = ${stage}
+    set stage = ${stage},
+        case_id = coalesce(case_id, ${caseIdToAssign})
     where id = ${id}
     returning *
   `;
@@ -1668,13 +1672,15 @@ async function insertIdea(
   const user = await getUser(c.req.raw, c.env);
   const db = getDb(c.env);
   assertStructuredIdeaSafe(structured);
+  // 下書き(draft)は全社案件として未確定のため案件IDを採番しない（#48）。
+  const caseId = stage === "draft" ? null : await issueCaseId(db);
   const rows = await db`
     insert into ideas (
       title, current_issue, target_business, target_users, current_workflow,
       improvement_idea, expected_effects, required_data, related_systems,
       implementation_options, security_notes, open_questions, mvp_candidate,
       mvp_done_definition, department, submitter_name, submitter_email,
-      coordination_needed, idempotency_key, stage, created_by
+      coordination_needed, idempotency_key, stage, created_by, case_id
     )
     values (
       ${structured.title}, ${structured.currentIssue}, ${structured.targetBusiness},
@@ -1687,7 +1693,7 @@ async function insertIdea(
       ${structured.mvpCandidate}, ${structured.mvpDoneDefinition},
       ${structured.department ?? ""}, ${structured.submitterName ?? ""},
       ${structured.submitterEmail ?? ""}, ${structured.coordinationNeeded ?? ""},
-      ${idempotencyKey ?? null}, ${stage}, ${user}
+      ${idempotencyKey ?? null}, ${stage}, ${user}, ${caseId}
     )
     on conflict (idempotency_key) where idempotency_key is not null
     do nothing
@@ -1715,6 +1721,25 @@ async function insertIdea(
     duplicated,
   });
   return { idea, duplicated };
+}
+
+// 案件ID（DX-YYYY-NNNN）の表示形式を組み立てる。DB採番結果の整形のみを担う純関数（#48）。
+function formatCaseId(year: number, seq: number): string {
+  return `DX-${year}-${String(seq).padStart(4, "0")}`;
+}
+
+// 案件ID（DX-YYYY-NNNN）を年別連番で採番する（#48）。
+// upsertのRETURNINGでアトミックに連番を払い出すため、同時登録でも重複しない。
+async function issueCaseId(db: DbSql): Promise<string> {
+  const year = new Date().getUTCFullYear();
+  const rows = await db`
+    insert into case_id_sequences (year, next_seq)
+    values (${year}, 2)
+    on conflict (year) do update set next_seq = case_id_sequences.next_seq + 1
+    returning next_seq - 1 as seq
+  `;
+  const seq = Number(rows[0]?.seq ?? 1);
+  return formatCaseId(year, seq);
 }
 
 function readIdempotencyKey(c: AppContext): string | undefined {
@@ -3177,6 +3202,7 @@ async function updateNotificationOutbox(
 function mapIdeaRow(row: Record<string, unknown>): Idea {
   return {
     id: String(row.id),
+    caseId: row.case_id ? String(row.case_id) : undefined,
     title: String(row.title),
     currentIssue: String(row.current_issue),
     targetBusiness: String(row.target_business),
@@ -3324,6 +3350,7 @@ export const workerSecurityTestHooks = {
   formatAuditChainAlert,
   estimateAiCost,
   parseGateNo,
+  formatCaseId,
   csvCell,
   xmlCell,
   evaluationScore,

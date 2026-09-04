@@ -100,6 +100,8 @@ export type StructuredIdea = z.infer<typeof structuredIdeaSchema>;
 
 export const ideaSchema = structuredIdeaSchema.extend({
   id: z.string(),
+  // DX-YYYY-NNNN形式の全社案件ID。下書き（stage=draft）の間は未採番（#48）。
+  caseId: z.string().optional(),
   stage: z.enum(ideaStages),
   approvalStatus: z.enum(approvalStatuses).optional(),
   approverEmail: z.string().max(320).optional(),

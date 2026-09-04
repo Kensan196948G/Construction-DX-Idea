@@ -11,6 +11,7 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | カラム | 型 | 内容 |
 |---|---|---|
 | id | uuid | アイデアID |
+| case_id | text | 全社案件ID `DX-YYYY-NNNN`（#48）。下書き（stage=draft）の間はnull |
 | title | text | タイトル |
 | current_issue | text | 現在の課題 |
 | improvement_idea | text | 改善案 |
@@ -182,6 +183,15 @@ erDiagram
 - audit_logs(resource_type, resource_id)
 - notification_outbox(status, next_attempt_at)
 - ai_monthly_usage_counters(subject_type, subject_id, usage_month)
+
+### case_id_sequences（#48）
+
+| カラム | 型 | 内容 |
+|---|---|---|
+| year | integer | 対象年（主キー） |
+| next_seq | integer | 次回払い出す連番 |
+
+`ideas.case_id`（`DX-{year}-{4桁連番}`）を年別にアトミック採番するためのカウンタ。`insert ... on conflict do update ... returning`で払い出すため、同時登録でも重複しない。
 
 ## 5. ローカル開発DB
 

@@ -25,6 +25,7 @@ GitHubはソースコード、設計書、Issue、実装進捗の正本とする
 - 関連ドキュメント
 - セキュリティ影響
 - テスト観点
+- 案件ID（`DX-YYYY-NNNN`。全社Idea-to-Valueプロセス上の案件と対応する場合のみ記載。`docs/New/ai-dx-dev-process.md`参照。対応する全社案件がないGitHub固有の作業（依存更新・CI整備等）は空欄でよい）
 
 ## 4. PRルール
 
