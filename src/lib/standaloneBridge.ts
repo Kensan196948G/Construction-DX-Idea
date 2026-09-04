@@ -115,6 +115,16 @@ export type StandaloneState = {
   gateDraft: StandaloneGateDraft;
   gateData: { items: unknown[]; summary: unknown[] | null } | null;
   gateBusy: boolean;
+  // 20フェーズ Idea-to-Value（migration 010）: 選択中アイデアのフェーズ情報。
+  phaseData: {
+    ideaId: string;
+    phaseNo: number;
+    phaseLabel: string;
+    phaseNote?: string;
+    phases: Array<{ no: number; label: string; stage: string; state: "done" | "current" | "todo" }>;
+  } | null;
+  phaseBusy: boolean;
+  phaseNoteDraft: string;
   userForm: {
     email: string;
     name: string;

@@ -49,6 +49,8 @@ type StandaloneComponent = {
   initGates?: () => Promise<void>;
   requestGateApproval?: () => Promise<void>;
   decideGateApproval?: (decision: string) => () => Promise<void>;
+  loadIdeaPhase?: () => Promise<void>;
+  advanceIdeaPhase?: () => Promise<void>;
   saveUser?: () => void;
   deleteUser?: (id: string | number) => void;
   toggleUserStatus?: (id: string | number) => void;
@@ -175,6 +177,8 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.requestGateApproval = () => requestGateApprovalThroughApi(component);
   component.decideGateApproval = (decision: string) => () =>
     decideGateApprovalThroughApi(component, decision);
+  component.loadIdeaPhase = () => loadIdeaPhase(component);
+  component.advanceIdeaPhase = () => advanceIdeaPhase(component);
   component.saveUser = () => {
     void saveUserThroughApi(component);
   };
@@ -209,6 +213,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     if (view === "detail") {
       void loadCommentsForSelected(component);
       void loadGatesForSelected(component);
+      void loadIdeaPhase(component);
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
@@ -1015,6 +1020,58 @@ async function decideGateApprovalThroughApi(component: StandaloneComponent, deci
     component.pushAudit?.("Gate判定", `「${idea.title}」Gate${gateNo}/${authorityValue}: ${decision}`);
   } catch (error) {
     setGateBusy(component, false);
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+// ---- 20フェーズ Idea-to-Value ブリッジ（migration 010）----
+
+function selectedIdeaForPhase(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  return idea && idea.apiStage ? idea : null;
+}
+
+async function loadIdeaPhase(component: StandaloneComponent) {
+  const idea = selectedIdeaForPhase(component);
+  if (!idea) return;
+  try {
+    const data = await api.getIdeaPhase(String(idea.id));
+    component.setState({
+      phaseData: {
+        ideaId: data.ideaId,
+        phaseNo: data.phaseNo,
+        phaseLabel: data.phaseLabel,
+        phaseNote: data.phaseNote,
+        phases: data.phases,
+      },
+      phaseBusy: false,
+    });
+  } catch (error) {
+    showToast(component, `フェーズ情報を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function advanceIdeaPhase(component: StandaloneComponent) {
+  const idea = selectedIdeaForPhase(component);
+  const data = component.state.phaseData;
+  if (!idea || !data) return;
+  const next = data.phaseNo + 1;
+  if (next > 20) {
+    showToast(component, "最終フェーズ（20）まで完了しています。");
+    return;
+  }
+  const note = component.state.phaseNoteDraft?.trim() || undefined;
+  component.setState({ phaseBusy: true });
+  try {
+    await api.updateIdeaPhase(String(idea.id), { phaseNo: next, reason: "フェーズ前進", note });
+    await loadIdeaPhase(component);
+    component.setState({ phaseBusy: false, phaseNoteDraft: "" });
+    component.pushAudit?.("フェーズ前進", `「${idea.title}」をフェーズ${next}へ`);
+    showToast(component, `フェーズを前進しました: ${next}`);
+  } catch (error) {
+    component.setState({ phaseBusy: false });
     showToast(component, toErrorMessage(error));
   }
 }

@@ -24,6 +24,7 @@ import type {
   IdeaHistory,
   IdeaListParams,
   IdeaStage,
+  IdeaValuePhaseEntry,
   IssueInput,
   PrivacyFinding,
   SaveIdeaResult,
@@ -144,6 +145,15 @@ export const api = useMock
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
       exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),
+      getIdeaPhase: (id: string) => request<IdeaValuePhaseEntry>(`/api/ideas/${id}/phase`),
+      updateIdeaPhase: (
+        id: string,
+        payload: { phaseNo: number; reason?: string; note?: string },
+      ) =>
+        request<{ ideaId: string; phaseNo: number; phaseLabel: string; fromPhase: number; reason: string }>(
+          `/api/ideas/${id}/phase`,
+          { method: "POST", body: JSON.stringify(payload) },
+        ),
       inspectInput: (input: IssueInput) =>
         request<PrivacyFinding[]>("/api/privacy/inspect", {
           method: "POST",

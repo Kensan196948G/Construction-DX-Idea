@@ -36,7 +36,10 @@ import {
   gateAuthorityPolicy,
   summarizeGateApprovals,
   evaluateGateSoD,
+  defaultPhaseForStage,
   ideaStages,
+  ideaValuePhaseLabel,
+  ideaValuePhases,
   issueInputSchema,
   structuredIdeaSchema,
   userRoles,
@@ -1024,6 +1027,112 @@ app.post(
       `gate.approval.decided:idea:${id}:gate${gateNo}:${gate.requiredAuthority}:${body.decision}:${body.reason}`,
     );
     return c.json(gate);
+  },
+);
+
+// ---- 20フェーズ Idea-to-Value 進捗管理（migration 010 / docs #04）----
+
+app.get("/api/ideas/:id/phase", async (c) => {
+  await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const idea = await db`select id, stage, phase_no, phase_note from ideas where id = ${id} limit 1`;
+  if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const history = await db`
+    select id, from_phase, to_phase, reason, changed_by, created_at
+    from idea_phase_history
+    where idea_id = ${id}
+    order by created_at asc, id asc
+  `;
+  const current = Number(idea[0].phase_no ?? defaultPhaseForStage(String(idea[0].stage) as IdeaStage) ?? 1);
+  const phaseRows = ideaValuePhases.map((p) => ({
+    no: p.no,
+    label: p.label,
+    stage: p.stage,
+    state: p.no < current ? "done" : p.no === current ? "current" : "todo",
+  }));
+  return c.json({
+    ideaId: id,
+    phaseNo: current,
+    phaseLabel: ideaValuePhaseLabel(current),
+    phaseNote: idea[0].phase_note ? String(idea[0].phase_note) : undefined,
+    history: history.map((h) => ({
+      id: String(h.id),
+      fromPhase: h.from_phase != null ? Number(h.from_phase) : undefined,
+      toPhase: Number(h.to_phase),
+      reason: h.reason ? String(h.reason) : undefined,
+      changedBy: h.changed_by ? String(h.changed_by) : undefined,
+      createdAt: toIsoString(h.created_at),
+    })),
+    phases: phaseRows,
+  });
+});
+
+app.post(
+  "/api/ideas/:id/phase",
+  zValidator(
+    "json",
+    z.object({
+      phaseNo: z.number().int().min(1).max(20),
+      reason: z.string().max(1000).optional(),
+      note: z.string().max(1000).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const body = c.req.valid("json") as {
+      phaseNo: number;
+      reason?: string;
+      note?: string;
+    };
+    const locked = await db`
+      select id, stage, phase_no, created_by from ideas where id = ${id} for update
+    `;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const currentRaw = locked[0];
+    const current = Number(currentRaw.phase_no ?? defaultPhaseForStage(String(currentRaw.stage) as IdeaStage) ?? 1);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    const isOwner = String(currentRaw.created_by).toLowerCase() === user.toLowerCase();
+    if (!isAdmin && !isOwner) {
+      throw new ApiError("FORBIDDEN", "フェーズ更新は提出者本人または管理者のみ可能です。", 403);
+    }
+    const target = body.phaseNo;
+    // 1フェーズずつ進めるのが基本（後戻りは管理者のみ許容し、飛び越しも2以上は許可しない）。
+    if (target !== current + 1) {
+      if (!(isAdmin && target < current)) {
+        throw new ApiError(
+          "PHASE_INVALID_STEP",
+          "フェーズは現在の次の1段階（または管理者による後戻し）のみ更新できます。",
+          422,
+        );
+      }
+    }
+    const reason = (body.reason ?? "").trim() || (target > current ? "フェーズ前進" : "フェーズ後戻し（管理者）");
+    await db`
+      update ideas
+      set phase_no = ${target},
+          phase_note = coalesce(${body.note?.trim() || null}, phase_note),
+          updated_at = now()
+      where id = ${id}
+    `;
+    await db`
+      insert into idea_phase_history (idea_id, from_phase, to_phase, reason, changed_by)
+      values (${id}, ${current}, ${target}, ${reason}, ${user})
+    `;
+    await audit(c.env, user, "idea.phase.changed", "idea", id, {
+      fromPhase: current,
+      toPhase: target,
+      reason,
+    });
+    return c.json({
+      ideaId: id,
+      phaseNo: target,
+      phaseLabel: ideaValuePhaseLabel(target),
+      fromPhase: current,
+      reason,
+    });
   },
 );
 
@@ -3329,6 +3438,8 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     approvalRequestedAt: row.approval_requested_at ? toIsoString(row.approval_requested_at) : undefined,
     approvalActedAt: row.approval_acted_at ? toIsoString(row.approval_acted_at) : undefined,
     approvalReason: row.approval_reason ? String(row.approval_reason) : undefined,
+    phaseNo: row.phase_no != null ? Number(row.phase_no) : undefined,
+    phaseNote: row.phase_note ? String(row.phase_note) : undefined,
     createdBy: String(row.created_by),
     ownerId: row.owner_id ? String(row.owner_id) : undefined,
     createdAt: toIsoString(row.created_at),

@@ -674,6 +674,43 @@ a:hover { text-decoration: underline; }
                     </div>
                   </sc-if>
                 </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="font-size:14px;font-weight:600;color:#1A2433;">🧭 Idea-to-Value 進捗</div>
+                    <sc-if value="{{ phaseView }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:#2E5AAC;background:#E9F0FB;padding:3px 9px;border-radius:6px;">Phase {{ phaseView.phaseNo }} / 20</span>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ phaseView }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;align-items:center;gap:2px;">
+                      <sc-for list="{{ phaseView.phases }}" as="ph" hint-placeholder-count="5">
+                        <div title="{{ ph.no }}: {{ ph.label }}" style="flex:1;height:8px;border-radius:3px;margin:0 1px;{{ ph.barStyle }}"></div>
+                      </sc-for>
+                    </div>
+                    <div style="font-size:12.5px;color:#1A2433;font-weight:600;">現在: {{ phaseView.phaseLabel }}</div>
+                    <sc-if value="{{ phaseView.phaseNote }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:11.5px;color:#8A97A8;">メモ: {{ phaseView.phaseNote }}</div>
+                    </sc-if>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                      <button onClick="{{ advanceIdeaPhase }}" disabled="{{ phaseBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;">次のフェーズへ進める</button>
+                      <input value="{{ phaseNoteDraft }}" onChange="{{ onPhaseNoteDraftChange }}" placeholder="進捗メモ（任意）" style="flex:1;min-width:120px;font-size:11.5px;padding:5px 9px;border:1px solid #E3E8EF;border-radius:6px;background:#fff;color:#1A2433;outline:none;"></input>
+                    </div>
+                    <details style="font-size:11.5px;color:#5A6678;">
+                      <summary style="cursor:pointer;font-weight:600;">20フェーズ一覧</summary>
+                      <ol style="margin:8px 0 0 18px;padding:0;line-height:1.7;">
+                        <sc-for list="{{ phaseView.phases }}" as="ph" hint-placeholder-count="5">
+                          <li>
+                            <sc-if value="{{ ph.isCurrent }}" hint-placeholder-val="{{ false }}"><strong style="color:#E08A2B;">▶ {{ ph.no }}. {{ ph.label }}</strong></sc-if>
+                            <sc-if value="{{ ph.isNotCurrent }}" hint-placeholder-val="{{ false }}">{{ ph.no }}. {{ ph.label }}<sc-if value="{{ ph.isDone }}" hint-placeholder-val="{{ false }}"> ✓</sc-if></sc-if>
+                          </li>
+                        </sc-for>
+                      </ol>
+                    </details>
+                  </sc-if>
+                  <sc-if value="{{ noPhaseView }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:12px;color:#8A97A8;">フェーズ情報を読み込んでいます…</div>
+                  </sc-if>
+                </div>
                 <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;">
                   <div style="font-size:14px;font-weight:600;color:#1A2433;margin-bottom:14px;">進捗履歴</div>
                   <sc-for list="{{ selectedIdeaView.history }}" as="ev" hint-placeholder-count="2">
@@ -1066,6 +1103,10 @@ class Component extends DCLogic {
     // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
     gateData: null,
     gateBusy: false,
+    // 20フェーズ Idea-to-Value（選択中アイデア）
+    phaseData: null,
+    phaseBusy: false,
+    phaseNoteDraft: '',
     userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null },
     users: this.makeSeedUsers(),
     integrations: this.makeSeedIntegrations(),
@@ -1097,8 +1138,9 @@ class Component extends DCLogic {
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
     this.setState({ selectedIdeaId: id, view: 'detail' });
-    // 実API接続時はブリッジが loadGatesForSelected を差し替え、Gate状態を読み込む。
+    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
+    if (this.loadIdeaPhase) void this.loadIdeaPhase();
   };
   backToList = () => {
     const idea = this.state.ideas.find((i) => i.id === this.state.selectedIdeaId);
@@ -1284,6 +1326,69 @@ class Component extends DCLogic {
       gateDraft: { ...s.gateDraft, reason: '' },
       toast: { message: `Gate${gateNo}（${authority}）の判定を記録しました（モック表示。本番はAPI経由）: ${status}` },
     }));
+  };
+
+  // ---- 20フェーズ Idea-to-Value（migration 010）----
+  // 実API接続時は App.tsx ブリッジが loadIdeaPhase / advanceIdeaPhase を差し替える。
+  // スタンドアロン（モック）時はローカル状態遷移で動作する。
+  phaseLabels20 = [
+    'アイデア受付','課題明確化','アイデア構造化','企画候補登録','案件ID発番','企画検討',
+    '企画審査（Gate1）','要件定義','要件承認（Gate2）','開発案件化','MVP開発','テスト',
+    'MVP評価（Gate3）','Staging','業務受入試験（Gate4）','本番承認（Gate5）','Production Deploy',
+    'DevSecOps','効果測定','ナレッジ化・継続判断',
+  ];
+
+  phaseStageFromLegacyStage = (stage) => ({
+    draft: 1, submitted: 4, planning: 6, mvp: 11, verification: 13,
+    production_candidate: 15, production: 17,
+  }[stage] ?? null);
+
+  loadIdeaPhase = async () => {
+    // モック: 選択中アイデアのstageからフェーズを導出して表示（進める操作は状態更新）。
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const idea = this.state.ideas.find((i) => i.id === id);
+    const current = (idea && idea.phaseNo) || (idea ? this.phaseStageFromLegacyStage(idea.stage) : null) || 1;
+    this.setState({
+      phaseData: {
+        ideaId: String(id),
+        phaseNo: current,
+        phaseLabel: this.phaseLabels20[current - 1] || `フェーズ${current}`,
+        phaseNote: idea ? idea.phaseNote : undefined,
+        phases: this.phaseLabels20.map((label, i) => {
+          const no = i + 1;
+          return { no, label, stage: '', state: no < current ? 'done' : no === current ? 'current' : 'todo' };
+        }),
+      },
+    });
+  };
+
+  advanceIdeaPhase = async () => {
+    const data = this.state.phaseData;
+    const id = this.state.selectedIdeaId;
+    if (!data || id == null) return;
+    const next = data.phaseNo + 1;
+    if (next > 20) {
+      this.setState({ toast: { message: '最終フェーズ（20）まで完了しています。' } });
+      return;
+    }
+    this.setState((s) => ({
+      phaseData: s.phaseData && {
+        ...s.phaseData,
+        phaseNo: next,
+        phaseLabel: this.phaseLabels20[next - 1] || `フェーズ${next}`,
+        phases: this.phaseLabels20.map((label, i) => {
+          const no = i + 1;
+          return { no, label, stage: '', state: no < next ? 'done' : no === next ? 'current' : 'todo' };
+        }),
+      },
+      ideas: s.ideas.map((i) => (i.id === id ? { ...i, phaseNo: next } : i)),
+      toast: { message: `フェーズを前進しました（モック表示。本番はAPI経由）: ${next}` },
+    }));
+  };
+
+  updatePhaseNoteDraft = (e) => {
+    this.setState({ phaseNoteDraft: e.target.value });
   };
 
   toggleUserStatus = (id) => {
@@ -1862,6 +1967,22 @@ class Component extends DCLogic {
     const gateReasonInvalid = !s.gateDraft.reason.trim();
     const gateDecisionStyle = (fg, bg) => 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid ' + fg + ';background:' + fg + ';color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;';
 
+    // ---- 20フェーズ view-model（migration 010）----
+    const rawPhase = selectedIdeaRaw ? s.phaseData : null;
+    const phaseView = rawPhase
+      ? {
+          ...rawPhase,
+          phases: (rawPhase.phases || []).map((p) => ({
+            ...p,
+            barStyle: p.state === 'done' ? 'background:#2E5AAC;' : p.state === 'current' ? 'background:#E08A2B;' : 'background:#E3E8EF;',
+            isDone: p.state === 'done',
+            isCurrent: p.state === 'current',
+            isNotCurrent: p.state !== 'current',
+          })),
+        }
+      : null;
+    const noPhaseView = !phaseView;
+
     const authorityLabelMap = { business: 'Business', domain: 'Domain', engineering: 'Engineering' };
     const userRows = s.users.map((u) => {
       const active = u.status === 'active';
@@ -2055,6 +2176,16 @@ class Component extends DCLogic {
       decideGateApprove: () => this.decideGateApproval('approve')(),
       decideGateReturn: () => this.decideGateApproval('return')(),
       decideGateReject: () => this.decideGateApproval('reject')(),
+
+      // 20フェーズ Idea-to-Value（migration 010）
+      phaseView,
+      noPhaseView,
+      phaseBusy: s.phaseBusy,
+      phaseNoteDraft: s.phaseNoteDraft,
+      onPhaseNoteDraftChange: this.updatePhaseNoteDraft,
+      loadIdeaPhase: this.loadIdeaPhase,
+      advanceIdeaPhase: this.advanceIdeaPhase,
+      ideaValuePhaseCount20: 20,
 
       userRows, integrationRows,
       userForm: s.userForm,

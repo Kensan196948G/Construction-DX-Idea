@@ -58,6 +58,89 @@ export const stageLabels: Record<IdeaStage, string> = {
   archived: "保管",
 };
 
+// ---- 20フェーズ Idea-to-Value 進捗管理（docs/New/ai-dx-dev-process.md #04）----
+// 各案件の進捗を20フェーズで正式管理する（migration 010 / Issue #58相当）。
+// stage（運用上の区分）と phase（Idea-to-Value の詳細フェーズ）は別軸で、
+// 後方互換のため stage から phase への初期マッピングを持つ。
+
+export const ideaToValuePhaseCount = 20;
+
+export type IdeaValuePhaseMeta = {
+  no: number;
+  label: string;
+  stage: string; // Idea / Planning / Definition / MVP / Staging / Production / Operation / Knowledge
+};
+
+export const ideaValuePhases: readonly IdeaValuePhaseMeta[] = [
+  { no: 1, label: "アイデア受付", stage: "Idea" },
+  { no: 2, label: "課題明確化", stage: "Idea" },
+  { no: 3, label: "アイデア構造化", stage: "Idea" },
+  { no: 4, label: "企画候補登録", stage: "Planning" },
+  { no: 5, label: "案件ID発番", stage: "Planning" },
+  { no: 6, label: "企画検討", stage: "Planning" },
+  { no: 7, label: "企画審査（Gate1）", stage: "Gate1" },
+  { no: 8, label: "要件定義", stage: "Definition" },
+  { no: 9, label: "要件承認（Gate2）", stage: "Gate2" },
+  { no: 10, label: "開発案件化", stage: "MVP" },
+  { no: 11, label: "MVP開発", stage: "MVP" },
+  { no: 12, label: "テスト", stage: "MVP" },
+  { no: 13, label: "MVP評価（Gate3）", stage: "Gate3" },
+  { no: 14, label: "Staging", stage: "Staging" },
+  { no: 15, label: "業務受入試験（Gate4）", stage: "Gate4" },
+  { no: 16, label: "本番承認（Gate5）", stage: "Gate5" },
+  { no: 17, label: "Production Deploy", stage: "Production" },
+  { no: 18, label: "DevSecOps", stage: "Operation" },
+  { no: 19, label: "効果測定", stage: "Operation" },
+  { no: 20, label: "ナレッジ化・継続判断", stage: "Knowledge" },
+];
+
+export const ideaValuePhaseLabels: Record<number, string> = Object.fromEntries(
+  ideaValuePhases.map((p) => [p.no, p.label]),
+);
+
+export type IdeaValuePhaseState = "done" | "current" | "todo";
+
+export type IdeaValuePhaseEntry = {
+  ideaId: string;
+  // サーバーは stage からフォールバックして常に 1-20 を返す。
+  phaseNo: number;
+  phaseLabel: string;
+  phaseNote?: string;
+  history: Array<{
+    id: string;
+    fromPhase?: number;
+    toPhase: number;
+    reason?: string;
+    changedBy?: string;
+    createdAt: string;
+  }>;
+  phases: Array<{
+    no: number;
+    label: string;
+    stage: string;
+    state: IdeaValuePhaseState;
+  }>;
+};
+
+// stage（既存の運用区分）から20フェーズの初期値への後方互換マッピング。
+export function defaultPhaseForStage(stage: IdeaStage): number | null {
+  const map: Partial<Record<IdeaStage, number>> = {
+    draft: 1,
+    submitted: 4,
+    planning: 6,
+    mvp: 11,
+    verification: 13,
+    production_candidate: 15,
+    production: 17,
+  };
+  return map[stage] ?? null;
+}
+
+export function ideaValuePhaseLabel(phaseNo: number | null | undefined): string {
+  if (phaseNo == null) return "未設定";
+  return ideaValuePhaseLabels[phaseNo] ?? `フェーズ${phaseNo}`;
+}
+
 const structuredListItemSchema = z.string().min(1).max(500);
 const structuredListSchema = z.array(structuredListItemSchema).max(50);
 
@@ -108,6 +191,9 @@ export const ideaSchema = structuredIdeaSchema.extend({
   approvalRequestedAt: z.string().optional(),
   approvalActedAt: z.string().optional(),
   approvalReason: z.string().max(500).optional(),
+  // 20フェーズ Idea-to-Value 進捗（migration 010）。null=未設定。
+  phaseNo: z.number().int().min(1).max(20).nullable().optional(),
+  phaseNote: z.string().max(1000).optional(),
   createdBy: z.string(),
   ownerId: z.string().optional(),
   createdAt: z.string(),
