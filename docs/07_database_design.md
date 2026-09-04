@@ -126,6 +126,7 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | name | text | 氏名 |
 | department | text | 所属部署 |
 | role | text | user / admin / system_admin |
+| authority | text | business / domain / engineering / null（全社3 Authority、#49。roleとは独立した追加属性） |
 | status | text | active / suspended |
 | created_by | text | 登録者 |
 | created_at / updated_at | timestamptz | 作成・更新日時 |

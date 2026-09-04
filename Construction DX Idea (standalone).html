@@ -822,6 +822,11 @@ a:hover { text-decoration: underline; }
                 <option value="{{ r.value }}">{{ r.label }}</option>
               </sc-for>
             </select>
+            <select value="{{ userForm.authority }}" onChange="{{ onUserFormChange('authority') }}" style="font-size:12.5px;padding:8px 10px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;">
+              <sc-for list="{{ authorityOptions }}" as="a" hint-placeholder-count="4">
+                <option value="{{ a.value }}">{{ a.label }}</option>
+              </sc-for>
+            </select>
           </div>
           <div style="display:flex;gap:8px;">
             <button onClick="{{ saveUser }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 16px;border-radius:8px;font-size:12.5px;font-weight:600;">{{ saveUserLabel }}</button>
@@ -838,6 +843,7 @@ a:hover { text-decoration: underline; }
               <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">所属部署</th>
               <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">メールアドレス</th>
               <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">権限</th>
+              <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">Authority</th>
               <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">ステータス</th>
               <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">操作</th>
             </tr>
@@ -849,6 +855,7 @@ a:hover { text-decoration: underline; }
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ u.department }}</td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ u.email }}</td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ u.roleBadgeStyle }}">{{ u.roleLabel }}</span></td>
+                <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ u.authorityBadgeStyle }}">{{ u.authorityLabel }}</span></td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ u.statusBadgeStyle }}">{{ u.statusLabel }}</span></td>
                 <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;display:flex;gap:6px;">
                   <button onClick="{{ u.onEdit }}" style="{{ u.smallButtonStyle }}">編集</button>
@@ -987,7 +994,7 @@ class Component extends DCLogic {
     adminSettings: { provider: 'claude', model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false, keyLast4: '', keyStatus: 'not_configured' },
     commentDraft: '',
     approvalDraft: { approverEmail: '', reason: '' },
-    userForm: { email: '', name: '', department: '', role: 'user', editingId: null },
+    userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null },
     users: this.makeSeedUsers(),
     integrations: this.makeSeedIntegrations(),
   };
@@ -1125,7 +1132,7 @@ class Component extends DCLogic {
   };
 
   resetUserForm = () => {
-    this.setState({ userForm: { email: '', name: '', department: '', role: 'user', editingId: null } });
+    this.setState({ userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null } });
   };
 
   editUser = (id) => {
@@ -1137,6 +1144,7 @@ class Component extends DCLogic {
         name: target.name,
         department: target.department,
         role: target.role,
+        authority: target.authority || '',
         editingId: id,
       },
     });
@@ -1152,10 +1160,10 @@ class Component extends DCLogic {
       this.setState((s) => ({
         users: s.users.map((u) =>
           u.id === f.editingId
-            ? { ...u, email: f.email.trim(), name: f.name.trim(), department: f.department.trim(), role: f.role }
+            ? { ...u, email: f.email.trim(), name: f.name.trim(), department: f.department.trim(), role: f.role, authority: f.authority }
             : u,
         ),
-        userForm: { email: '', name: '', department: '', role: 'user', editingId: null },
+        userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null },
         toast: { message: 'ユーザーを更新しました（モック表示。本番はAPI経由）。' },
       }));
       return;
@@ -1166,11 +1174,12 @@ class Component extends DCLogic {
       name: f.name.trim() || f.email.trim(),
       department: f.department.trim(),
       role: f.role,
+      authority: f.authority,
       status: 'active',
     };
     this.setState((s) => ({
       users: [...s.users, user],
-      userForm: { email: '', name: '', department: '', role: 'user', editingId: null },
+      userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null },
       toast: { message: 'ユーザーを追加しました（モック表示。本番はAPI経由）。' },
     }));
   };
@@ -1608,6 +1617,7 @@ class Component extends DCLogic {
     const commentDraftInvalid = !s.commentDraft.trim();
     const submitCommentStyle = 'align-self:flex-end;background:#E08A2B;color:#fff;border:1px solid #E08A2B;padding:8px 14px;border-radius:8px;font-weight:600;font-size:12px;cursor:' + (commentDraftInvalid ? 'not-allowed' : 'pointer') + ';opacity:' + (commentDraftInvalid ? '.5' : '1') + ';';
 
+    const authorityLabelMap = { business: 'Business', domain: 'Domain', engineering: 'Engineering' };
     const userRows = s.users.map((u) => {
       const active = u.status === 'active';
       const roleLabelMap = { user: '一般', admin: '管理者', system_admin: 'システム管理者' };
@@ -1620,6 +1630,8 @@ class Component extends DCLogic {
           u.role === 'system_admin' ? '#6B45B0' : u.role === 'admin' ? '#2E5AAC' : '#5A6678',
           u.role === 'system_admin' ? '#EDE7F6' : u.role === 'admin' ? '#E9F0FB' : '#F2F4F8',
         ),
+        authorityLabel: authorityLabelMap[u.authority] || '未設定',
+        authorityBadgeStyle: this.badgeStyle(u.authority ? '#B5701A' : '#8A97A8', u.authority ? '#FDEFE0' : '#F2F4F8'),
         toggleButtonLabel: active ? '無効化' : '有効化',
         toggleButtonStyle: 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#5A6678;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;',
         smallButtonStyle: 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#2E5AAC;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;',
@@ -1634,6 +1646,12 @@ class Component extends DCLogic {
       { value: 'user', label: '一般' },
       { value: 'admin', label: '管理者' },
       { value: 'system_admin', label: 'システム管理者' },
+    ];
+    const authorityOptions = [
+      { value: '', label: 'Authority未設定' },
+      { value: 'business', label: 'Business（経営企画）' },
+      { value: 'domain', label: 'Domain（建設土木技術）' },
+      { value: 'engineering', label: 'Engineering（IT・DX）' },
     ];
     const userFormTitle = s.userForm.editingId != null ? 'ユーザー編集' : '新規ログイン追加';
     const saveUserLabel = s.userForm.editingId != null ? '更新する' : '追加する';
@@ -1770,7 +1788,7 @@ class Component extends DCLogic {
 
       userRows, integrationRows,
       userForm: s.userForm,
-      userFormTitle, saveUserLabel, showUserFormCancel, roleOptions,
+      userFormTitle, saveUserLabel, showUserFormCancel, roleOptions, authorityOptions,
       onUserFormChange: this.updateUserForm,
       resetUserForm: this.resetUserForm,
       saveUser: this.saveUser,
