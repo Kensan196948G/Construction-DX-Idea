@@ -426,6 +426,7 @@ a:hover { text-decoration: underline; }
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead>
               <tr>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">案件ID</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">タイトル</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">対象業務</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">提出者</th>
@@ -436,6 +437,7 @@ a:hover { text-decoration: underline; }
             <tbody>
               <sc-for list="{{ filteredIssues }}" as="idea" hint-placeholder-count="6">
                 <tr onClick="{{ idea.onClick }}" style="cursor:pointer;">
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#8A97A8;font-family:'IBM Plex Mono',monospace;font-size:11.5px;">{{ idea.caseId }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;font-weight:500;color:#1A2433;">{{ idea.title }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ idea.category }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ idea.who }}</td>
@@ -464,6 +466,7 @@ a:hover { text-decoration: underline; }
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead>
               <tr>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">案件ID</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">タイトル</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">対象業務</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">提案者</th>
@@ -474,6 +477,7 @@ a:hover { text-decoration: underline; }
             <tbody>
               <sc-for list="{{ filteredIdeasOnly }}" as="idea" hint-placeholder-count="6">
                 <tr onClick="{{ idea.onClick }}" style="cursor:pointer;">
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#8A97A8;font-family:'IBM Plex Mono',monospace;font-size:11.5px;">{{ idea.caseId }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;font-weight:500;color:#1A2433;">{{ idea.title }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ idea.category }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ idea.who }}</td>
@@ -497,6 +501,9 @@ a:hover { text-decoration: underline; }
                 <div style="padding:15px 18px;border-bottom:1px solid #EEF1F5;display:flex;align-items:center;gap:10px;">
                   <span style="{{ selectedIdeaView.typeBadgeStyle }}">{{ selectedIdeaView.typeLabel }}</span>
                   <div style="flex:1;">
+                    <sc-if value="{{ selectedIdeaView.showCaseId }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:11px;font-weight:600;color:#B5701A;font-family:'IBM Plex Mono',monospace;letter-spacing:.02em;">{{ selectedIdeaView.caseId }}</div>
+                    </sc-if>
                     <div style="font-size:16px;font-weight:600;color:#1A2433;">{{ selectedIdeaView.title }}</div>
                     <div style="font-size:11.5px;color:#8A97A8;">{{ selectedIdeaView.category }}</div>
                   </div>
@@ -1588,6 +1595,7 @@ class Component extends DCLogic {
       const comments = selectedIdeaRaw.comments || [];
       selectedIdeaView = {
         ...selectedIdeaRaw,
+        showCaseId: !!selectedIdeaRaw.caseId,
         badgeStyle: this.badgeStyle(meta.fg, meta.bg),
         typeLabel: tMeta.label, typeBadgeStyle: this.badgeStyle(tMeta.fg, tMeta.bg),
         isIssueType, isIdeaType: !isIssueType,

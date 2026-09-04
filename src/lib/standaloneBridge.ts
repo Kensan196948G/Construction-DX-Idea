@@ -11,6 +11,7 @@ export type StandaloneIntakeType = "issue" | "idea";
 
 export type StandaloneIdea = {
   id: string | number;
+  caseId?: string;
   type: StandaloneIntakeType;
   title: string;
   category: string;
@@ -306,6 +307,7 @@ export function mapApiIdeaToStandalone(idea: Idea): StandaloneIdea {
   const stageLabel = toStandaloneStage(idea.stage);
   return {
     id: idea.id,
+    caseId: idea.caseId ?? "",
     type: "issue",
     title: idea.title,
     category: idea.targetBusiness || "未分類",
