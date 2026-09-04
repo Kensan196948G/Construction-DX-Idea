@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 import {
   authorities,
   authorityLabels,
+  gateLabels,
+  gateNumbers,
+  gateRequiredAuthority,
   issueInputSchema,
   normalizeApiBaseUrl,
   structuredIdeaSchema,
@@ -18,6 +21,26 @@ describe("Authority (#49)", () => {
 
   it("has exactly the 3 Authority values (business/domain/engineering)", () => {
     assert.deepEqual([...authorities].sort(), ["business", "domain", "engineering"]);
+  });
+});
+
+describe("Gate approval flow (#50)", () => {
+  it("has 5 gates, each with a label and a required Authority", () => {
+    assert.deepEqual([...gateNumbers], [1, 2, 3, 4, 5]);
+    for (const gateNo of gateNumbers) {
+      assert.equal(typeof gateLabels[gateNo], "string");
+      assert.ok((authorities as readonly string[]).includes(gateRequiredAuthority[gateNo]));
+    }
+  });
+
+  it("matches the primary Authority per gate defined in docs/New/ai-dx-dev-process.md #05", () => {
+    assert.deepEqual(gateRequiredAuthority, {
+      1: "business",
+      2: "domain",
+      3: "domain",
+      4: "business",
+      5: "engineering",
+    });
   });
 });
 
