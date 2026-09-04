@@ -12,8 +12,11 @@ import type {
   AiSettingsPatch,
   AiUsageSummary,
   AuditLogEntry,
+  Authority,
   DashboardMetrics,
   EvaluationItem,
+  GateApprovalRequest,
+  GateListResult,
   GateNo,
   Idea,
   IdeaComment,
@@ -125,14 +128,14 @@ export const api = useMock
           body: JSON.stringify(payload),
         }),
       initGates: (id: string) =>
-        request<{ items: IdeaGateApproval[] }>(`/api/ideas/${id}/gates/init`, { method: "POST" }),
-      getGates: (id: string) => request<{ items: IdeaGateApproval[] }>(`/api/ideas/${id}/gates`),
-      requestGateApproval: (id: string, gateNo: GateNo, payload: ApprovalRequest) =>
+        request<GateListResult>(`/api/ideas/${id}/gates/init`, { method: "POST" }),
+      getGates: (id: string) => request<GateListResult>(`/api/ideas/${id}/gates`),
+      requestGateApproval: (id: string, gateNo: GateNo, payload: GateApprovalRequest) =>
         request<IdeaGateApproval>(`/api/ideas/${id}/gates/${gateNo}/request-approval`, {
           method: "POST",
           body: JSON.stringify(payload),
         }),
-      decideGateApproval: (id: string, gateNo: GateNo, payload: ApprovalDecision) =>
+      decideGateApproval: (id: string, gateNo: GateNo, payload: ApprovalDecision & { authority?: Authority }) =>
         request<IdeaGateApproval>(`/api/ideas/${id}/gates/${gateNo}/approval`, {
           method: "POST",
           body: JSON.stringify(payload),

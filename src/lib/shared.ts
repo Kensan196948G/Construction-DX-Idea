@@ -168,6 +168,43 @@ export const gateRequiredAuthority: Record<GateNo, Authority> = {
   5: "engineering",
 };
 
+// 複数Authority共同承認ポリシー（migration 009 / Issue #57）。
+// docs/New/ai-dx-dev-process.md #05「承認の主な関与者」表（Gate1〜5の行）に基づき、
+// 各Gateを通過するために承認が必要なAuthorityの組合せを定義する。
+// 先頭が主承認Authority（gateRequiredAuthority と一致）で、残りが共同承認者。
+//   Gate1 企画承認     -> business(経営企画・主) + domain(建設土木技術) + engineering(IT/DX)
+//   Gate2 開発承認     -> domain(技術仕様の主) + engineering
+//   Gate3 MVP承認      -> domain(技術受入の主) + engineering + business(最終確認)
+//   Gate4 本番移行承認 -> business(経営企画・移行判定の最終) + domain(UAT受入)
+//   Gate5 Release承認  -> engineering(IT/DX実行判定)
+//                         （上位Gate Owner（DX統括）は system_admin/admin ロールの
+//                           承認権限オーバーライドとして判定ロジック側で担保）
+// Gate1〜5のうち該当するAuthorityが全て approved になった時点で当該Gateが
+// approved（通過）となる。個別Authorityの判定は独立して記録される。
+export const gateAuthorityPolicy: Record<GateNo, readonly Authority[]> = {
+  1: ["business", "domain", "engineering"],
+  2: ["domain", "engineering"],
+  3: ["domain", "engineering", "business"],
+  4: ["business", "domain"],
+  5: ["engineering"],
+};
+
+// 全Gate×全必要Authorityの承認行（初期化 seed）を生成する純関数。
+// worker の /gates/init と mock の initGates で共通利用し、テストでも検証する。
+export function defaultGateApprovalRows(ideaId: string): Array<Omit<IdeaGateApproval, "id">> {
+  return gateNumbers.flatMap((gateNo) =>
+    gateAuthorityPolicy[gateNo].map((authority, index) => ({
+      ideaId,
+      gateNo,
+      requiredAuthority: authority,
+      status: "pending" as const,
+      createdAt: "",
+      updatedAt: "",
+      approvalSeq: index + 1,
+    })),
+  );
+}
+
 export type IdeaGateApproval = {
   id: string;
   ideaId: string;
@@ -179,9 +216,118 @@ export type IdeaGateApproval = {
   requestedAt?: string;
   actedAt?: string;
   actedBy?: string;
+  // Gate申請を発行したユーザー（SoD: 申請者≠承認者、自己承認防止の判定・監査に使用）。
+  requestedBy?: string;
+  // Gate内の承認順序（migration 009）。並列承認は同一値。
+  approvalSeq?: number;
   createdAt: string;
   updatedAt: string;
 };
+
+// 1件のGate承認判定リクエスト。複数Authority共同承認のため対象Authorityを指定できる。
+// authority 省略時はサーバー側が主承認Authority（gateAuthorityPolicy[gateNo][0]）へ
+// フォールバックする（旧クライアント互換）。
+export type GateApprovalRequest = {
+  authority?: Authority;
+  approverEmail: string;
+  reason?: string;
+};
+
+// Gate一覧API（GET /gates, POST /gates/init）のレスポンス。
+export type GateListResult = {
+  items: IdeaGateApproval[];
+  summary: GateSummary[];
+};
+
+// Gate1件分の集約ビュー（WebUI/ダッシュボード表示用）。
+export type GateSummary = {
+  gateNo: GateNo;
+  label: string;
+  requiredAuthorities: Authority[];
+  // 全必須Authorityが approved のときだけ approved。それ以外は最も進行した状態。
+  status: GateApprovalStatus;
+  approvals: IdeaGateApproval[];
+};
+
+/**
+ * 複数Authority共同承認の集約: Gateに属する承認行（IdeaGateApproval[]）から
+ * Gate単位の状態を導出する。
+ *  - 必須Authorityの全行が approved -> approved
+ *  - いずれかが rejected / returned -> その状態（Gate通過不可）
+ *  - いずれかが requested -> requested
+ *  - それ以外（初期化のみで依頼なし）-> pending
+ * 行が存在しない必須Authorityは「未依頼(pending)」として扱う。
+ */
+export function summarizeGateApprovals(approvals: IdeaGateApproval[]): GateSummary[] {
+  return gateNumbers.map((gateNo) => {
+    const requiredAuthorities = [...gateAuthorityPolicy[gateNo]];
+    const gateApprovals = approvals.filter((a) => a.gateNo === gateNo);
+    const byAuthority = new Map(gateApprovals.map((a) => [a.requiredAuthority, a]));
+    // 行が無い必須Authorityは pending とみなす（旧データ/部分初期化の後方互換）。
+    const effective: IdeaGateApproval[] = requiredAuthorities.map((authority) => {
+      const existing = byAuthority.get(authority);
+      if (existing) return existing;
+      const ideaId = gateApprovals[0]?.ideaId ?? "";
+      return {
+        id: `missing-${gateNo}-${authority}`,
+        ideaId,
+        gateNo,
+        requiredAuthority: authority,
+        status: "pending",
+        createdAt: "",
+        updatedAt: "",
+      };
+    });
+    let status: GateApprovalStatus = "pending";
+    if (effective.every((a) => a.status === "approved")) status = "approved";
+    else if (effective.some((a) => a.status === "rejected")) status = "rejected";
+    else if (effective.some((a) => a.status === "returned")) status = "returned";
+    else if (effective.some((a) => a.status === "requested")) status = "requested";
+    return { gateNo, label: gateLabels[gateNo], requiredAuthorities, status, approvals: effective };
+  });
+}
+
+/**
+ * SoD（職務分掌・自己承認防止）チェック（docs/New/ai-dx-dev-process.md #06）。
+ * 判定は純関数のためDB不要で単体テストできる。
+ *
+ * rules:
+ *  - 申請者(requester) と承認者(approver) は同一人物不可
+ *  - アイデア提案者(ideaCreator) は自分のアイデアの承認者・判定者になれない
+ *  - 承認者は requiredAuthority を持つ active ユーザー本人のみ（adminは権限監査上
+ *    最終承認として例外的に許可するが、自己承認は常に不可）
+ *
+ * returns: 違反理由の日本語メッセージ。問題なければ null。
+ */
+export function evaluateGateSoD(input: {
+  ideaCreator: string;
+  requester: string;
+  approverEmail?: string;
+  actor?: string;
+  actorAuthority?: Authority;
+  requiredAuthority: Authority;
+  isAdmin?: boolean;
+}): string | null {
+  const norm = (v?: string) => (v ?? "").trim().toLowerCase();
+  const creator = norm(input.ideaCreator);
+  const requester = norm(input.requester);
+  const approver = norm(input.approverEmail);
+  const actor = norm(input.actor);
+
+  if (approver && requester && approver === requester) {
+    return "申請者自身を承認者に指定することはできません（自己承認防止）。";
+  }
+  if (approver && creator && approver === creator) {
+    return "アイデア提案者が自身のアイデアの承認者になることはできません（SoD）。";
+  }
+  if (actor && creator && actor === creator) {
+    return "アイデア提案者が自身のアイデアを判定することはできません（SoD）。";
+  }
+  if (actor && actor !== creator && input.actorAuthority && input.actorAuthority !== input.requiredAuthority && !input.isAdmin) {
+    return `このGateの承認には ${input.requiredAuthority} Authority が必要です（現在: ${input.actorAuthority}）。`;
+  }
+  return null;
+}
 
 export type AuditChainVerifyResult = {
   valid: boolean;
