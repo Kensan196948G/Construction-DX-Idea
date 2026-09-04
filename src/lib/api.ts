@@ -14,8 +14,10 @@ import type {
   AuditLogEntry,
   DashboardMetrics,
   EvaluationItem,
+  GateNo,
   Idea,
   IdeaComment,
+  IdeaGateApproval,
   IdeaHistory,
   IdeaListParams,
   IdeaStage,
@@ -119,6 +121,19 @@ export const api = useMock
         }),
       decideApproval: (id: string, payload: ApprovalDecision) =>
         request<Idea>(`/api/ideas/${id}/approval`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      initGates: (id: string) =>
+        request<{ items: IdeaGateApproval[] }>(`/api/ideas/${id}/gates/init`, { method: "POST" }),
+      getGates: (id: string) => request<{ items: IdeaGateApproval[] }>(`/api/ideas/${id}/gates`),
+      requestGateApproval: (id: string, gateNo: GateNo, payload: ApprovalRequest) =>
+        request<IdeaGateApproval>(`/api/ideas/${id}/gates/${gateNo}/request-approval`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }),
+      decideGateApproval: (id: string, gateNo: GateNo, payload: ApprovalDecision) =>
+        request<IdeaGateApproval>(`/api/ideas/${id}/gates/${gateNo}/approval`, {
           method: "POST",
           body: JSON.stringify(payload),
         }),

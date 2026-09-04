@@ -13,6 +13,7 @@ const {
   isAllowedStageTransition,
   isValidIdempotencyKey,
   modelAllowedForProvider,
+  parseGateNo,
   redactIdeaForUser,
   resolveRoles,
   selectDbDriver,
@@ -105,6 +106,20 @@ describe("idea registration idempotency key validation", () => {
     assert.equal(isValidIdempotencyKey(""), false);
     assert.equal(isValidIdempotencyKey("key with space"), false);
     assert.equal(isValidIdempotencyKey("key.with.dot"), false);
+  });
+});
+
+describe("gate approval gateNo validation (#50)", () => {
+  it("accepts 1 through 5", () => {
+    for (const n of [1, 2, 3, 4, 5]) {
+      assert.equal(parseGateNo(String(n)), n);
+    }
+  });
+
+  it("rejects 0, 6, non-numeric, and empty values", () => {
+    for (const raw of ["0", "6", "abc", "", "1.5"]) {
+      assert.throws(() => parseGateNo(raw));
+    }
   });
 });
 

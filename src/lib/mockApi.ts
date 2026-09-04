@@ -12,8 +12,10 @@ import type {
   AiUsageSummary,
   AuditLogEntry,
   DashboardMetrics,
+  GateNo,
   Idea,
   IdeaComment,
+  IdeaGateApproval,
   IdeaHistory,
   IdeaStage,
   IssueInput,
@@ -22,6 +24,9 @@ import type {
   StructuredIdea,
   UserProfile,
 } from "./shared";
+import { gateNumbers, gateRequiredAuthority } from "./shared";
+
+const gateApprovals = new Map<string, IdeaGateApproval[]>();
 
 const now = () => new Date().toISOString();
 
@@ -256,6 +261,55 @@ export const mockApi = {
       approvalActedAt: now(),
       approvalReason: payload.reason,
     };
+  },
+
+  async initGates(id: string): Promise<{ items: IdeaGateApproval[] }> {
+    if (!gateApprovals.has(id)) {
+      gateApprovals.set(
+        id,
+        gateNumbers.map((gateNo) => ({
+          id: `gate-${id}-${gateNo}`,
+          ideaId: id,
+          gateNo,
+          requiredAuthority: gateRequiredAuthority[gateNo],
+          status: "pending",
+          createdAt: now(),
+          updatedAt: now(),
+        })),
+      );
+    }
+    return { items: gateApprovals.get(id) ?? [] };
+  },
+
+  async getGates(id: string): Promise<{ items: IdeaGateApproval[] }> {
+    return { items: gateApprovals.get(id) ?? [] };
+  },
+
+  async requestGateApproval(id: string, gateNo: GateNo, payload: ApprovalRequest): Promise<IdeaGateApproval> {
+    const gates = gateApprovals.get(id);
+    const gate = gates?.find((g) => g.gateNo === gateNo);
+    if (!gate) throw new Error("Gate not found");
+    Object.assign(gate, {
+      status: "requested",
+      approverEmail: payload.approverEmail,
+      requestedAt: now(),
+      reason: payload.reason ?? "",
+      updatedAt: now(),
+    });
+    return gate;
+  },
+
+  async decideGateApproval(id: string, gateNo: GateNo, payload: ApprovalDecision): Promise<IdeaGateApproval> {
+    const gates = gateApprovals.get(id);
+    const gate = gates?.find((g) => g.gateNo === gateNo);
+    if (!gate) throw new Error("Gate not found");
+    Object.assign(gate, {
+      status: payload.decision === "approve" ? "approved" : payload.decision === "reject" ? "rejected" : "returned",
+      actedAt: now(),
+      reason: payload.reason,
+      updatedAt: now(),
+    });
+    return gate;
   },
 
   async inspectInput(input: IssueInput): Promise<PrivacyFinding[]> {

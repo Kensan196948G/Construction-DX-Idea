@@ -133,6 +133,18 @@ rejected/archived への変更は理由が必須（`STAGE_REASON_REQUIRED`）。
 承認者または管理者、理由必須）。承認依頼中のアイデアはMVP以降へ遷移不可（`APPROVAL_PENDING`）。
 依頼・判定はSlack通知（Outbox再送対応）。
 
+### POST `/api/ideas/:id/gates/init`（#50）
+
+Gate1〜5の多段階承認を初期化する（管理者限定、初期化済みなら`409`）。各ゲートの`required_authority`は`docs/New/ai-dx-dev-process.md` #05の主担当を単純化したもの（Gate1=business、Gate2=domain、Gate3=domain、Gate4=business、Gate5=engineering）。
+
+### GET `/api/ideas/:id/gates`（#50）
+
+初期化済みゲートの一覧を`gate_no`昇順で返す。
+
+### POST `/api/ideas/:id/gates/:gateNo/request-approval` / POST `/api/ideas/:id/gates/:gateNo/approval`（#50）
+
+ゲート単位の承認依頼・判定。前段ゲートが`approved`でなければ次ゲートを依頼できない（`GATE_PREREQUISITE_NOT_MET`）。判定は「承認者本人かつ当該ゲートのrequired_authorityを保有」または管理者のみ可能（`FORBIDDEN`）。Gate5承認完了時、既存の単一承認フィールド（`ideas.approval_status`）へ`approved`を反映する（後方互換）。
+
 ### GET `/api/admin/audit-logs/verify`
 
 監査ログのSHA-256ハッシュチェーン整合性を検証する（システム管理者限定）。

@@ -141,6 +141,46 @@ export type ApprovalDecision = {
   reason: string;
 };
 
+// Gate拡張・Authority制 多段階承認フロー（#50）。
+// 全社Idea-to-Valueプロセス（docs/New/ai-dx-dev-process.md #05）のGate1〜5に対応。
+export const gateNumbers = [1, 2, 3, 4, 5] as const;
+export type GateNo = (typeof gateNumbers)[number];
+
+export const gateApprovalStatuses = ["pending", "requested", "approved", "rejected", "returned"] as const;
+export type GateApprovalStatus = (typeof gateApprovalStatuses)[number];
+
+export const gateLabels: Record<GateNo, string> = {
+  1: "Gate1 企画承認",
+  2: "Gate2 開発承認",
+  3: "Gate3 MVP承認",
+  4: "Gate4 本番移行承認",
+  5: "Gate5 Release承認",
+};
+
+// 各ゲートの主承認Authority（docs/New/ai-dx-dev-process.md #05の主担当を単純化）。
+export const gateRequiredAuthority: Record<GateNo, Authority> = {
+  1: "business",
+  2: "domain",
+  3: "domain",
+  4: "business",
+  5: "engineering",
+};
+
+export type IdeaGateApproval = {
+  id: string;
+  ideaId: string;
+  gateNo: GateNo;
+  requiredAuthority: Authority;
+  approverEmail?: string;
+  status: GateApprovalStatus;
+  reason?: string;
+  requestedAt?: string;
+  actedAt?: string;
+  actedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AuditChainVerifyResult = {
   valid: boolean;
   checked: number;

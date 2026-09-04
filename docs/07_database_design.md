@@ -142,6 +142,24 @@ Neon PostgreSQLには、利用者が確認した構造化結果と人間の意�
 | budget | numeric | 適用した月次予算 |
 | updated_at | timestamptz | 更新日時 |
 
+### idea_gate_approvals（#50）
+
+| カラム | 型 | 内容 |
+|---|---|---|
+| id | uuid | ゲート承認ID |
+| idea_id | uuid | アイデアID |
+| gate_no | integer | 1〜5（Gate1企画承認〜Gate5 Release承認） |
+| required_authority | text | business / domain / engineering（このゲートの主承認Authority） |
+| approver_email | text | 承認者メール |
+| status | text | pending/requested/approved/rejected/returned |
+| reason | text | 依頼・判定理由 |
+| requested_at | timestamptz | 承認依頼日時 |
+| acted_at | timestamptz | 承認判定日時 |
+| acted_by | text | 判定者 |
+| created_at / updated_at | timestamptz | 作成・更新日時 |
+
+全社Idea-to-Valueプロセス（`docs/New/ai-dx-dev-process.md` #05）のGate1〜5・3 Authorityに対応する多段階承認。既存の`ideas.approval_status`（単一承認、#004）は後方互換のため維持し、Gate5承認完了時に`approved`を反映する。ゲートは`POST /api/ideas/:id/gates/init`で明示的に初期化しない限り作成されない（既存の単一承認フローのみを使う既存アイデアには影響しない）。
+
 ## 3. リレーション
 
 ```mermaid
