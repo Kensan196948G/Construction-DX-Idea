@@ -109,6 +109,7 @@ export type StandaloneState = {
     name: string;
     department: string;
     role: string;
+    authority: string;
     editingId: string | number | null;
   };
   users: Array<{
@@ -117,6 +118,7 @@ export type StandaloneState = {
     department: string;
     email: string;
     role: string;
+    authority?: string;
     status: string;
   }>;
   adminSettings: {

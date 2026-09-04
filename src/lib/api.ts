@@ -179,7 +179,12 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify(input),
         }),
-      updateUser: (id: string, patch: Partial<AppUserInput>) =>
+      updateUser: (
+        id: string,
+        // authorityはnullで「未設定に戻す」を明示できる（サーバー側は
+        // フィールド有無で判定するため、undefinedとnullを区別する）。
+        patch: Partial<Omit<AppUserInput, "authority">> & { authority?: AppUserInput["authority"] | null },
+      ) =>
         request<AppUser>(`/api/admin/users/${id}`, {
           method: "PATCH",
           body: JSON.stringify(patch),

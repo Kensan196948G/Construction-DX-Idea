@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { issueInputSchema, normalizeApiBaseUrl, structuredIdeaSchema } from "../src/lib/shared";
+import {
+  authorities,
+  authorityLabels,
+  issueInputSchema,
+  normalizeApiBaseUrl,
+  structuredIdeaSchema,
+} from "../src/lib/shared";
+
+describe("Authority (#49)", () => {
+  it("defines a label for every authority value", () => {
+    for (const value of authorities) {
+      assert.equal(typeof authorityLabels[value], "string");
+      assert.ok(authorityLabels[value].length > 0);
+    }
+  });
+
+  it("has exactly the 3 Authority values (business/domain/engineering)", () => {
+    assert.deepEqual([...authorities].sort(), ["business", "domain", "engineering"]);
+  });
+});
 
 describe("shared API schemas", () => {
   it("rejects unknown fields in issue input", () => {

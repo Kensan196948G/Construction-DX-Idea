@@ -205,12 +205,25 @@ export type UserRole = (typeof userRoles)[number];
 export const userStatuses = ["active", "suspended"] as const;
 export type UserStatus = (typeof userStatuses)[number];
 
+// 全社Idea-to-Valueプロセス（docs/New/ai-dx-dev-process.md）が定める3 Authority。
+// Business=経営企画、Domain=建設土木技術、Engineering=IT・DX。role（user/admin/
+// system_admin）による認可とは独立した追加属性で、Gate拡張承認フロー（#50）が
+// ゲート別の承認者判定に利用する（#49）。
+export const authorities = ["business", "domain", "engineering"] as const;
+export type Authority = (typeof authorities)[number];
+export const authorityLabels: Record<Authority, string> = {
+  business: "Business（経営企画）",
+  domain: "Domain（建設土木技術）",
+  engineering: "Engineering（IT・DX）",
+};
+
 export type AppUser = {
   id: string;
   email: string;
   name: string;
   department: string;
   role: UserRole;
+  authority?: Authority;
   status: UserStatus;
   createdAt: string;
   updatedAt: string;
@@ -221,6 +234,7 @@ export type AppUserInput = {
   name?: string;
   department?: string;
   role: UserRole;
+  authority?: Authority;
   status?: UserStatus;
 };
 

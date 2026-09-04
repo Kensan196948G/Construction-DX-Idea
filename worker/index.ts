@@ -27,6 +27,7 @@ import {
   type IdeaStage,
   type IssueInput,
   type StructuredIdea,
+  authorities,
   ideaStages,
   issueInputSchema,
   structuredIdeaSchema,
@@ -1314,6 +1315,7 @@ app.post(
       name: z.string().max(200).optional().default(""),
       department: z.string().max(200).optional().default(""),
       role: z.enum(userRoles),
+      authority: z.enum(authorities).optional(),
       status: z.enum(["active", "suspended"]).optional().default("active"),
     }),
   ),
@@ -1328,14 +1330,18 @@ app.post(
       throw new ApiError("USER_ALREADY_EXISTS", "このメールアドレスは登録済みです。", 409);
     }
     const rows = await db`
-      insert into app_users (email, name, department, role, status, created_by)
-      values (${email}, ${input.name ?? ""}, ${input.department ?? ""}, ${input.role}, ${input.status ?? "active"}, ${user})
+      insert into app_users (email, name, department, role, authority, status, created_by)
+      values (
+        ${email}, ${input.name ?? ""}, ${input.department ?? ""}, ${input.role},
+        ${input.authority ?? null}, ${input.status ?? "active"}, ${user}
+      )
       returning *
     `;
     const item = mapUserRow(rows[0]);
     await audit(c.env, user, "users.create", "app_users", item.id, {
       email: item.email,
       role: item.role,
+      authority: item.authority,
     });
     return c.json(item, 201);
   },
@@ -1349,6 +1355,7 @@ app.patch(
       name: z.string().max(200).optional(),
       department: z.string().max(200).optional(),
       role: z.enum(userRoles).optional(),
+      authority: z.enum(authorities).nullable().optional(),
       status: z.enum(["active", "suspended"]).optional(),
     }).strict(),
   ),
@@ -1368,12 +1375,16 @@ app.patch(
     if (isSelf && patch.status === "suspended") {
       throw new ApiError("SELF_SUSPENSION", "自分自身を無効化できません。", 422);
     }
+    // authorityはnullで「未設定に戻す」を明示できるため、role等とは別に扱う
+    // （coalesceだとnull指定で既存値へ戻ってしまい、解除操作ができない）。
+    const hasAuthorityPatch = Object.prototype.hasOwnProperty.call(patch, "authority");
     const rows = await db`
       update app_users
       set
         name = coalesce(${patch.name ?? null}, name),
         department = coalesce(${patch.department ?? null}, department),
         role = coalesce(${patch.role ?? null}, role),
+        authority = case when ${hasAuthorityPatch} then ${patch.authority ?? null} else authority end,
         status = coalesce(${patch.status ?? null}, status),
         updated_at = now()
       where id = ${id}
@@ -3012,6 +3023,7 @@ function mapUserRow(row: Record<string, unknown>): AppUser {
     name: String(row.name ?? ""),
     department: String(row.department ?? ""),
     role: String(row.role) as AppUser["role"],
+    authority: row.authority ? (String(row.authority) as AppUser["authority"]) : undefined,
     status: String(row.status) as AppUser["status"],
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),

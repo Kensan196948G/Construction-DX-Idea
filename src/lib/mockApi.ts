@@ -502,11 +502,19 @@ export const mockApi = {
     };
   },
 
-  async updateUser(id: string, patch: Partial<AppUserInput>): Promise<AppUser> {
+  async updateUser(
+    id: string,
+    patch: Partial<Omit<AppUserInput, "authority">> & { authority?: AppUserInput["authority"] | null },
+  ): Promise<AppUser> {
     const users = await this.getUsers();
     const found = users.items.find((user) => user.id === id);
     if (!found) throw new Error("User not found");
-    return { ...found, ...patch, email: (patch.email ?? found.email).toLowerCase() };
+    return {
+      ...found,
+      ...patch,
+      authority: patch.authority === null ? undefined : (patch.authority ?? found.authority),
+      email: (patch.email ?? found.email).toLowerCase(),
+    };
   },
 
   async deleteUser(): Promise<{ ok: boolean }> {

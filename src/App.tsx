@@ -15,7 +15,8 @@ import {
   validateIssueInput,
 } from "./lib/standaloneBridge";
 import type { StandaloneState } from "./lib/standaloneBridge";
-import type { AuditLogEntry, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
+import type { AuditLogEntry, Authority, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
+import { authorities } from "./lib/shared";
 
 const designPath = "/design/construction-dx-idea.html";
 const workflowBindIntervalMs = 700;
@@ -991,6 +992,7 @@ async function loadUsers(component: StandaloneComponent) {
         department: user.department,
         email: user.email,
         role: user.role,
+        authority: user.authority ?? "",
         status: user.status,
       })),
     });
@@ -1006,6 +1008,9 @@ async function saveUserThroughApi(component: StandaloneComponent) {
     showToast(component, "メールアドレスを入力してください。");
     return;
   }
+  const authority = (authorities as readonly string[]).includes(form.authority)
+    ? (form.authority as Authority)
+    : undefined;
   try {
     if (form.editingId != null) {
       await api.updateUser(String(form.editingId), {
@@ -1013,6 +1018,7 @@ async function saveUserThroughApi(component: StandaloneComponent) {
         name: form.name.trim(),
         department: form.department.trim(),
         role: form.role as "user" | "admin" | "system_admin",
+        authority: authority ?? null,
       });
     } else {
       await api.createUser({
@@ -1020,10 +1026,11 @@ async function saveUserThroughApi(component: StandaloneComponent) {
         name: form.name.trim(),
         department: form.department.trim(),
         role: form.role as "user" | "admin" | "system_admin",
+        authority,
       });
     }
     component.setState({
-      userForm: { email: "", name: "", department: "", role: "user", editingId: null },
+      userForm: { email: "", name: "", department: "", role: "user", authority: "", editingId: null },
     });
     await loadUsers(component);
     component.pushAudit?.("ユーザー管理", form.editingId != null ? "ユーザーを更新" : "ユーザーを追加");
