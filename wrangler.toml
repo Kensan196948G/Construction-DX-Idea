@@ -45,13 +45,18 @@ AI_OUTPUT_COST_PER_1K_TOKENS = "0.015"
 # wrangler secret put DATABASE_URL
 # wrangler secret put ANTHROPIC_API_KEY   (only when AI is enabled)
 # wrangler secret put SLACK_WEBHOOK_URL   (optional)
+# NOTE (2026-08-31〜): DB はローカル PostgreSQL（Neon 廃止済み）。現行配信は
+# Cloudflare Tunnel → ローカル systemd サービス（dx-idea-api / dx-idea-mvp-api）が
+# 127.0.0.1 の PostgreSQL（dx_idea / dx_idea_mvp）へ接続する。Worker 配信へ戻す場合のみ
+# DATABASE_URL secret にローカルDB接続文字列を設定する（ドライバはホストで自動選択）。
 
 # ---------------------------------------------------------------------------
 # MVP/Prototype environment (https://dxidea-mvp.mirai-dx-platform.com)
 #
 # Fully separated from production:
 #   - its own Worker name + custom domain
-#   - its own Neon branch/database (seeded with fictional demo data)
+#   - its own local PostgreSQL database dx_idea_mvp (seeded with fictional demo data;
+#     Neon branch は 2026-08-31 に廃止・ローカルPostgreSQLへ移行済み)
 #   - ALLOW_LOCAL_AUTH_BYPASS=true: no Cloudflare Access gate so reviewers can
 #     open the URL and operate every screen immediately (write-rate limited)
 #   - AI_PROVIDER=demo: deterministic local responses, no API key, no cost

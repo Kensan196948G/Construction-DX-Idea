@@ -123,13 +123,20 @@ export SMOKE_SLACK_WEBHOOK_TEST=<通知確認用Webhook>
 export SMOKE_REQUEST_TIMEOUT_MS=12000
 ```
 
-## 4. Neon
+## 4. Neon（旧・履歴。2026-08-31にローカルPostgreSQLへ移行済み）
 
-> ✅ 2026-07-21実施済み: project `Construction-DX-Idea`（`twilight-cloud-06040828`）、
+> ⚠️ **2026-08-31 更新**: 現行のDBはクラウドのNeonではなく**ローカルPostgreSQL**。
+> 本番 `dx_idea`@127.0.0.1:5432 / MVP `dx_idea_mvp`@127.0.0.1:5432 を systemd サービス
+> （dx-idea-api / dx-idea-mvp-api）が postgres.js（TCP）で接続する（`worker/index.ts` が
+> 接続URLのホストでドライバ自動選択）。migration 適用は `npm run db:migrate`
+> （`scripts/migrate-local.mjs`、冪等・再実行安全）。本番ローカルDBへは migration 001-009
+> 適用済み（2026-09-04）。以降の手順はNeon時代の歴史的記録として残す。
+
+> ✅ 2026-07-21実施済み（Neon時代）: project `Construction-DX-Idea`（`twilight-cloud-06040828`）、
 > region `aws-us-east-2`（MCPのリージョン指定不可により組織デフォルト。ユーザー決裁で確定）、
 > DB `neondb`、migration適用済み。
 
-1. Neonプロジェクトを作成する（プロジェクト名 `Construction-DX-Idea`）。
+1. （旧・Neon）プロジェクトを作成する（プロジェクト名 `Construction-DX-Idea`）。
 2. `migrations/001_initial_schema.sql` を適用する。
 3. `ideas`、`idea_ai_sessions`、`audit_logs`、`ai_usage_counters`、`ai_monthly_usage_counters`、`notification_outbox` が作成されたことを確認する。
 4. `migrations/002_add_idea_submitter_fields.sql` を適用する（#14。additive、`IF NOT EXISTS`、既存行はDEFAULT ''。2026-08-09本番適用済み）。
@@ -139,9 +146,13 @@ export SMOKE_REQUEST_TIMEOUT_MS=12000
 
 ## 5. バックアップ・復旧
 
-- Neonの自動バックアップ（PITR）を有効にし、`docs/10_operations_runbook.md` §6の
-  ブランチ取得・整合性確認・復旧演習を四半期に1回以上実施する。
-- 復旧時は一時ブランチで整合性を確認後、接続文字列を切り替え、`release:smoke` で確認する。
+- 【現行・ローカルPostgreSQL】バックアップは `pg_dump` 等によるローカルPostgreSQLの
+  スナップショットと、`scripts/neon-backup-drill.sh` 相当の整合性確認演習を四半期に1回以上実施する。
+  復旧時は一時DB（例: `dx_idea_restore`）で整合性を確認後、`DATABASE_URL` を切り替え、
+  `release:smoke` / 監査チェーンverify で確認する。
+- （旧・Neon時代の記録）Neonの自動バックアップ（PITR）を有効にし、`docs/10_operations_runbook.md` §6の
+  ブランチ取得・整合性確認・復旧演習を四半期に1回以上実施していた。復旧時は一時ブランチで
+  整合性を確認後、接続文字列を切り替え、`release:smoke` で確認する。
 
 Stage Aではプロジェクト作成とmigration適用（スキーマ準備）まで行い、`DATABASE_URL` の
 Secret投入はStage Bで行ってよい。Workerは `DATABASE_URL` 未設定の間、DB依存APIを503で

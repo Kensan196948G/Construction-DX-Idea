@@ -2,7 +2,13 @@
 
 ## 1. 目的
 
-本書は、Cloudflare Workers API、Neon PostgreSQL、Claude API、Slack連携、Secret管理の詳細仕様を定義する。
+本書は、API（Cloudflare Workers / ローカルsystemd）、PostgreSQL、Claude API、Slack連携、Secret管理の詳細仕様を定義する。
+
+> **2026-08-31 更新**: DBはクラウドの **Neon PostgreSQL からローカルPostgreSQLへ移行済み**。
+> 現行は本番 `dx_idea` / MVP `dx_idea_mvp` を localhost の PostgreSQL 上で運用する
+> （systemd + postgres.js TCP。`worker/index.ts` が接続URLのホストでNeon serverless driver と
+> postgres.js を自動選択するため、neon.tech ホストを使う旧構成もコード上は動作可能）。
+> 本書中の「Neon」表記は旧構成の仕様記述として残す。
 
 ## 2. 論理構成
 
