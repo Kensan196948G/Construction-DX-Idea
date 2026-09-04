@@ -9,6 +9,7 @@
 - セキュリティ判断は `docs/09_security_privacy.md` と `docs/18_risk_register.md` を必ず確認する。
 - 仕様差分を見つけた場合は、実装だけで解決せず、関連ドキュメントとIssueを更新する。
 - AI、Secret、認証、監査ログ、Slack通知、利用上限に関わる変更は、人間レビューをリリース条件に含める。
+- 本番リリースは、`docs/New/ai-dx-dev-process.md`が定める全社Gate1〜5承認（desknet's NEO Workflowが正本）を要する場合がある。GitHub上の`/safe-auto-merge`によるPR自動マージおよび品質ゲート判定は、あくまでEngineering層（Phase 10〜17）の技術的完了条件であり、全社Gate5（リリース可否の業務承認）を代替しない。全社Gate5の要否・実施状況が不明な場合は、リリース実行前にユーザーへ確認する。
 
 ## 2. AgentTeams想定ロール
 
