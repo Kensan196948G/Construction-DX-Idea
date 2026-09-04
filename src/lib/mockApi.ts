@@ -20,6 +20,7 @@ import type {
   IdeaGateApproval,
   IdeaHistory,
   IdeaStage,
+  IdeaValuePhaseEntry,
   IssueInput,
   PrivacyFinding,
   SaveIdeaResult,
@@ -28,12 +29,19 @@ import type {
 } from "./shared";
 import {
   defaultGateApprovalRows,
+  defaultPhaseForStage,
   gateNumbers,
   gateAuthorityPolicy,
+  ideaValuePhaseLabel,
+  ideaValuePhases,
   summarizeGateApprovals,
 } from "./shared";
 
 const gateApprovals = new Map<string, IdeaGateApproval[]>();
+const phaseHistory = new Map<
+  string,
+  Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
+>();
 
 const now = () => new Date().toISOString();
 
@@ -209,6 +217,58 @@ export const mockApi = {
     return {
       history: [{ fromStage: undefined, toStage: idea.stage, changedBy: idea.createdBy, reason: "", changedAt: idea.updatedAt }],
       decisions: [],
+    };
+  },
+
+  async getIdeaPhase(id: string): Promise<IdeaValuePhaseEntry> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const current = idea.phaseNo ?? defaultPhaseForStage(idea.stage) ?? 1;
+    const history = phaseHistory.get(id) ?? [
+      { id: `ph-${id}-0`, toPhase: current, reason: "初期化", changedBy: idea.createdBy, createdAt: idea.updatedAt },
+    ];
+    return {
+      ideaId: id,
+      phaseNo: current,
+      phaseLabel: ideaValuePhaseLabel(current),
+      phaseNote: idea.phaseNote,
+      history,
+      phases: ideaValuePhases.map((p) => ({
+        no: p.no,
+        label: p.label,
+        stage: p.stage,
+        state: p.no < current ? "done" : p.no === current ? "current" : "todo",
+      })),
+    };
+  },
+
+  async updateIdeaPhase(id: string, payload: { phaseNo: number; reason?: string; note?: string }): Promise<{
+    ideaId: string;
+    phaseNo: number;
+    phaseLabel: string;
+    fromPhase: number;
+    reason: string;
+  }> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const fromPhase = idea.phaseNo ?? defaultPhaseForStage(idea.stage) ?? 1;
+    const target = payload.phaseNo;
+    const entry = {
+      id: `ph-${id}-${Date.now()}`,
+      toPhase: target,
+      reason: payload.reason?.trim() || (target > fromPhase ? "フェーズ前進" : "フェーズ後戻し"),
+      changedBy: "demo.user@example.com",
+      createdAt: now(),
+    };
+    idea.phaseNo = target;
+    if (payload.note?.trim()) idea.phaseNote = payload.note.trim();
+    phaseHistory.set(id, [...(phaseHistory.get(id) ?? []), entry]);
+    return {
+      ideaId: id,
+      phaseNo: target,
+      phaseLabel: ideaValuePhaseLabel(target),
+      fromPhase,
+      reason: entry.reason,
     };
   },
 
