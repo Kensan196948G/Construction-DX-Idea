@@ -22,16 +22,21 @@ import type {
   GateNo,
   GateOverviewResult,
   GateReminderRunResult,
+  GitHubSyncResult,
   Idea,
   IdeaComment,
   IdeaGateApproval,
+  IdeaGitHubOverviewResult,
   IdeaHistory,
   IdeaListParams,
+  IdeaRepoLink,
+  IdeaRepoListResult,
   IdeaStage,
   IdeaValuePhaseEntry,
   InformationClassification,
   IssueInput,
   IdeaKpi,
+  KnowledgeCandidate,
   KpiOutcome,
   PortfolioSummary,
   PortfolioSummaryRow,
@@ -156,6 +161,55 @@ export const api = useMock
       // Gateリマインダー/エスカレーション実行（管理者限定・日次cronと同一処理）。
       runGateReminders: () =>
         request<GateReminderRunResult>("/api/admin/gates/reminders/run", { method: "POST" }),
+      // GitHub Engineering 連携（docs/29 §2.12・migration 015）。
+      listIdeaRepos: (id: string) => request<IdeaRepoListResult>(`/api/ideas/${id}/repos`),
+      linkIdeaRepo: (id: string, repoFullName: string) =>
+        request<IdeaRepoLink>(`/api/ideas/${id}/repos`, {
+          method: "POST",
+          body: JSON.stringify({ repoFullName }),
+        }),
+      unlinkIdeaRepo: (id: string, linkId: string) =>
+        request<{ ok: boolean }>(`/api/ideas/${id}/repos/${linkId}`, { method: "DELETE" }),
+      getIdeaGitHubOverview: (id: string) =>
+        request<IdeaGitHubOverviewResult>(`/api/ideas/${id}/github/overview`),
+      syncIdeaGitHub: (id: string) =>
+        request<GitHubSyncResult>(`/api/ideas/${id}/github/sync`, { method: "POST" }),
+      // Knowledge Management（docs/29 §2.16・migration 016）。
+      listKnowledge: (params: { status?: string; category?: string } = {}) => {
+        const query = new URLSearchParams();
+        if (params.status) query.set("status", params.status);
+        if (params.category) query.set("category", params.category);
+        const suffix = query.toString() ? `?${query.toString()}` : "";
+        return request<{ items: KnowledgeCandidate[] }>(`/api/knowledge${suffix}`);
+      },
+      submitKnowledge: (input: {
+        title: string;
+        category: KnowledgeCandidate["category"];
+        body?: string;
+        sourceIdeaId?: string;
+      }) =>
+        request<KnowledgeCandidate>("/api/knowledge", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      extractKnowledge: () =>
+        request<{ created: number; scanned: Record<string, number> }>(
+          "/api/knowledge/extract",
+          { method: "POST" },
+        ),
+      reviewKnowledge: (
+        id: string,
+        input: { action: "approve" | "reject"; qualityScore?: number; note?: string },
+      ) =>
+        request<KnowledgeCandidate>(`/api/knowledge/${id}/review`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      promoteKnowledge: (id: string, url: string) =>
+        request<KnowledgeCandidate>(`/api/knowledge/${id}/promote`, {
+          method: "POST",
+          body: JSON.stringify({ url }),
+        }),
       getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
       getPortfolio: () => request<{ summary: PortfolioSummary; items: PortfolioSummaryRow[] }>("/api/portfolio"),
       recordKpi: (

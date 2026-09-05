@@ -151,11 +151,12 @@
 - 【P2】運用設計・Runbook・利用者マニュアル・Gate審査資料・完了/効果測定報告・Lessons Learned
 - 【P1】文書ライフサイクル: AI生成 → 人間レビュー → Approved版固定（版管理・署名）
 
-### 2.12 GitHub Engineering 連携（元#270〜291）
+### 2.12 GitHub Engineering 連携（元#270〜291）※第1弾は実装済み（migration 015・2026-09-05）
 
-- 【P1】案件→Repo作成/紐付け・Issue自動生成（Requirement/Risk→Issue）・Milestone
-- 【P1】PR/レビュー/CI/Security Scan/Dependabot/Release 状態の案件画面への統合
-- 【P1】Commit/PR/Release → 案件ID（`DX-YYYY-NNNN`）紐付け・Evidence自動収集
+- 【実装済】案件→Repo紐付け（複数Repo・GitHub API存在確認）・案件画面へのRepo/CI/Release/PR/Issue状態統合
+- 【実装済】PR/Issue → 案件ID（`DX-YYYY-NNNN`）紐付け（title/body一致検出・caseIdMatched）・Evidence自動収集（`/github/sync`）
+- 【P1】Repo自動作成・Issue自動生成（Requirement/Risk→Issue）・Milestone
+- 【P1】PR/レビュー/Security Scan/Dependabot 状態の統合（現在はPR/Issue/CI/Release）
 - 【P2】GitHub Project 連携
 
 ### 2.13 AppSuite / desknet's NEO Workflow 連携（元#292〜306）
@@ -177,11 +178,12 @@
 - 【P2】Mention・期限/遅延通知・KPIレビュー通知・Monthly Portfolio Digest
 - 【P1】Outlook/Gmail 通知・通知 Preference（即時/日次/週次・抑制）
 
-### 2.16 Knowledge Management（元#326〜346）
+### 2.16 Knowledge Management（元#326〜346）※第1弾は実装済み（migration 016・2026-09-05）
 
-- 【P1】Knowledge Candidate 自動抽出（Decision/Problem-Solution/Lessons/ADR/Best Practice/Runbook/FAQ）
-- 【P1】Review Queue・Human Approval・Notion 昇格連携
-- 【P2】Knowledge Owner・有効期限・Superseded/Archived・重複統合・品質Score・再利用回数
+- 【実装済】Knowledge Candidate 自動抽出（Gate判定理由/コメント/効果測定レビュー。決定論的キーワード規則。手動登録も可）
+- 【実装済】Review Queue・Human Approval・昇格URL記録（知識管理画面「📚 知識管理」）
+- 【P1】Notion 実API昇格連携（現在はURL記録）
+- 【P2】Knowledge Owner・有効期限・Superseded/Archived・重複統合・品質Score自動評価・再利用回数
 
 ### 2.17 セキュリティ・情報区分・公開制御（元#377〜400・Issue #12 と一部重複）
 

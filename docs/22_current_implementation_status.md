@@ -125,6 +125,43 @@
   Knowledge Management、Risk×Return・Bubble Chartの可視化。
 
 
+## 0.19 最新（2026-09-05: GitHub Engineering連携 + Knowledge Management / migration 015-016）
+
+- **GitHub Engineering 連携（docs/29 §2.12・migration 015）**:
+  - `idea_repo_links`（案件↔Repo紐付け・1案件複数Repo可）と `idea_github_evidence`
+    （Issue/PR/CI/Release/Commit の Evidence upsert、unique(idea_id, kind, external_id)）を追加。
+  - worker API: `POST /api/ideas/:id/repos`（owner/repo 正規化・GitHub APIで存在確認・
+    作成者 or 管理者）、`GET /api/ideas/:id/repos`、`DELETE /api/ideas/:id/repos/:linkId`、
+    `GET /api/ideas/:id/github/overview`（Repo/CI/Release/オープンPR・Issue。
+    案件ID `DX-YYYY-NNNN` を title/body に含むものは caseIdMatched=true）、
+    `POST /api/ideas/:id/github/sync`（Evidence自動収集）。
+    GitHub Token は `GITHUB_TOKEN`、API基底URLは `GITHUB_API_BASE`（E2Eはローカルモック）。
+  - WebUI: 詳細カード「🔗 GitHub Engineering連携」（Repo紐付け/解除・状態取得
+    （CI ✅/❌・最新Release・PR/Issue一覧と案件ID一致表示）・Evidence同期と収集済み一覧）。
+- **Knowledge Management（docs/29 §2.16・migration 016）**:
+  - `knowledge_candidates`（source_type: gate_decision/idea_comment/kpi_review/manual、
+    category: decision/problem_solution/lessons/adr/best_practice/runbook/faq、
+    status: candidate→approved/rejected→promoted、quality_score・昇格URL。
+    同一ソース同一タイトルは unique で重複排除）。
+  - worker API: `POST /api/knowledge/extract`（Gate承認理由→decision、
+    コメント/KPIレビュー→`classifyKnowledgeSource` キーワード規則で分類・決定論的）、
+    `GET /api/knowledge?status=&category=`、`POST /api/knowledge`（手動登録）、
+    `POST /api/knowledge/:id/review`（Human Approval・システム管理者）、
+    `POST /api/knowledge/:id/promote`（昇格URL記録）。
+  - WebUI: 新画面「📚 知識管理」（管理グループ・システム管理者限定）:
+    ステータスチップ（すべて/候補/承認済/却下/昇格済）+ Review Queue一覧
+    （カテゴリ/抽出元/品質スコア/昇格先URL）+ 承認/却下/昇格（URLプロンプト）操作 +
+    手動登録フォーム + 「✨ 候補を抽出」ボタン。
+- **検証**: `npm run verify` PASS（test 144件、github-knowledge 10件を追加）。
+  実DB E2E（scripts/github-knowledge-e2e.mjs・ローカルGitHubモックサーバー込み）:
+  Repo紐付け（URL正規化・存在確認502）→ 状態取得（CI success/Release v1.0.0/PR2件
+  （案件ID一致1件）/Issue1件（PR除外））→ Evidence同期 5行upsert → Gate1承認理由と
+  コメントから抽出（decision/problem_solution）→ 手動登録→承認→昇格 まで PASS。
+  Playwright: GitHubカード（紐付け/状態取得/Evidence同期4件）と知識管理画面
+  （一覧/承認/昇格トースト）を確認。
+- 残（次ラウンド候補）: GitHub Project連携・Milestone、Notion実API昇格、
+  Knowledge Owner/有効期限/品質スコア自動評価、Gate Checklist・不在設定。
+
 ## 0.18 最新（2026-09-05: Gate高度化 — 承認期限・Reminder/Escalation・代理承認・条件付き承認・滞留分析 / migration 014）
 
 - **migration 014（`idea_gate_approvals` 拡張・additive/冪等）**: `requested_due_at`（承認期限）、

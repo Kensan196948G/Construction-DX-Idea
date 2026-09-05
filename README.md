@@ -89,6 +89,7 @@ flowchart TD
 | 2026-09-05 | **RAG類似検索・AI品質Eval・情報区分** | ✅ migration 011（RAG類似検索・重複判定）・Issue #13完結（Golden Dataset回帰Eval）・migration 012（情報区分・公開制御 Public/Internal/Confidential/Restricted）。PR #60-#63 merge。`npm run verify` PASS |
 | 2026-09-05 | **DX案件ポートフォリオ＋KPI/ROI・ポートフォリオ強化** | ✅ migration 013（KPI/ROI・Benefit Realization）+ ポートフォリオ専用画面（Value×Effort一覧・サマリカード）・KPIベースライン登録UI・3/6/12か月レビューリマインダー（週次ダイジェスト統合）。PR #64/#65 merge。`npm run verify` PASS（test 124件） |
 | 2026-09-05 | **Gate高度化（承認期限・Reminder/Escalation・代理承認・条件付き承認・滞留分析）** | ✅ migration 014（requested_due_at/delegate_to/condition_note/condition_met/last_reminded_at/reminder_count/escalated_at）。worker: dueAt（既定5日後・過去日時400）+代理承認+条件付き承認API、Gate滞留分析 `GET /api/admin/gates/overview`、リマインダー/エスカレーション `POST /api/admin/gates/reminders/run`（日次ジョブ・24h間隔制御）。WebUI: 詳細Gateカード拡張（期限/代理/条件入力・超過強調）+「🚦 Gate滞留分析」画面（サマリ/一覧/手動実行）。`npm run verify` PASS（test 134件）・実DB E2E（scripts/gate-enforcement-e2e.mjs）PASS・Playwright UI確認済み |
+| 2026-09-05 | **GitHub Engineering連携 + Knowledge Management** | ✅ migration 015（`idea_repo_links`/`idea_github_evidence`）+ 016（`knowledge_candidates`）。worker: Repo紐付けAPI（GitHub API存在確認・URL正規化）、`/github/overview`（Repo/CI/Release/PR/Issue・案件ID一致検出）、`/github/sync`（Evidence自動収集）、Knowledge候補抽出（決定論的キーワード規則）/Review Queue/承認/昇格API。WebUI: 詳細「🔗 GitHub Engineering連携」カード+新画面「📚 知識管理」（ステータスフィルタ/一覧/承認/却下/昇格/手動登録/抽出）。`npm run verify` PASS（test 144件）・実DB E2E（scripts/github-knowledge-e2e.mjs・ローカルGitHubモック）PASS・Playwright UI確認済み |
 
 <details>
 <summary>2026-07-13 詳細ログ（折りたたみ）</summary>

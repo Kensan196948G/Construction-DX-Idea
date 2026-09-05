@@ -97,6 +97,16 @@ type StandaloneComponent = {
   decideGateApproval?: (decision: string) => () => Promise<void>;
   loadGateOverview?: () => Promise<void>;
   runGateReminders?: () => Promise<void>;
+  loadReposForSelected?: () => Promise<void>;
+  linkRepo?: () => Promise<void>;
+  unlinkRepo?: (linkId: string) => Promise<void>;
+  loadRepoOverview?: () => Promise<void>;
+  syncRepoEvidence?: () => Promise<void>;
+  loadKnowledge?: (statusFilter?: string) => Promise<void>;
+  submitKnowledgeForm?: () => Promise<void>;
+  extractKnowledgeCandidates?: () => Promise<void>;
+  reviewKnowledge?: (id: string, action: "approve" | "reject") => Promise<void>;
+  promoteKnowledge?: (id: string, url: string) => Promise<void>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
   loadSimilarIdeas?: () => Promise<void>;
@@ -242,6 +252,23 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     decideGateApprovalThroughApi(component, decision);
   component.loadGateOverview = () => loadGateOverviewThroughBridge(component);
   component.runGateReminders = () => runGateRemindersThroughBridge(component);
+  // GitHub Engineering 連携（migration 015）とKnowledge Management（migration 016）。
+  component.loadReposForSelected = () => loadReposThroughApi(component);
+  component.linkRepo = () => linkRepoThroughApi(component);
+  component.unlinkRepo = (linkId) => unlinkRepoThroughApi(component, linkId);
+  component.loadRepoOverview = () => loadRepoOverviewThroughApi(component);
+  component.syncRepoEvidence = () => syncRepoEvidenceThroughApi(component);
+  component.loadKnowledge = (statusFilter) => loadKnowledgeThroughApi(component, statusFilter);
+  component.submitKnowledgeForm = () => submitKnowledgeThroughApi(component);
+  component.extractKnowledgeCandidates = () => extractKnowledgeThroughApi(component);
+  component.reviewKnowledge = (id, action) => reviewKnowledgeThroughApi(component, id, action);
+  // url省略時は昇格先URLをプロンプトで受け取る（モックと同じUX）。
+  component.promoteKnowledge = (id, url) =>
+    promoteKnowledgeThroughApi(
+      component,
+      id,
+      url ?? window.prompt("昇格先（Notion等）のURLを入力してください。") ?? "",
+    );
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
   component.loadSimilarIdeas = () => loadSimilarIdeas(component);
@@ -283,18 +310,26 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       showToast(component, "Gate滞留分析にはシステム管理者権限が必要です。");
       return;
     }
+    if (view === "knowledge" && !hasRole(component, "system_admin")) {
+      showToast(component, "知識管理にはシステム管理者権限が必要です。");
+      return;
+    }
     component.setState({ view });
     if (view === "detail") {
       void loadCommentsForSelected(component);
       void loadGatesForSelected(component);
       void loadIdeaPhase(component);
       void loadSimilarIdeas(component);
+      void loadReposThroughApi(component);
     }
     if (view === "portfolio") {
       void loadPortfolioThroughBridge(component);
     }
     if (view === "gateDashboard") {
       void loadGateOverviewThroughBridge(component);
+    }
+    if (view === "knowledge") {
+      void loadKnowledgeThroughApi(component);
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
@@ -1229,6 +1264,245 @@ async function runGateRemindersThroughBridge(component: StandaloneComponent) {
   } catch (error) {
     component.setState({ gateOverviewBusy: false });
     showToast(component, `リマインダーを実行できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// ---- GitHub Engineering 連携ブリッジ（migration 015 / docs/29 §2.12）----
+
+function selectedIdeaForRepos(component: StandaloneComponent) {
+  return selectedIdeaForGate(component);
+}
+
+// 詳細表示時: Repo紐付けと収集済みEvidenceをロードする。
+async function loadReposThroughApi(component: StandaloneComponent) {
+  const idea = selectedIdeaForRepos(component);
+  if (!idea) return;
+  component.setState({ repoBusy: true });
+  try {
+    const result = await api.listIdeaRepos(String(idea.id));
+    component.setState({
+      repoData: {
+        links: result.items.map((link) => ({
+          id: link.id,
+          ideaId: link.ideaId,
+          repoFullName: link.repoFullName,
+          defaultBranch: link.defaultBranch,
+        })),
+        evidence: result.evidence.map((e) => ({
+          kind: e.kind,
+          externalId: e.externalId,
+          title: e.title,
+          status: e.status,
+          url: e.url,
+        })),
+        overview: null,
+      },
+      repoBusy: false,
+      repoInput: "",
+    });
+  } catch (error) {
+    component.setState({ repoBusy: false });
+    showToast(component, `Repo連携状態を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// Repo紐付け登録（owner/repo 形式。URL貼り付けはサーバー側で正規化される）。
+async function linkRepoThroughApi(component: StandaloneComponent) {
+  const idea = selectedIdeaForRepos(component);
+  if (!idea) return;
+  const repoFullName = component.state.repoInput.trim();
+  if (!repoFullName) {
+    showToast(component, "owner/repo 形式でGitHubリポジトリを入力してください。");
+    return;
+  }
+  component.setState({ repoBusy: true });
+  try {
+    await api.linkIdeaRepo(String(idea.id), repoFullName);
+    showToast(component, `${repoFullName} を紐付けました。`);
+    await loadReposThroughApi(component);
+    component.pushAudit?.("GitHub連携", `「${idea.title}」に ${repoFullName} を紐付け`);
+  } catch (error) {
+    component.setState({ repoBusy: false });
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+async function unlinkRepoThroughApi(component: StandaloneComponent, linkId: string) {
+  const idea = selectedIdeaForRepos(component);
+  if (!idea) return;
+  component.setState({ repoBusy: true });
+  try {
+    await api.unlinkIdeaRepo(String(idea.id), linkId);
+    showToast(component, "Repo紐付けを解除しました。");
+    await loadReposThroughApi(component);
+  } catch (error) {
+    component.setState({ repoBusy: false });
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+// GitHub状態取得（Repo/CI/Release/PR/Issue・案件ID一致表示込み）。
+async function loadRepoOverviewThroughApi(component: StandaloneComponent) {
+  const idea = selectedIdeaForRepos(component);
+  if (!idea) return;
+  component.setState({ repoBusy: true });
+  try {
+    const result = await api.getIdeaGitHubOverview(String(idea.id));
+    component.setState((state) => ({
+      repoBusy: false,
+      repoData: {
+        ...state.repoData,
+        links: result.repos.map((repo) => ({
+          id: repo.repoFullName,
+          ideaId: String(idea.id),
+          repoFullName: repo.repoFullName,
+          defaultBranch: repo.defaultBranch,
+        })),
+        overview: result.repos.map((repo) => ({
+          repoFullName: repo.repoFullName,
+          defaultBranch: repo.defaultBranch,
+          stars: repo.stars,
+          ciStatus: repo.ciStatus,
+          ciUrl: repo.ciUrl,
+          latestRelease: repo.latestRelease,
+          openPullRequests: repo.openPullRequests.map((pr) => ({
+            number: pr.number,
+            title: pr.title,
+            state: pr.state,
+            draft: pr.draft,
+            url: pr.url,
+            caseIdMatched: pr.caseIdMatched,
+          })),
+          openIssues: repo.openIssues.map((issue) => ({
+            number: issue.number,
+            title: issue.title,
+            state: issue.state,
+            url: issue.url,
+            caseIdMatched: issue.caseIdMatched,
+          })),
+        })),
+      },
+    }));
+  } catch (error) {
+    component.setState({ repoBusy: false });
+    showToast(component, `GitHub状態を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// Evidence自動収集（PR/Issue/Release/CI → idea_github_evidence へupsert）。
+async function syncRepoEvidenceThroughApi(component: StandaloneComponent) {
+  const idea = selectedIdeaForRepos(component);
+  if (!idea) return;
+  component.setState({ repoBusy: true });
+  try {
+    const result = await api.syncIdeaGitHub(String(idea.id));
+    showToast(component, `Evidenceを${result.upserted}件収集しました。`);
+    await loadReposThroughApi(component);
+    component.pushAudit?.("GitHub同期", `「${idea.title}」Evidence ${result.upserted}件`);
+  } catch (error) {
+    component.setState({ repoBusy: false });
+    showToast(component, `Evidenceを収集できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// ---- Knowledge Management ブリッジ（migration 016 / docs/29 §2.16）----
+
+// Review Queue一覧ロード（statusFilter: candidate/approved/rejected/promoted/""）。
+async function loadKnowledgeThroughApi(component: StandaloneComponent, statusFilter?: string) {
+  const filter = statusFilter ?? component.state.knowledgeData?.statusFilter ?? "";
+  component.setState({ knowledgeBusy: true });
+  try {
+    const result = await api.listKnowledge({ status: filter || undefined });
+    component.setState({
+      knowledgeBusy: false,
+      knowledgeData: {
+        items: result.items.map((k) => ({
+          id: k.id,
+          sourceType: k.sourceType,
+          sourceIdeaId: k.sourceIdeaId,
+          category: k.category,
+          title: k.title,
+          body: k.body,
+          status: k.status,
+          qualityScore: k.qualityScore,
+          submittedBy: k.submittedBy,
+          promotionUrl: k.promotionUrl,
+        })),
+        statusFilter: filter,
+      },
+    });
+  } catch (error) {
+    component.setState({ knowledgeBusy: false });
+    showToast(component, `知識候補を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// 手動登録フォームの送信。
+async function submitKnowledgeThroughApi(component: StandaloneComponent) {
+  const form = component.state.knowledgeForm;
+  if (!form.title.trim()) {
+    showToast(component, "タイトルを入力してください。");
+    return;
+  }
+  component.setState({ knowledgeBusy: true });
+  try {
+    await api.submitKnowledge({
+      title: form.title.trim(),
+      category: (form.category || "lessons") as Parameters<typeof api.submitKnowledge>[0]["category"],
+      body: form.body.trim() || undefined,
+    });
+    component.setState({
+      knowledgeBusy: false,
+      knowledgeForm: { title: "", category: form.category, body: "" },
+      toast: { message: "知識候補を登録しました（Review Queueで承認待ち）。" },
+    });
+    await loadKnowledgeThroughApi(component);
+  } catch (error) {
+    component.setState({ knowledgeBusy: false });
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+// 案件データからの自動抽出（Gate判定理由/コメント/効果測定レビュー）。
+async function extractKnowledgeThroughApi(component: StandaloneComponent) {
+  component.setState({ knowledgeBusy: true });
+  try {
+    const result = await api.extractKnowledge();
+    showToast(component, `知識候補を${result.created}件抽出しました。`);
+    await loadKnowledgeThroughApi(component);
+  } catch (error) {
+    component.setState({ knowledgeBusy: false });
+    showToast(component, `抽出できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function reviewKnowledgeThroughApi(
+  component: StandaloneComponent,
+  id: string,
+  action: "approve" | "reject",
+) {
+  component.setState({ knowledgeBusy: true });
+  try {
+    await api.reviewKnowledge(id, { action });
+    showToast(component, action === "approve" ? "知識を承認しました。" : "知識を却下しました。");
+    await loadKnowledgeThroughApi(component);
+  } catch (error) {
+    component.setState({ knowledgeBusy: false });
+    showToast(component, toErrorMessage(error));
+  }
+}
+
+// 昇格（Notion等のURLを記録）。URLはプロンプトで入力する簡易実装。
+async function promoteKnowledgeThroughApi(component: StandaloneComponent, id: string, url: string) {
+  if (!url.trim()) return;
+  component.setState({ knowledgeBusy: true });
+  try {
+    await api.promoteKnowledge(id, url.trim());
+    showToast(component, "知識を昇格しました（URL記録済み）。");
+    await loadKnowledgeThroughApi(component);
+  } catch (error) {
+    component.setState({ knowledgeBusy: false });
+    showToast(component, toErrorMessage(error));
   }
 }
 

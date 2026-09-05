@@ -196,6 +196,71 @@ export type StandaloneState = {
     avgDwellDays: number;
   } | null;
   gateOverviewBusy: boolean;
+  // GitHub Engineering 連携（docs/29 §2.12・migration 015）: 詳細画面のカードデータ。
+  repoData: {
+    links: Array<{
+      id: string;
+      ideaId: string;
+      repoFullName: string;
+      defaultBranch?: string | null;
+    }>;
+    evidence: Array<{
+      kind: string;
+      externalId: string;
+      title: string;
+      status?: string | null;
+      url?: string | null;
+    }>;
+    overview: Array<{
+      repoFullName: string;
+      defaultBranch?: string | null;
+      stars: number;
+      ciStatus?: string | null;
+      ciUrl?: string | null;
+      latestRelease?: {
+        tagName: string;
+        name?: string;
+        publishedAt?: string | null;
+        url?: string;
+        prerelease: boolean;
+      } | null;
+      openPullRequests: Array<{
+        number: number;
+        title: string;
+        state: string;
+        draft: boolean;
+        url?: string;
+        caseIdMatched: boolean;
+      }>;
+      openIssues: Array<{
+        number: number;
+        title: string;
+        state: string;
+        url?: string;
+        caseIdMatched: boolean;
+      }>;
+    }> | null;
+  };
+  repoBusy: boolean;
+  repoInput: string;
+  // Knowledge Management（docs/29 §2.16・migration 016）: Review Queue画面のデータ。
+  knowledgeData: {
+    items: Array<{
+      id: string;
+      sourceType: string;
+      sourceIdeaId?: string | null;
+      category: string;
+      title: string;
+      body: string;
+      status: string;
+      qualityScore?: number | null;
+      submittedBy?: string | null;
+      promotionUrl?: string | null;
+    }>;
+    statusFilter: string;
+  } | null;
+  knowledgeBusy: boolean;
+  knowledgeForm: { title: string; category: string; body: string };
   userForm: {
     email: string;
     name: string;

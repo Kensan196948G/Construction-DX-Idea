@@ -31,15 +31,21 @@ import {
   type IdeaComment,
   type IdeaGateApproval,
   type IdeaStage,
+  type IdeaRepoLink,
+  type IdeaGitHubEvidence,
+  type GitHubOverview,
+  type KnowledgeCandidate,
   type InformationClassification,
   type IssueInput,
   type KpiOutcome,
   type RagSearchHit,
   type StructuredIdea,
   authorities,
+  classifyKnowledgeSource,
   gateLabels,
   gateNumbers,
   gateAuthorityPolicy,
+  knowledgeCategories,
   summarizeGateApprovals,
   evaluateGateSoD,
   canChangeClassification,
@@ -76,6 +82,10 @@ export type Env = {
   CF_ACCESS_ISSUER?: string;
   AI_INPUT_COST_PER_1K_TOKENS?: string;
   AI_OUTPUT_COST_PER_1K_TOKENS?: string;
+  // GitHub Engineering 連携（migration 015）。TOKEN省略時は公開Repoのみ（レート制限あり）。
+  GITHUB_TOKEN?: string;
+  // GitHub API の基底URL（既定 https://api.github.com）。テストでローカルモックへ向ける。
+  GITHUB_API_BASE?: string;
 };
 
 type AppContext = Context<{ Bindings: Env }>;
@@ -502,6 +512,559 @@ app.get("/api/portfolio", async (c) => {
     .sort((a, b) => Number(b.priorityScore) - Number(a.priorityScore));
   return c.json({ summary, items });
 });
+
+// ---- GitHub Engineering 連携（migration 015 / docs/29 §2.12）----
+
+// "owner/repo" 形式のみ許可（GitHub full_name）。スキーム・パストラバーサル等を排除する。
+const GITHUB_REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+function githubApiBase(env: Env): string {
+  return (env.GITHUB_API_BASE ?? "https://api.github.com").replace(/\/+$/, "");
+}
+
+// GitHub REST API 呼び出し。TOKENがあれば認証付き（プライベートRepo・高いレート制限）。
+// 失敗はステータスコード付きでApiErrorにする（クライアントへ原因を伝える）。
+async function githubFetchJson(
+  env: Env,
+  path: string,
+): Promise<{ status: number; json: Record<string, unknown> | null }> {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "construction-dx-idea",
+  };
+  if (env.GITHUB_TOKEN) headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  const response = await fetch(`${githubApiBase(env)}${path}`, { headers });
+  const text = await response.text();
+  let json: Record<string, unknown> | null = null;
+  try {
+    json = text ? (JSON.parse(text) as Record<string, unknown>) : null;
+  } catch {
+    json = null;
+  }
+  if (!response.ok && response.status !== 304) {
+    const message =
+      json && typeof json.message === "string"
+        ? String(json.message)
+        : `GitHub API HTTP ${response.status}`;
+    throw new ApiError("GITHUB_API_ERROR", `GitHub API: ${message}`, 502);
+  }
+  return { status: response.status, json };
+}
+
+function mapRepoLinkRow(row: Record<string, unknown>): IdeaRepoLink {
+  return {
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    repoFullName: String(row.repo_full_name),
+    defaultBranch: row.default_branch ? String(row.default_branch) : null,
+    createdBy: row.created_by ? String(row.created_by) : undefined,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  };
+}
+
+function mapEvidenceRow(row: Record<string, unknown>): IdeaGitHubEvidence {
+  return {
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    kind: String(row.kind) as IdeaGitHubEvidence["kind"],
+    externalId: String(row.external_id),
+    title: String(row.title ?? ""),
+    url: row.url ? String(row.url) : null,
+    status: row.status ? String(row.status) : null,
+    occurredAt: row.occurred_at ? toIsoString(row.occurred_at) : null,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  };
+}
+
+// GitHub overview（Repo/CI/Release/PR/Issue）を Evidence 行へ変換する（純関数・単体テスト用）。
+// PR/Issueは案件ID（DX-YYYY-NNNN）を title/body に含むかを caseIdMatched に記録する。
+function buildEvidenceRowsFromOverview(
+  ideaId: string,
+  overview: GitHubOverview,
+): Array<Omit<IdeaGitHubEvidence, "id" | "createdAt" | "updatedAt">> {
+  const rows: Array<Omit<IdeaGitHubEvidence, "id" | "createdAt" | "updatedAt">> = [];
+  if (overview.ciStatus && overview.ciStatus !== "none") {
+    rows.push({
+      ideaId,
+      kind: "ci",
+      externalId: `ci-${overview.repoFullName}-${overview.defaultBranch ?? "default"}`,
+      title: `CI（${overview.repoFullName}@${overview.defaultBranch ?? "default"}）`,
+      url: overview.ciUrl ?? null,
+      status: overview.ciStatus,
+      occurredAt: overview.fetchedAt,
+    });
+  }
+  if (overview.latestRelease) {
+    rows.push({
+      ideaId,
+      kind: "release",
+      externalId: `rel-${overview.repoFullName}-${overview.latestRelease.tagName}`,
+      title: overview.latestRelease.name || overview.latestRelease.tagName,
+      url: overview.latestRelease.url ?? null,
+      status: "published",
+      occurredAt: overview.latestRelease.publishedAt ?? null,
+    });
+  }
+  for (const pr of overview.openPullRequests) {
+    rows.push({
+      ideaId,
+      kind: "pr",
+      externalId: `pr-${overview.repoFullName}-${pr.number}`,
+      title: pr.title,
+      url: pr.url ?? null,
+      status: pr.state,
+      occurredAt: pr.updatedAt ?? null,
+    });
+  }
+  for (const issue of overview.openIssues) {
+    rows.push({
+      ideaId,
+      kind: "issue",
+      externalId: `issue-${overview.repoFullName}-${issue.number}`,
+      title: issue.title,
+      url: issue.url ?? null,
+      status: issue.state,
+      occurredAt: issue.updatedAt ?? null,
+    });
+  }
+  return rows;
+}
+
+// 単一Repoの状態取得（GitHub REST API）。PR/Issueは案件ID（caseId）を含むかを付与する。
+async function fetchGitHubOverview(env: Env, repoFullName: string, caseId?: string): Promise<GitHubOverview> {
+  const [repoRes] = [await githubFetchJson(env, `/repos/${repoFullName}`)];
+  const repo = repoRes.json;
+  if (!repo) throw new ApiError("GITHUB_API_ERROR", `GitHub API: ${repoFullName} の情報を取得できません。`, 502);
+  const defaultBranch = typeof repo.default_branch === "string" ? repo.default_branch : "main";
+  const caseIdPattern = new RegExp(
+    caseId ? caseId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "(?!)",
+  );
+  const matchesCase = (value?: string | null) => (value ? caseIdPattern.test(value) : false);
+
+  // 既定ブランチ先頭コミットのcombined status（CI）
+  let ciStatus: GitHubOverview["ciStatus"] = null;
+  let ciUrl: string | null = null;
+  const ciRes = await githubFetchJson(env, `/repos/${repoFullName}/commits/${encodeURIComponent(defaultBranch)}/status`);
+  if (ciRes.json && typeof ciRes.json.state === "string") {
+    const state = String(ciRes.json.state);
+    ciStatus = (["success", "failure", "error", "pending"].includes(state) ? state : "none") as GitHubOverview["ciStatus"];
+    ciUrl = typeof ciRes.json.repository === "object" && ciRes.json.repository
+      ? ((ciRes.json.repository as Record<string, unknown>).html_url as string | undefined) ?? null
+      : null;
+    if (typeof ciRes.json.total_count === "number" && ciRes.json.total_count === 0) ciStatus = "none";
+  }
+
+  // 最新Release
+  let latestRelease: GitHubOverview["latestRelease"] = null;
+  const releaseRes = await githubFetchJson(env, `/repos/${repoFullName}/releases/latest`);
+  if (releaseRes.json && typeof releaseRes.json.tag_name === "string") {
+    latestRelease = {
+      tagName: String(releaseRes.json.tag_name),
+      name: typeof releaseRes.json.name === "string" ? String(releaseRes.json.name) : undefined,
+      publishedAt: typeof releaseRes.json.published_at === "string" ? String(releaseRes.json.published_at) : null,
+      url: typeof releaseRes.json.html_url === "string" ? String(releaseRes.json.html_url) : undefined,
+      prerelease: Boolean(releaseRes.json.prerelease),
+    };
+  } else if (releaseRes.status === 404) {
+    latestRelease = null; // Releaseが無いRepoは正常（404）
+  }
+
+  // オープンPR / Issue（1ページ・30件。caseId一致を優先表示）
+  const openPullRequests: GitHubOverview["openPullRequests"] = [];
+  const prRes = await githubFetchJson(env, `/repos/${repoFullName}/pulls?state=open&per_page=30&sort=updated&direction=desc`);
+  if (Array.isArray(prRes.json)) {
+    for (const raw of prRes.json as Array<Record<string, unknown>>) {
+      openPullRequests.push({
+        number: Number(raw.number),
+        title: String(raw.title ?? ""),
+        state: String(raw.state ?? "open"),
+        draft: Boolean(raw.draft),
+        url: typeof raw.html_url === "string" ? raw.html_url : undefined,
+        updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : undefined,
+        caseIdMatched: matchesCase(String(raw.title ?? "")) || matchesCase((raw.body as string | null) ?? ""),
+      });
+    }
+  }
+  const openIssues: GitHubOverview["openIssues"] = [];
+  const issueRes = await githubFetchJson(env, `/repos/${repoFullName}/issues?state=open&per_page=30&sort=updated&direction=desc`);
+  if (Array.isArray(issueRes.json)) {
+    for (const raw of issueRes.json as Array<Record<string, unknown>>) {
+      if (raw.pull_request) continue; // issues APIはPRを含むため除外
+      openIssues.push({
+        number: Number(raw.number),
+        title: String(raw.title ?? ""),
+        state: String(raw.state ?? "open"),
+        url: typeof raw.html_url === "string" ? raw.html_url : undefined,
+        updatedAt: typeof raw.updated_at === "string" ? raw.updated_at : undefined,
+        caseIdMatched: matchesCase(String(raw.title ?? "")) || matchesCase((raw.body as string | null) ?? ""),
+      });
+    }
+  }
+
+  return {
+    repoFullName,
+    defaultBranch,
+    stars: Number(repo.stargazers_count ?? 0),
+    openIssuesCount: Number(repo.open_issues_count ?? 0),
+    pushedAt: typeof repo.pushed_at === "string" ? repo.pushed_at : null,
+    archived: Boolean(repo.archived),
+    ciStatus,
+    ciUrl,
+    latestRelease,
+    openPullRequests,
+    openIssues,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+// 案件へRepoを紐付ける（システム管理者 or 案件作成者）。
+app.post(
+  "/api/ideas/:id/repos",
+  zValidator(
+    "json",
+    z.object({
+      repoFullName: z.string().min(3).max(200),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const idea = await db`select id, created_by, case_id from ideas where id = ${id} limit 1`;
+    if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    if (!isAdmin && String(idea[0].created_by) !== user) {
+      throw new ApiError("FORBIDDEN", "案件の作成者または管理者のみRepoを紐付けられます。", 403);
+    }
+    const { repoFullName } = c.req.valid("json");
+    const normalized = repoFullName.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+    if (!GITHUB_REPO_PATTERN.test(normalized)) {
+      throw new ApiError("INVALID_REPO_NAME", "repo は owner/repo 形式で指定してください。", 400);
+    }
+    // 存在確認（GitHub APIが失敗した場合は502で返し、誤紐付けを防ぐ）
+    const check = await githubFetchJson(c.env, `/repos/${normalized}`);
+    const defaultBranch = check.json && typeof check.json.default_branch === "string" ? check.json.default_branch : null;
+    const rows = await db`
+      insert into idea_repo_links (idea_id, repo_full_name, default_branch, created_by)
+      values (${id}, ${normalized}, ${defaultBranch}, ${user})
+      on conflict (idea_id, repo_full_name) do update
+        set default_branch = excluded.default_branch, updated_at = now()
+      returning *
+    `;
+    await audit(c.env, user, "idea.repo.linked", "idea", id, {
+      repoFullName: normalized,
+      caseId: idea[0].case_id ?? null,
+    });
+    return c.json(mapRepoLinkRow(rows[0]));
+  },
+);
+
+// 案件に紐付いたRepo一覧と収集済みEvidence。
+app.get("/api/ideas/:id/repos", async (c) => {
+  await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const links = await db`select * from idea_repo_links where idea_id = ${id} order by created_at asc`;
+  const evidence = await db`select * from idea_github_evidence where idea_id = ${id} order by updated_at desc limit 100`;
+  return c.json({
+    items: links.map(mapRepoLinkRow),
+    evidence: evidence.map(mapEvidenceRow),
+  });
+});
+
+// Repo紐付け解除（システム管理者 or 案件作成者）。
+app.delete("/api/ideas/:id/repos/:linkId", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const linkId = c.req.param("linkId");
+  const idea = await db`select id, created_by from ideas where id = ${id} limit 1`;
+  if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  if (!isAdmin && String(idea[0].created_by) !== user) {
+    throw new ApiError("FORBIDDEN", "案件の作成者または管理者のみ解除できます。", 403);
+  }
+  const rows = await db`
+    delete from idea_repo_links where id = ${linkId} and idea_id = ${id} returning id
+  `;
+  if (!rows[0]) throw new ApiError("NOT_FOUND", "Repo link not found.", 404);
+  await audit(c.env, user, "idea.repo.unlinked", "idea", id, { linkId });
+  return c.json({ ok: true });
+});
+
+// GitHub状態取得（Repo/CI/Release/PR/Issue）。案件ID（DX-YYYY-NNNN）との一致も付与。
+app.get("/api/ideas/:id/github/overview", async (c) => {
+  await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const idea = await db`select id, case_id from ideas where id = ${id} limit 1`;
+  if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const links = await db`select * from idea_repo_links where idea_id = ${id} order by created_at asc`;
+  const repos: GitHubOverview[] = [];
+  for (const link of links) {
+    repos.push(await fetchGitHubOverview(c.env, String(link.repo_full_name), idea[0].case_id ? String(idea[0].case_id) : undefined));
+  }
+  const evidence = await db`select * from idea_github_evidence where idea_id = ${id} order by updated_at desc limit 100`;
+  return c.json({
+    repos,
+    evidence: evidence.map(mapEvidenceRow),
+  });
+});
+
+// Evidence自動収集（docs/29 §2.12「Commit/PR/Release → 案件ID紐付け・Evidence自動収集」）。
+// 紐付け済みRepoの現在状態をGitHub APIから取得し、Evidence行へupsertする。
+app.post("/api/ideas/:id/github/sync", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const idea = await db`select id, created_by, case_id from ideas where id = ${id} limit 1`;
+  if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  if (!isAdmin && String(idea[0].created_by) !== user) {
+    throw new ApiError("FORBIDDEN", "案件の作成者または管理者のみ同期できます。", 403);
+  }
+  const links = await db`select * from idea_repo_links where idea_id = ${id} order by created_at asc`;
+  const byKind: Record<string, number> = {};
+  let upserted = 0;
+  for (const link of links) {
+    const overview = await fetchGitHubOverview(
+      c.env,
+      String(link.repo_full_name),
+      idea[0].case_id ? String(idea[0].case_id) : undefined,
+    );
+    for (const row of buildEvidenceRowsFromOverview(id, overview)) {
+      await db`
+        insert into idea_github_evidence (idea_id, kind, external_id, title, url, status, occurred_at)
+        values (${row.ideaId}, ${row.kind}, ${row.externalId}, ${row.title}, ${row.url}, ${row.status}, ${row.occurredAt})
+        on conflict (idea_id, kind, external_id) do update
+          set title = excluded.title,
+              url = excluded.url,
+              status = excluded.status,
+              occurred_at = excluded.occurred_at,
+              updated_at = now()
+      `;
+      byKind[row.kind] = (byKind[row.kind] ?? 0) + 1;
+      upserted += 1;
+    }
+  }
+  await audit(c.env, user, "idea.github.synced", "idea", id, { upserted, byKind });
+  return c.json({ upserted, byKind });
+});
+
+// ---- Knowledge Management（migration 016 / docs/29 §2.16）----
+
+function mapKnowledgeRow(row: Record<string, unknown>): KnowledgeCandidate {
+  return {
+    id: String(row.id),
+    sourceType: String(row.source_type) as KnowledgeCandidate["sourceType"],
+    sourceIdeaId: row.source_idea_id ? String(row.source_idea_id) : null,
+    category: String(row.category) as KnowledgeCandidate["category"],
+    title: String(row.title),
+    body: String(row.body ?? ""),
+    status: String(row.status) as KnowledgeCandidate["status"],
+    qualityScore: row.quality_score != null ? Number(row.quality_score) : null,
+    submittedBy: row.submitted_by ? String(row.submitted_by) : null,
+    reviewedBy: row.reviewed_by ? String(row.reviewed_by) : null,
+    reviewedAt: row.reviewed_at ? toIsoString(row.reviewed_at) : null,
+    promotionUrl: row.promotion_url ? String(row.promotion_url) : null,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  };
+}
+
+// Knowledge候補の自動抽出（docs/29 §2.16・決定論的ルール）。
+//  - Gate承認行の判定理由 → decision（決定記録）
+//  - コメント / KPI効果測定レビュー → classifyKnowledgeSource のキーワード規則
+//  - 同一(source_type, source_idea_id, title)は重複登録しない
+app.post("/api/knowledge/extract", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  let created = 0;
+  const scanned = { gateDecisions: 0, comments: 0, kpiReviews: 0 };
+
+  // 1) Gate承認の判定理由（決定記録）
+  const gateRows = await db`
+    select g.idea_id, g.gate_no, g.required_authority, g.reason, i.title as idea_title
+    from idea_gate_approvals g
+    join ideas i on i.id = g.idea_id
+    where g.status = 'approved' and length(trim(g.reason)) >= 8
+    order by g.acted_at desc
+    limit 200
+  `;
+  for (const row of gateRows) {
+    scanned.gateDecisions += 1;
+    const title = `${String(row.idea_title)} — Gate${Number(row.gate_no)}判定（${String(row.required_authority)}）`.slice(0, 120);
+    const rows = await db`
+      insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
+      values ('gate_decision', ${String(row.idea_id)}, 'decision', ${title}, ${String(row.reason)}, 4, 'system:extract')
+      on conflict (source_type, source_idea_id, title) do nothing
+      returning id
+    `;
+    created += rows.length;
+  }
+
+  // 2) コメント（キーワード規則で分類）
+  const commentRows = await db`
+    select cm.idea_id, cm.body, i.title as idea_title
+    from idea_comments cm
+    join ideas i on i.id = cm.idea_id
+    where length(trim(cm.body)) >= 10
+    order by cm.created_at desc
+    limit 200
+  `;
+  for (const row of commentRows) {
+    scanned.comments += 1;
+    const classified = classifyKnowledgeSource(String(row.body ?? ""));
+    if (!classified) continue;
+    const title = `${String(row.idea_title)} — コメント: ${String(row.body).slice(0, 60)}`.slice(0, 120);
+    const rows = await db`
+      insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
+      values ('idea_comment', ${String(row.idea_id)}, ${classified.category}, ${title}, ${String(row.body)}, 3, 'system:extract')
+      on conflict (source_type, source_idea_id, title) do nothing
+      returning id
+    `;
+    created += rows.length;
+  }
+
+  // 3) KPI効果測定のレビューノート（継続/改善/停止判断の学び）
+  const kpiRows = await db`
+    select k.idea_id, k.review_note, i.title as idea_title
+    from idea_kpis k
+    join ideas i on i.id = k.idea_id
+    where length(trim(coalesce(k.review_note, ''))) >= 10
+    order by k.measured_at desc
+    limit 100
+  `;
+  for (const row of kpiRows) {
+    scanned.kpiReviews += 1;
+    const classified = classifyKnowledgeSource(String(row.review_note ?? ""));
+    if (!classified) continue;
+    const title = `${String(row.idea_title)} — 効果測定レビュー`.slice(0, 120);
+    const rows = await db`
+      insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
+      values ('kpi_review', ${String(row.idea_id)}, ${classified.category}, ${title}, ${String(row.review_note)}, 3, 'system:extract')
+      on conflict (source_type, source_idea_id, title) do nothing
+      returning id
+    `;
+    created += rows.length;
+  }
+
+  await audit(c.env, user, "knowledge.extracted", "system", "knowledge", { created, scanned });
+  return c.json({ created, scanned });
+});
+
+// Knowledge候補一覧（Review Queue）。status/category で絞り込み。
+app.get("/api/knowledge", async (c) => {
+  await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const status = c.req.query("status");
+  const category = c.req.query("category");
+  // postgres.jsのヘルパー（sql.join）を経由せず、組み合わせを明示的に分岐する。
+  const rows =
+    status && category
+      ? await db`select * from knowledge_candidates where status = ${status} and category = ${category} order by created_at desc limit 200`
+      : status
+        ? await db`select * from knowledge_candidates where status = ${status} order by created_at desc limit 200`
+        : category
+          ? await db`select * from knowledge_candidates where category = ${category} order by created_at desc limit 200`
+          : await db`select * from knowledge_candidates order by created_at desc limit 200`;
+  return c.json({ items: rows.map(mapKnowledgeRow) });
+});
+
+// Knowledge候補の手動登録（ログイン利用者。レビューは管理者が行う）。
+app.post(
+  "/api/knowledge",
+  zValidator(
+    "json",
+    z.object({
+      title: z.string().min(3).max(120),
+      category: z.enum(knowledgeCategories),
+      body: z.string().max(4000).optional(),
+      sourceIdeaId: z.string().uuid().optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const input = c.req.valid("json");
+    const rows = await db`
+      insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
+      values ('manual', ${input.sourceIdeaId ?? null}, ${input.category}, ${input.title.trim()}, ${(input.body ?? "").trim()}, 3, ${user})
+      returning *
+    `;
+    await audit(c.env, user, "knowledge.submitted", "knowledge", String(rows[0].id), {
+      title: input.title,
+      category: input.category,
+    });
+    return c.json(mapKnowledgeRow(rows[0]), 201);
+  },
+);
+
+// Knowledge候補のレビュー（Human Approval・システム管理者）。
+app.post(
+  "/api/knowledge/:id/review",
+  zValidator(
+    "json",
+    z.object({
+      action: z.enum(["approve", "reject"]),
+      qualityScore: z.number().int().min(1).max(5).optional(),
+      note: z.string().max(1000).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const input = c.req.valid("json");
+    const rows = await db`
+      update knowledge_candidates
+      set status = ${input.action === "approve" ? "approved" : "rejected"},
+          quality_score = coalesce(${input.qualityScore ?? null}, quality_score),
+          reviewed_by = ${user},
+          reviewed_at = now(),
+          updated_at = now()
+      where id = ${id}
+      returning *
+    `;
+    if (!rows[0]) throw new ApiError("NOT_FOUND", "Knowledge candidate not found.", 404);
+    await audit(c.env, user, `knowledge.${input.action}d`, "knowledge", id, {
+      title: String(rows[0].title),
+      note: input.note ?? null,
+    });
+    return c.json(mapKnowledgeRow(rows[0]));
+  },
+);
+
+// Knowledgeの昇格（Notion等へ登録したURLを記録・システム管理者）。
+app.post(
+  "/api/knowledge/:id/promote",
+  zValidator(
+    "json",
+    z.object({
+      url: z.string().url().max(500),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const { url } = c.req.valid("json");
+    const rows = await db`
+      update knowledge_candidates
+      set status = 'promoted', promotion_url = ${url}, updated_at = now()
+      where id = ${id}
+      returning *
+    `;
+    if (!rows[0]) throw new ApiError("NOT_FOUND", "Knowledge candidate not found.", 404);
+    await audit(c.env, user, "knowledge.promoted", "knowledge", id, { url });
+    return c.json(mapKnowledgeRow(rows[0]));
+  },
+);
 
 // KPI登録・実績入力（docs/29 §2.6・migration 013）: 案件の効果測定レコードを記録する。
 // 管理者または提出者本人が記録できる（実績の客観性は運用で担保）。
@@ -4417,6 +4980,7 @@ export const workerSecurityTestHooks = {
   formatAuditChainAlert,
   buildGateReminderTargets,
   formatGateReminderMessage,
+  buildEvidenceRowsFromOverview,
   estimateAiCost,
   normalizeRagQuery,
   parseGateNo,

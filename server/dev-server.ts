@@ -39,6 +39,9 @@ const env: Env = {
   CF_ACCESS_ISSUER: process.env.CF_ACCESS_ISSUER,
   AI_INPUT_COST_PER_1K_TOKENS: process.env.AI_INPUT_COST_PER_1K_TOKENS,
   AI_OUTPUT_COST_PER_1K_TOKENS: process.env.AI_OUTPUT_COST_PER_1K_TOKENS,
+  // GitHub Engineering 連携（migration 015）: ローカル実行時はモックAPIへ向けて検証できる。
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+  GITHUB_API_BASE: process.env.GITHUB_API_BASE,
 };
 
 const ctx = {
