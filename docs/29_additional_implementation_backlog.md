@@ -114,13 +114,14 @@
 - 【P1】未達理由・改善Action・継続/改善/停止判定
 - 【P1】3/6/12か月レビュー（リマインダー含む）
 
-### 2.7 Gate 高度化（元#149〜181）※基本フローは実装済み、以下が残り
+### 2.7 Gate 高度化（元#149〜181）※基本フロー+第1弾は実装済み（migration 014・2026-09-05）
 
-- 【P1】条件付き承認（条件の記録と充足追跡）
-- 【P1】承認期限・Reminder・Escalation・代理承認・不在設定
+- 【実装済】条件付き承認（approve時の conditionNote/conditionMet 記録と詳細・滞留分析での表示。充足追跡の手動更新は残）
+- 【実装済】承認期限（dueAt・既定5日後・過去日時400）・Reminder（期限2日以内）/Escalation（期限超過・期限未設定7日超滞留）・代理承認（delegateTo）。※不在設定は残
+- 【実装済】Gate Dashboard（滞留・期限・リマインダー/エスカレーション実績の一覧画面「Gate滞留分析」+手動実行API `POST /api/admin/gates/reminders/run`）
 - 【P1】承認順序（直列/並列/全員/過半数）・Gate Owner
-- 【P1】Gate Dashboard（滞留・期限・進捗の一覧画面。現在は案件詳細内のカードのみ）
-- 【P1】Gate Checklist・必須文書確認・Evidence添付・Gate滞留時間分析
+- 【P1】Gate Checklist・必須文書確認・Evidence添付・条件充足の確認フロー
+- 【P1】承認者への個別通知先（Slack DM/メール）と不在設定（Delegate Calendar）
 
 ### 2.8 SoD・Authority・組織統制（元#182〜204）※SoD自己承認禁止は実装済み
 

@@ -689,14 +689,19 @@ a:hover { text-decoration: underline; }
                           <span style="{{ gr.statusStyle }}">{{ gr.statusLabel }}</span>
                         </div>
                         <sc-for list="{{ gr.approvals }}" as="ap" hint-placeholder-count="2">
-                          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;">
-                            <span style="{{ ap.authorityStyle }}">{{ ap.authorityLabel }}</span>
-                            <span style="color:#5A6678;display:flex;align-items:center;gap:6px;min-width:0;">
-                              <span style="{{ ap.statusStyle }}">{{ ap.statusLabel }}</span>
-                              <sc-if value="{{ ap.approverEmail }}" hint-placeholder-val="{{ false }}">
-                                <span style="color:#8A97A8;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;">{{ ap.approverEmail }}</span>
-                              </sc-if>
-                            </span>
+                          <div style="display:flex;flex-direction:column;gap:3px;">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;">
+                              <span style="{{ ap.authorityStyle }}">{{ ap.authorityLabel }}</span>
+                              <span style="color:#5A6678;display:flex;align-items:center;gap:6px;min-width:0;">
+                                <span style="{{ ap.statusStyle }}">{{ ap.statusLabel }}</span>
+                                <sc-if value="{{ ap.approverEmail }}" hint-placeholder-val="{{ false }}">
+                                  <span style="color:#8A97A8;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;">{{ ap.approverEmail }}</span>
+                                </sc-if>
+                              </span>
+                            </div>
+                            <sc-for list="{{ ap.metaParts }}" as="mp" hint-placeholder-count="2">
+                              <div style="font-size:10.5px;color:{{ mp.overdue ? '#C5392F' : '#8A97A8' }};{{ mp.overdue ? 'font-weight:600;' : '' }}">{{ mp.text }}</div>
+                            </sc-for>
                           </div>
                         </sc-for>
                         <sc-if value="{{ gr.canRequest }}" hint-placeholder-val="{{ false }}">
@@ -720,7 +725,12 @@ a:hover { text-decoration: underline; }
                         </select>
                       </div>
                       <input value="{{ gateDraft.approverEmail }}" onChange="{{ onGateApproverChange }}" placeholder="承認者メール（そのAuthority保有者）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <input type="date" value="{{ gateDraft.dueDate }}" onChange="{{ onGateDueDateChange }}" style="flex:1;min-width:120px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                        <input value="{{ gateDraft.delegateTo }}" onChange="{{ onGateDelegateChange }}" placeholder="代理承認者（任意）" style="flex:1.4;min-width:140px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                      </div>
                       <textarea value="{{ gateDraft.reason }}" onChange="{{ onGateReasonChange }}" rows="2" placeholder="依頼理由／判定理由" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:none;box-sizing:border-box;width:100%;"></textarea>
+                      <input value="{{ gateDraft.conditionNote }}" onChange="{{ onGateConditionChange }}" placeholder="条件付き承認の条件（任意・承認時）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
                       <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         <button onClick="{{ requestGateApproval }}" disabled="{{ gateRequestDraftInvalid }}" style="{{ gateDecisionStyle('#E08A2B') }}">承認を依頼</button>
                         <button onClick="{{ decideGateApprove }}" disabled="{{ gateReasonInvalid }}" style="{{ gateDecisionStyle('#1F8255') }}">承認</button>
@@ -957,6 +967,73 @@ a:hover { text-decoration: underline; }
         </sc-if>
         <sc-if value="{{ pfLoading }}" hint-placeholder-val="{{ false }}">
           <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:26px;text-align:center;color:#8A97A8;font-size:13px;">ポートフォリオを読み込んでいます…</div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isGateDashboard }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Gate滞留分析" style="display:flex;flex-direction:column;gap:14px;max-width:1100px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#8A97A8;">承認依頼中のGate1〜5の滞留・期限超過を一覧します。期限超過行は日次でエスカレーション通知されます。</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ loadGateOverview }}" disabled="{{ goLoading }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">{{ goReloadLabel }}</button>
+          <button onClick="{{ runGateReminders }}" disabled="{{ goLoading }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">🔔 リマインダー/エスカレーション実行</button>
+        </div>
+        <sc-if value="{{ goHasData }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+            <sc-for list="{{ goSummaryCards }}" as="card" hint-placeholder-count="3">
+              <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:14px 16px;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+                <div style="font-size:11.5px;color:#8A97A8;">{{ card.label }}</div>
+                <div style="font-size:22px;font-weight:700;color:{{ card.accent }};margin-top:4px;">{{ card.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden;">
+            <div style="padding:13px 18px;border-bottom:1px solid #EEF1F5;">
+              <div style="font-size:13.5px;font-weight:600;color:#1A2433;">承認依頼中のGate一覧（依頼日時順）</div>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:10px 14px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">案件</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">Gate</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">Authority</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">承認者</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">依頼日</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">期限</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">滞留</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">状態</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">通知</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ goRows }}" as="row" hint-placeholder-count="5">
+                  <tr onClick="{{ row.onClick }}" style="cursor:pointer;">
+                    <td style="padding:10px 14px;border-bottom:1px solid #EEF1F5;">
+                      <div style="font-weight:600;color:#1A2433;">{{ row.ideaTitle }}</div>
+                      <sc-if value="{{ row.caseId }}" hint-placeholder-val="{{ false }}">
+                        <div style="font-size:10.5px;color:#B5701A;font-family:'IBM Plex Mono',monospace;">{{ row.caseId }}</div>
+                      </sc-if>
+                    </td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;font-weight:600;color:#1A2433;">{{ row.gateLabel }}</td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;color:#B5701A;background:#FDEFE0;">{{ row.authorityLabel }}</span></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;font-size:11.5px;">{{ row.approverEmail }}<sc-if value="{{ row.delegateTo }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;color:#8A97A8;">代理: {{ row.delegateTo }}</div></sc-if></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ row.requestedDate }}</td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ row.dueDate }}</td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;font-weight:600;color:#1A2433;">{{ row.dwellText }}</td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;"><span style="{{ row.stateStyle }}">{{ row.stateLabel }}</span></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;font-size:11.5px;">{{ row.reminderText }}<sc-if value="{{ row.escalated }}" hint-placeholder-val="{{ false }}"><div style="font-size:10.5px;color:#C5392F;font-weight:600;">🚨 エスカレーション済</div></sc-if></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+        <sc-if value="{{ goLoading }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:26px;text-align:center;color:#8A97A8;font-size:13px;">Gate滞留状況を読み込んでいます…</div>
+        </sc-if>
+        <sc-if value="{{ goHasData }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:11px;color:#8A97A8;">期限の既定は依頼から5日後。期限まで2日以内は「期限接近」、超過は「期限超過」として表示し、日次ジョブ（毎時実行・1日1回）がSlackへ通知します。</div>
         </sc-if>
       </div>
       </sc-if>
@@ -1288,7 +1365,10 @@ class Component extends DCLogic {
     // ポートフォリオ（migration 013・docs/29 §2.5）: 専用画面の集計データ
     portfolioData: { summary: null, items: [] },
     portfolioBusy: false,
-    gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '' },
+    // Gate滞留分析（migration 014・docs/29 §2.7）: 専用画面のデータ（システム管理者）。
+    gateOverview: null,
+    gateOverviewBusy: false,
+    gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '', dueDate: '', delegateTo: '', conditionNote: '' },
     // 選択中アイデアのGate1-5承認データ（初期化されていなければnull）。
     // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
     gateData: null,
@@ -1329,8 +1409,9 @@ class Component extends DCLogic {
 
   goTo = (view) => {
     this.setState({ view });
-    // 実API接続時は App.tsx ブリッジが portfolioData をロードする。
+    // 実API接続時は App.tsx ブリッジが portfolioData / gateOverview をロードする。
     if (view === 'portfolio' && this.loadPortfolio) void this.loadPortfolio();
+    if (view === 'gateDashboard' && this.loadGateOverview) void this.loadGateOverview();
     if (view === 'detail' && this.loadKpi) void this.loadKpi();
   };
   goToIntake = () => this.goTo('intake');
@@ -1641,6 +1722,74 @@ class Component extends DCLogic {
     });
   };
 
+  // ---- Gate滞留分析（docs/29 §2.7・migration 014）----
+  // 実API接続時は App.tsx ブリッジが loadGateOverview / runGateReminders を差し替える。
+  loadGateOverview = async () => {
+    if (this.__loadGateOverviewBridge) {
+      this.setState({ gateOverviewBusy: true });
+      try {
+        const data = await this.__loadGateOverviewBridge();
+        this.setState({ gateOverview: data, gateOverviewBusy: false });
+      } catch (e) {
+        this.setState({ gateOverviewBusy: false, toast: { message: `Gate滞留分析の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: gateData（選択中アイデア）から requested 行を集計。
+    const gateData = this.state.gateData;
+    const items = (gateData ? gateData.items : [])
+      .filter((g) => g.status === 'requested')
+      .map((g) => {
+        const due = g.requestedDueAt ? new Date(g.requestedDueAt) : null;
+        const requestedAt = g.requestedAt ? new Date(g.requestedAt) : null;
+        return {
+          ideaId: String(g.ideaId),
+          ideaTitle: (this.state.ideas.find((i) => String(i.id) === String(g.ideaId)) || {}).title || '',
+          gateNo: g.gateNo,
+          requiredAuthority: g.requiredAuthority,
+          approverEmail: g.approverEmail,
+          delegateTo: g.delegateTo,
+          requestedAt: g.requestedAt,
+          requestedDueAt: g.requestedDueAt,
+          reminderCount: g.reminderCount || 0,
+          lastRemindedAt: g.lastRemindedAt,
+          escalatedAt: g.escalatedAt,
+          dwellDays: requestedAt ? Math.max(0, Math.floor((Date.now() - requestedAt.getTime()) / 864e5)) : 0,
+          overdue: due ? due.getTime() < Date.now() : false,
+          dueSoon: due && !(due.getTime() < Date.now()) ? due.getTime() - Date.now() <= 2 * 864e5 : false,
+        };
+      });
+    this.setState({
+      gateOverview: {
+        items,
+        total: items.length,
+        overdueCount: items.filter((item) => item.overdue).length,
+        avgDwellDays: items.length
+          ? Math.round((items.reduce((sum, item) => sum + item.dwellDays, 0) / items.length) * 10) / 10
+          : 0,
+      },
+      gateOverviewBusy: false,
+    });
+  };
+
+  runGateReminders = async () => {
+    if (this.__runGateRemindersBridge) {
+      this.setState({ gateOverviewBusy: true });
+      try {
+        const result = await this.__runGateRemindersBridge();
+        this.setState({
+          gateOverviewBusy: false,
+          toast: { message: `リマインダー${result.reminded}件 / エスカレーション${result.escalated}件を送信しました（スキップ${result.skipped}件）。` },
+        });
+        await this.loadGateOverview();
+      } catch (e) {
+        this.setState({ gateOverviewBusy: false, toast: { message: `リマインダーの実行に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ toast: { message: 'リマインダーを送信しました（モック表示。本番はAPI経由）。' } });
+  };
+
   requestApproval = () => {
     const { approverEmail, reason } = this.state.approvalDraft;
     const id = this.state.selectedIdeaId;
@@ -1724,7 +1873,7 @@ class Component extends DCLogic {
 
   // 選択中のGate行へ承認依頼を送る（実APIでは authority を指定）。
   requestGateApproval = async () => {
-    const { gateNo, authority, approverEmail, reason } = this.state.gateDraft;
+    const { gateNo, authority, approverEmail, reason, dueDate, delegateTo } = this.state.gateDraft;
     const id = this.state.selectedIdeaId;
     if (!approverEmail.trim() || id == null) {
       this.setState({ toast: { message: '承認者メールを入力してください。' } });
@@ -1735,34 +1884,46 @@ class Component extends DCLogic {
         ...s.gateData,
         items: s.gateData.items.map((g) =>
           g.gateNo === Number(gateNo) && g.requiredAuthority === authority
-            ? { ...g, status: 'requested', approverEmail: approverEmail.trim(), requestedAt: new Date().toISOString(), requestedBy: 'local.dev@example.com', reason: reason || '（理由未記載）' }
+            ? {
+                ...g, status: 'requested', approverEmail: approverEmail.trim(),
+                requestedAt: new Date().toISOString(), requestedBy: 'local.dev@example.com',
+                reason: reason || '（理由未記載）',
+                requestedDueAt: dueDate ? new Date(dueDate).toISOString() : undefined,
+                delegateTo: delegateTo.trim() || undefined,
+              }
             : g,
         ),
       },
-      gateDraft: { ...s.gateDraft, approverEmail: '', reason: '' },
+      gateDraft: { ...s.gateDraft, approverEmail: '', reason: '', dueDate: '', delegateTo: '', conditionNote: '' },
       toast: { message: `Gate${gateNo}（${authority}）の承認を依頼しました（モック表示。本番はAPI経由）。` },
     }));
   };
 
   // 判定（approve / return / reject）。実APIでは Gate と authority を指定。
   decideGateApproval = (decision) => async () => {
-    const { gateNo, authority, reason } = this.state.gateDraft;
+    const { gateNo, authority, reason, conditionNote } = this.state.gateDraft;
     const id = this.state.selectedIdeaId;
     if (!reason.trim() || id == null) {
       this.setState({ toast: { message: '判定理由を入力してください。' } });
       return;
     }
     const status = decision === 'approve' ? 'approved' : decision === 'return' ? 'returned' : 'rejected';
+    const cond = conditionNote.trim();
     this.setState((s) => ({
       gateData: s.gateData && {
         ...s.gateData,
         items: s.gateData.items.map((g) =>
           g.gateNo === Number(gateNo) && g.requiredAuthority === authority
-            ? { ...g, status, actedAt: new Date().toISOString(), actedBy: 'local.dev@example.com', reason: reason.trim() }
+            ? {
+                ...g, status, actedAt: new Date().toISOString(), actedBy: 'local.dev@example.com',
+                reason: reason.trim(),
+                conditionNote: decision === 'approve' ? cond : '',
+                conditionMet: decision === 'approve' && cond ? false : undefined,
+              }
             : g,
         ),
       },
-      gateDraft: { ...s.gateDraft, reason: '' },
+      gateDraft: { ...s.gateDraft, reason: '', conditionNote: '' },
       toast: { message: `Gate${gateNo}（${authority}）の判定を記録しました（モック表示。本番はAPI経由）: ${status}` },
     }));
   };
@@ -2280,6 +2441,7 @@ class Component extends DCLogic {
       ] },
       { label: 'ITシステム管理', items: [
         { key: 'adminSettings', icon: '⚙️', label: 'AI設定' },
+        { key: 'gateDashboard', icon: '🚦', label: 'Gate滞留分析' },
         { key: 'userManagement', icon: '👤', label: 'ログインユーザー管理' },
         { key: 'integrations', icon: '🔗', label: '外部連携管理' },
         { key: 'auditLog', icon: '🧾', label: '監査ログ' },
@@ -2315,6 +2477,7 @@ class Component extends DCLogic {
       kanbanIdea: { title: '業務アイデアステージ管理', sub: '企画 → MVP → 検証 → 本番化' },
       evaluation: { title: '評価ボード', sub: '優先度スコア順のDXアイデア一覧' },
       portfolio: { title: 'DX案件ポートフォリオ', sub: '価値・進捗・効果の全体俯瞰（管理者）' },
+      gateDashboard: { title: 'Gate滞留分析', sub: '承認期限・滞留・エスカレーションの一覧（システム管理者）' },
       adminSettings: { title: 'AI設定', sub: 'モデル・利用上限・接続管理' },
       userManagement: { title: 'ログインユーザー管理', sub: `${s.users.length}名のアカウント` },
       integrations: { title: '外部連携管理', sub: 'Slack・Teams・メール通知の連携設定' },
@@ -2514,6 +2677,18 @@ class Component extends DCLogic {
       // 前Gateが通過済みで、このGate内に承認依頼可能（pending/returned/rejected）な行が残る場合のみ申請可能
       const canRequest = prevApproved && approvals.some((a) => ['pending', 'returned', 'rejected'].includes(a.status));
       const hasRequested = approvals.some((a) => a.status === 'requested');
+      // 承認期限・代理承認・条件付き承認（migration 014）の表示用メタ。
+      const metaOf = (a) => {
+        const parts = [];
+        if (a.requestedDueAt) {
+          const due = new Date(a.requestedDueAt);
+          const overdue = a.status === 'requested' && due.getTime() < Date.now();
+          parts.push({ text: `期限 ${due.toISOString().slice(0, 10)}${overdue ? '（超過）' : ''}`, overdue });
+        }
+        if (a.delegateTo) parts.push({ text: `代理: ${a.delegateTo}`, overdue: false });
+        if (a.conditionNote) parts.push({ text: `条件付き: ${a.conditionNote}${a.conditionMet === true ? '（充足済）' : ''}`, overdue: false });
+        return parts;
+      };
       return {
         gateNo,
         label: gateLabelsMap[gateNo],
@@ -2526,6 +2701,7 @@ class Component extends DCLogic {
           authorityStyle: this.badgeStyle('#B5701A', '#FDEFE0'),
           statusLabel: this.gateStatusLabel(a.status),
           statusStyle: gateStatusStyleMap[a.status] || gateStatusStyleMap.pending,
+          metaParts: metaOf(a),
         })),
         hasData: rowsForGate.length > 0,
         canRequest,
@@ -2782,6 +2958,45 @@ class Component extends DCLogic {
         ]
       : [];
 
+    // ---- Gate滞留分析 view-model（migration 014・docs/29 §2.7）----
+    const go = s.gateOverview || null;
+    const goItems = go ? go.items || [] : [];
+    const goLoading = !!s.gateOverviewBusy;
+    const goReloadLabel = goLoading ? '読み込み中…' : '🔄 更新';
+    const goHasData = !!go;
+    const goSummaryCards = go
+      ? [
+          { label: '承認依頼中', value: String(go.total), accent: '#2E5AAC' },
+          { label: '期限超過', value: String(go.overdueCount), accent: go.overdueCount > 0 ? '#C5392F' : '#1F8255' },
+          { label: '平均滞留', value: `${go.avgDwellDays}日`, accent: '#B5701A' },
+        ]
+      : [];
+    const goRows = goItems.map((item) => {
+      const overdue = !!item.overdue;
+      const dueSoon = !overdue && !!item.dueSoon;
+      return {
+        ideaId: item.ideaId,
+        caseId: item.caseId || '',
+        ideaTitle: item.ideaTitle,
+        gateLabel: `Gate${item.gateNo}`,
+        authorityLabel: item.requiredAuthority,
+        approverEmail: item.approverEmail || '—',
+        delegateTo: item.delegateTo || '',
+        requestedDate: item.requestedAt ? String(item.requestedAt).slice(0, 10) : '—',
+        dueDate: item.requestedDueAt ? String(item.requestedDueAt).slice(0, 10) : '未設定',
+        dwellText: `${item.dwellDays}日`,
+        reminderText: item.reminderCount ? `${item.reminderCount}回` : '—',
+        escalated: !!item.escalatedAt,
+        stateLabel: overdue ? '期限超過' : dueSoon ? '期限接近' : '滞留中',
+        stateStyle: overdue
+          ? this.badgeStyle('#C5392F', '#FCE9E7')
+          : dueSoon
+            ? this.badgeStyle('#B5701A', '#FDEFE0')
+            : this.badgeStyle('#2E5AAC', '#E9F0FB'),
+        onClick: () => this.selectIdea(item.ideaId),
+      };
+    });
+
     return {
       view: s.view,
       isDashboard: s.view === 'dashboard', isIntake: s.view === 'intake', isWizard: s.view === 'wizard',
@@ -2789,9 +3004,13 @@ class Component extends DCLogic {
       isKanban: s.view === 'kanban', isKanbanIdea: s.view === 'kanbanIdea', isAdmin: s.view === 'adminSettings', isAudit: s.view === 'auditLog',
       isEvaluation: s.view === 'evaluation',
       isPortfolio: s.view === 'portfolio',
+      isGateDashboard: s.view === 'gateDashboard',
       // ポートフォリオ
       pfSummary, pfHasSummary, pfLoading, pfReloadLabel, pfSummaryCards,
       pfRows, pfValueEffortRows, loadPortfolio: this.loadPortfolio,
+      // Gate滞留分析
+      goHasData, goLoading, goReloadLabel, goSummaryCards, goRows,
+      loadGateOverview: this.loadGateOverview, runGateReminders: this.runGateReminders,
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
       toast: s.toast, dismissToast: this.dismissToast,
@@ -2900,6 +3119,9 @@ class Component extends DCLogic {
       onGateAuthorityChange: this.updateGateDraftField('authority'),
       onGateApproverChange: this.updateGateDraftField('approverEmail'),
       onGateReasonChange: this.updateGateDraftField('reason'),
+      onGateDueDateChange: this.updateGateDraftField('dueDate'),
+      onGateDelegateChange: this.updateGateDraftField('delegateTo'),
+      onGateConditionChange: this.updateGateDraftField('conditionNote'),
       initGates: this.initGates,
       requestGateApproval: this.requestGateApproval,
       // dc-runtime は引数付き呼び出し式を解決できないため、判定はクロージャで渡す。

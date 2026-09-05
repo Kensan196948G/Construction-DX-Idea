@@ -125,6 +125,39 @@
   Knowledge Management、Risk×Return・Bubble Chartの可視化。
 
 
+## 0.18 最新（2026-09-05: Gate高度化 — 承認期限・Reminder/Escalation・代理承認・条件付き承認・滞留分析 / migration 014）
+
+- **migration 014（`idea_gate_approvals` 拡張・additive/冪等）**: `requested_due_at`（承認期限）、
+  `delegate_to`（代理承認者）、`condition_note`/`condition_met`（条件付き承認）、
+  `last_reminded_at`/`reminder_count`（リマインダー実績）、`escalated_at`（エスカレーション実績）。
+  期限超過検索用の部分インデックス `idx_idea_gate_approvals_due` を追加。
+- **worker API**:
+  - `POST /gates/:gateNo/request-approval` に `dueAt`（省略時5日後・過去日時は400 GATE_DUE_INVALID）と
+    `delegateTo` を追加。Slack依頼通知にも期限/代理承認者行を含める。
+  - `POST /gates/:gateNo/approval` に `conditionNote`/`conditionMet` を追加（approve時のみ記録）。
+    代理承認者（delegate_to 一致）も判定可能に。判定通知に条件付き承認行を含める。
+  - `GET /api/admin/gates/overview`: 承認依頼中Gateの滞留分析（dwellDays/overdue/dueSoon/
+    リマインダー・エスカレーション実績込み。システム管理者限定）。
+  - `POST /api/admin/gates/reminders/run`: リマインダー/エスカレーションを即時実行（管理者限定）。
+    日次cron（hourly cronで毎時起動・行ごとに last_reminded_at から約24時間の間隔制御）と同一処理:
+    期限超過（または期限未設定で滞留7日超）→ エスカレーション通知+`escalated_at`記録、
+    期限まで2日以内 → リマインダー通知。Slack送信は通知アウトボックスの冪等キーで日1回に制御。
+- **WebUI**: 詳細Gateカードに「承認期限（date）」「代理承認者（任意）」「条件付き承認の条件（任意・承認時）」
+  入力と各行の期限/代理/条件表示（期限超過は赤強調）を追加。左メニュー「ITシステム管理」に
+  「🚦 Gate滞留分析」を追加（システム管理者限定・goToで権限ガード）: サマリカード（承認依頼中/期限超過/
+  平均滞留）+ 一覧（承認者/代理/依頼日/期限/滞留日数/状態/通知回数・エスカレーション済表示）+
+  「🔔 リマインダー/エスカレーション実行」ボタン。App.tsxブリッジ
+  （`__loadGateOverviewBridge`/`__runGateRemindersBridge`）と src/lib 同期
+  （shared.ts型・api.ts・mockApi.ts）を実装。
+- **検証**: `npm run verify` PASS（test 134件、gate-enforcement 10件を追加）。
+  実DB E2E（scripts/gate-enforcement-e2e.mjs・ローカルPostgreSQL）: 過去期限400・期限+代理付き依頼
+  → 条件付き承認（代理承認者が判定・conditionNote/conditionMet記録）→ 滞留分析（overdue=true/
+  overdueCount=1）→ リマインダー実行（escalated=1・reminder_count=1・escalated_at記録）→
+  再実行は skipped=1（24h間隔制御）まで PASS。Playwright: Gate滞留分析画面（サマリ/一覧/実行ボタン/
+  トースト）と詳細Gateカードの新入力・期限/代理表示を確認・エラー0。
+- 残（次ラウンド）: GitHub Engineering連携（案件ID紐付け・Repo/Issue/PR/CI/Release状態取得）、
+  Knowledge Management（Knowledge候補抽出・Review Queue）。
+
 ## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
 
 - **DB はローカル PostgreSQL（Neon 廃止済み）で運用**: 本番 `.env`（`dx_idea`@127.0.0.1:5432）と

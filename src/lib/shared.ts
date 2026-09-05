@@ -425,6 +425,20 @@ export type IdeaGateApproval = {
   requestedBy?: string;
   // Gate内の承認順序（migration 009）。並列承認は同一値。
   approvalSeq?: number;
+  // 承認期限（migration 014）。null=期限なし。
+  requestedDueAt?: string;
+  // 代理承認者（migration 014）。元承認者の代わりに判定できる人。
+  delegateTo?: string;
+  // 条件付き承認の条件（migration 014）。approve 時に設定。
+  conditionNote?: string;
+  // 条件充足済みか（migration 014）。null=条件なし。
+  conditionMet?: boolean | null;
+  // 最終リマインダー送信時刻（migration 014）。
+  lastRemindedAt?: string;
+  // リマインダー送信回数（migration 014）。
+  reminderCount?: number;
+  // 期限超過でエスカレーションした時刻（migration 014）。
+  escalatedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -436,12 +450,64 @@ export type GateApprovalRequest = {
   authority?: Authority;
   approverEmail: string;
   reason?: string;
+  // 承認期限（ISO）。省略時はシステム既定（worker側で5日後）。
+  dueAt?: string;
+  // 代理承認者（元承認者の代わりに判定できる人）。省略時はなし。
+  delegateTo?: string;
+};
+
+// Gate承認判定の入力（migration 014で拡張: 条件付き承認）。
+export type GateDecisionInput = {
+  decision: "approve" | "reject" | "return";
+  reason: string;
+  // 条件付き承認の場合の条件文（approve時）。空なら条件なし。
+  conditionNote?: string;
+  // 条件を即時充足済みとするか（approve時に条件付きと同時指定可）。
+  conditionMet?: boolean;
 };
 
 // Gate一覧API（GET /gates, POST /gates/init）のレスポンス。
 export type GateListResult = {
   items: IdeaGateApproval[];
   summary: GateSummary[];
+};
+
+// Gate滞留分析の1行（GET /api/admin/gates/overview・migration 014）。
+export type GateOverviewItem = {
+  ideaId: string;
+  ideaTitle: string;
+  caseId?: string;
+  gateNo: number;
+  requiredAuthority: string;
+  approverEmail?: string;
+  delegateTo?: string;
+  requestedBy?: string;
+  requestedAt?: string;
+  requestedDueAt?: string;
+  lastRemindedAt?: string;
+  reminderCount: number;
+  escalatedAt?: string;
+  conditionNote?: string;
+  conditionMet?: boolean | null;
+  dwellDays: number;
+  overdue: boolean;
+  // 期限まで残り2日以内（期限超過は含まない）。
+  dueSoon?: boolean;
+};
+
+// Gate滞留分析API（GET /api/admin/gates/overview）のレスポンス。
+export type GateOverviewResult = {
+  items: GateOverviewItem[];
+  total: number;
+  overdueCount: number;
+  avgDwellDays: number;
+};
+
+// Gateリマインダー/エスカレーション実行（POST /api/admin/gates/reminders/run）のレスポンス。
+export type GateReminderRunResult = {
+  reminded: number;
+  escalated: number;
+  skipped: number;
 };
 
 // Gate1件分の集約ビュー（WebUI/ダッシュボード表示用）。
