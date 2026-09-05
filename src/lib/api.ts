@@ -27,6 +27,7 @@ import type {
   IdeaValuePhaseEntry,
   IssueInput,
   PrivacyFinding,
+  RagSearchResult,
   SaveIdeaResult,
   StructuredIdea,
   UserProfile,
@@ -145,6 +146,14 @@ export const api = useMock
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
       exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),
+      getSimilarIdeas: (id: string, limit = 5) =>
+        request<RagSearchResult>(`/api/ideas/${id}/similar?limit=${limit}`),
+      searchRag: (q: string, limit = 5) => {
+        const query = new URLSearchParams();
+        query.set("q", q);
+        query.set("limit", String(limit));
+        return request<RagSearchResult>(`/api/rag/search?${query.toString()}`);
+      },
       getIdeaPhase: (id: string) => request<IdeaValuePhaseEntry>(`/api/ideas/${id}/phase`),
       updateIdeaPhase: (
         id: string,

@@ -29,6 +29,7 @@ import {
   type IdeaGateApproval,
   type IdeaStage,
   type IssueInput,
+  type RagSearchHit,
   type StructuredIdea,
   authorities,
   gateLabels,
@@ -41,6 +42,8 @@ import {
   ideaValuePhaseLabel,
   ideaValuePhases,
   issueInputSchema,
+  ragMinSimilarity,
+  ragSimilarityLevel,
   structuredIdeaSchema,
   userRoles,
 } from "../src/lib/shared";
@@ -438,6 +441,161 @@ app.get("/api/ideas/:id/history", async (c) => {
   await audit(c.env, user, "idea.history.read", "idea", id, { histories: history.length });
   return c.json({ history, decisions: decisionsOut });
 });
+
+// ---------------------------------------------------------------------------
+// RAG / 類似アイデア検索（Issue #13・migration 011）
+// ローカルPostgreSQL の pg_trgm によるテキスト類似検索。
+// ideas.search_text（migration 011 の STORED 生成列）に対し word_similarity で
+// スコアリングする（日本語・長文では similarity より分離が良いことを実測確認）。
+// ---------------------------------------------------------------------------
+
+const ragMaxQueryLength = 500;
+const ragMaxResults = 20;
+
+// 検索クエリ文字列を正規化する。短すぎる/長すぎる入力は拒否せず空を返す
+// （呼び出し側で 400 に変換する）。
+function normalizeRagQuery(raw: string | undefined | null): string {
+  const q = (raw ?? "").trim().slice(0, ragMaxQueryLength);
+  return q;
+}
+
+async function logRagSearch(
+  db: DbSql,
+  env: Env,
+  user: string,
+  query: string,
+  queryType: "text" | "idea",
+  sourceIdeaId: string | undefined,
+  results: RagSearchHit[],
+): Promise<void> {
+  await db`
+    insert into rag_search_logs (
+      query, query_type, source_idea_id, result_count, top_idea_ids, created_by
+    )
+    values (
+      ${query}, ${queryType}, ${sourceIdeaId ?? null}, ${results.length},
+      ${results.slice(0, 10).map((r) => r.idea.id)}::jsonb, ${user}
+    )
+  `;
+  await audit(env, user, "rag.search", queryType === "idea" ? "idea" : "rag", sourceIdeaId ?? query, {
+    resultCount: results.length,
+    topSimilarities: results.slice(0, 5).map((r) => Math.round(r.similarity * 100) / 100),
+  });
+}
+
+// search_text に対する類似案件検索の共通実装。query は title 等を連結した
+// 検索キーワード。excludeIdeaId が指定されれば自分自身を除外する。
+async function findSimilarIdeas(
+  db: DbSql,
+  query: string,
+  excludeIdeaId?: string,
+  limit: number = 5,
+): Promise<Array<{ idea: Idea; similarity: number }>> {
+  const capped = Math.min(Math.max(1, Math.trunc(limit)), ragMaxResults);
+  const q = normalizeRagQuery(query);
+  if (!q || q.length < 4) return [];
+  // word_similarity(a,b) は「a の連続trigramが b の最良の連続部分列にどれだけ
+  // 一致するか」で、方向に依存する（クエリ短文→対象長文が本来の使い方）。
+  // 案件同士（どちらも長文）を比較する場合は両方向の最大値を採用すると
+  // 「対象側にもクエリと似た部分列がある」ケースを漏らさない。
+  const rows = excludeIdeaId
+    ? await db`
+        select *, greatest(
+          word_similarity(${q}, search_text),
+          word_similarity(search_text, ${q})
+        ) as rag_sim
+        from ideas
+        where id <> ${excludeIdeaId}
+          and greatest(
+            word_similarity(${q}, search_text),
+            word_similarity(search_text, ${q})
+          ) >= ${ragMinSimilarity}
+        order by rag_sim desc
+        limit ${capped}
+      `
+    : await db`
+        select *, greatest(
+          word_similarity(${q}, search_text),
+          word_similarity(search_text, ${q})
+        ) as rag_sim
+        from ideas
+        where greatest(
+          word_similarity(${q}, search_text),
+          word_similarity(search_text, ${q})
+        ) >= ${ragMinSimilarity}
+        order by rag_sim desc
+        limit ${capped}
+      `;
+  return rows.map((row) => ({
+    idea: mapIdeaRow(row),
+    similarity: Number(row.rag_sim),
+  }));
+}
+
+// 案件の検索用テキストを組み立てる（search_text 生成列と同一の連結順）。
+function buildIdeaQueryText(idea: Idea): string {
+  return [
+    idea.title,
+    idea.currentIssue,
+    idea.targetBusiness,
+    idea.targetUsers,
+    idea.currentWorkflow,
+    idea.improvementIdea,
+    idea.expectedEffects,
+    idea.mvpCandidate,
+  ]
+    .filter((part) => part && part.trim())
+    .join(" ");
+}
+
+// GET /api/ideas/:id/similar — 案件に類似する他の案件を類似度順で返す。
+// 新規アイデアが既存案件と重複していないか（重複判定・統合候補）を確認する用途。
+app.get("/api/ideas/:id/similar", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const rawLimit = Number(c.req.query("limit") ?? 5);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), ragMaxResults) : 5;
+  const rows = await db`
+    select * from ideas where id = ${id} limit 1
+  `;
+  if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const source = mapIdeaRow(rows[0]);
+  const hits = await findSimilarIdeas(db, buildIdeaQueryText(source), source.id, limit);
+  const items: RagSearchHit[] = await Promise.all(
+    hits.map(async ({ idea, similarity }) => ({
+      idea: await redactIdeaForUser(idea, user, c.env),
+      similarity: Math.round(similarity * 1000) / 1000,
+      level: ragSimilarityLevel(similarity),
+    })),
+  );
+  await logRagSearch(db, c.env, user, buildIdeaQueryText(source), "idea", source.id, items);
+  return c.json({ query: buildIdeaQueryText(source).slice(0, 200), items });
+});
+
+// GET /api/rag/search?q=... — 任意テキストに対する類似アイデア検索。
+// 新規登録前の重複チェックや、既存案件のナレッジ探索に使う。
+app.get("/api/rag/search", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const q = normalizeRagQuery(c.req.query("q"));
+  if (!q || q.length < 4) {
+    throw new ApiError("INVALID_QUERY", "検索クエリは4文字以上で指定してください。", 400);
+  }
+  const rawLimit = Number(c.req.query("limit") ?? 5);
+  const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), ragMaxResults) : 5;
+  const hits = await findSimilarIdeas(db, q, undefined, limit);
+  const items: RagSearchHit[] = await Promise.all(
+    hits.map(async ({ idea, similarity }) => ({
+      idea: await redactIdeaForUser(idea, user, c.env),
+      similarity: Math.round(similarity * 1000) / 1000,
+      level: ragSimilarityLevel(similarity),
+    })),
+  );
+  await logRagSearch(db, c.env, user, q, "text", undefined, items);
+  return c.json({ query: q, items });
+});
+
 
 app.get("/api/ideas/:id", async (c) => {
   const user = await getUser(c.req.raw, c.env);
@@ -3557,6 +3715,7 @@ class ApiError extends Error {
 export const workerSecurityTestHooks = {
   buildDemoQuestions,
   buildDemoStructure,
+  buildIdeaQueryText,
   computeAuditEntryHash,
   buildPromptMessages,
   clientRateLimitKey,
@@ -3564,6 +3723,7 @@ export const workerSecurityTestHooks = {
   formatWeeklyDigest,
   formatAuditChainAlert,
   estimateAiCost,
+  normalizeRagQuery,
   parseGateNo,
   formatCaseId,
   csvCell,

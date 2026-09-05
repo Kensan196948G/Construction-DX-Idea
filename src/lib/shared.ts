@@ -592,6 +592,32 @@ export type IdeaListParams = {
   limit?: number;
 };
 
+// ---- RAG / 類似アイデア検索（migration 011・Issue #13）----
+// 類似度は pg_trgm の word_similarity（クエリ内の連続trigramが対象テキストの
+// 部分列にどれだけ含まれるか、0..1）。日本語・長文では similarity より分離が
+// 良いことを実測確認（測量クエリ: word_similarity 0.692 vs similarity 0.065）。
+export const ragMinSimilarity = 0.15; // この値以上を「関連候補」として返す
+
+export type RagSearchHit = {
+  /** redact済みの類似案件（submitter_email等は権限に応じ除去済み） */
+  idea: Idea;
+  /** 0..1。高いほど類似 */
+  similarity: number;
+  /** 重複候補とみなす表示ラベル（閾値は worker 側で判定） */
+  level: "high" | "medium" | "low";
+};
+
+export type RagSearchResult = {
+  query: string;
+  items: RagSearchHit[];
+};
+
+export function ragSimilarityLevel(similarity: number): RagSearchHit["level"] {
+  if (similarity >= 0.5) return "high";
+  if (similarity >= 0.25) return "medium";
+  return "low";
+}
+
 // Request paths in the API client already carry the /api prefix, so the
 // configured base must be an origin without a trailing /api segment.
 // Accepts values like "https://host", "https://host/", "https://host/api",

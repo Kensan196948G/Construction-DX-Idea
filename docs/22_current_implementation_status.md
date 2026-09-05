@@ -1,5 +1,35 @@
 # 現在の実装・検証ステータス
 
+## 0.12 最新（2026-09-05: RAG類似アイデア検索・重複判定基盤 / migration 011）
+
+- **RAG基盤（Issue #13 / docs/29 §2.3 の第一段階）を実装**:
+  - migration 011: `pg_trgm` 拡張・ideas の検索用 STORED 生成列 `search_text`
+    （title/current_issue/target_business/target_users/current_workflow/improvement_idea/
+    expected_effects/mvp_candidate の小文字連結）・GIN (`gin_trgm_ops`) インデックス・
+    検索履歴テーブル `rag_search_logs`（誰が・いつ・何を・何件・上位ヒット）。
+  - 類似度のコアは **pg_trgm `word_similarity`（両方向の最大値）**。日本語・長文で
+    `similarity` より分離が良いことを実測確認（測量クエリ: word_similarity 0.692 vs
+    similarity 0.065）。`%` 演算子（閾値0.3）は日本語短文に高すぎるため利用しない。
+  - worker: `GET /api/ideas/:id/similar`（案件基準の類似検索・自分除外）と
+    `GET /api/rag/search?q=`（任意テキスト検索。新規登録前の重複チェック用途）。
+    redact済み Idea + similarity + level（high≥0.5 / medium≥0.25 / low≥0.15）を返し、
+    `rag_search_logs` への記録と監査 `rag.search` を行う。クエリ4文字未満は400。
+  - src/lib: shared.ts に `RagSearchHit`/`RagSearchResult`/`ragMinSimilarity`/
+    `ragSimilarityLevel`、api.ts/mockApi.ts（bigram Dice係数によるモック近似）/
+    standaloneBridge.ts（similarData/similarBusy）を同期。
+  - WebUI: standalone HTML 詳細ビューの右カラムに「🔎 類似・重複候補」カードを追加。
+    詳細表示・案件選択時に自動ロード（ブリッジ経由で実APIへ接続）。類似度バー・
+    レベル（重複可能性が高い/類似案件あり/参考）・caseId を表示。0件時は
+    「類似案件は見つかりませんでした」を案内。モック時は2-gram近似で動作。
+  - 検証: `npm run verify` PASS（test 111件）+ `npm audit` 0件。実DB E2Eで
+    「写真案件→類似『出来形写真の撮影・整理…』(0.174, caseId付き)」「検索履歴記録」
+    「4文字未満400」を確認。PlaywrightでモックUI（詳細→類似候補カード表示・
+    コンソールエラー0）を確認。
+- 本番適用: 本番ローカルDB `dx_idea` への migration 011 適用とモノレポ
+  `DX-Project-Portfolio-Atlas/apps/dx-idea` へのコード同期は承認後（本番反映手順に従う）。
+- 次段階（docs/29 §2.3 の続き）: 過去PoC/却下理由検索・既存システム照合・
+  「統合候補/既存案件へ追加/新規」判定のAI化・根拠引用の構造化・AI品質Eval。
+
 ## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
 
 - **DB はローカル PostgreSQL（Neon 廃止済み）で運用**: 本番 `.env`（`dx_idea`@127.0.0.1:5432）と
