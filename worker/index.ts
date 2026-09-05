@@ -29,6 +29,7 @@ import {
   type IdeaComment,
   type IdeaGateApproval,
   type IdeaStage,
+  type InformationClassification,
   type IssueInput,
   type RagSearchHit,
   type StructuredIdea,
@@ -38,10 +39,12 @@ import {
   gateAuthorityPolicy,
   summarizeGateApprovals,
   evaluateGateSoD,
+  canChangeClassification,
   defaultPhaseForStage,
   ideaStages,
   ideaValuePhaseLabel,
   ideaValuePhases,
+  informationClassifications,
   issueInputSchema,
   ragMinSimilarity,
   ragSimilarityLevel,
@@ -343,12 +346,21 @@ app.get("/api/ideas", async (c) => {
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), 200) : 100;
   const validStage = (ideaStages as readonly string[]).includes(stage);
   const like = `%${q}%`;
+  // 情報区分・公開制御（migration 012）: admin は全区分を参照できる。
+  // 一般ユーザーは public / internal のみ。confidential / restricted は
+  // 一覧に含めない（fail-closed）。提出者本人の案件は常に自身へ表示する。
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  // 非admin用の追加WHERE条件（パラメータ化。本人の案件は可視）
+  const visibilityAnd = isAdmin
+    ? db``
+    : db`and (information_classification in ('public','internal') or created_by = ${user})`;
   let rows;
   if (q && validStage) {
     rows = await db`
       select * from ideas
       where (title ilike ${like} or target_business ilike ${like} or improvement_idea ilike ${like})
         and stage = ${stage}
+        ${visibilityAnd}
       order by updated_at desc
       limit ${limit}
     `;
@@ -356,6 +368,7 @@ app.get("/api/ideas", async (c) => {
     rows = await db`
       select * from ideas
       where (title ilike ${like} or target_business ilike ${like} or improvement_idea ilike ${like})
+        ${visibilityAnd}
       order by updated_at desc
       limit ${limit}
     `;
@@ -363,15 +376,23 @@ app.get("/api/ideas", async (c) => {
     rows = await db`
       select * from ideas
       where stage = ${stage}
+        ${visibilityAnd}
       order by updated_at desc
       limit ${limit}
     `;
   } else {
-    rows = await db`
-      select * from ideas
-      order by updated_at desc
-      limit ${limit}
-    `;
+    rows = isAdmin
+      ? await db`
+          select * from ideas
+          order by updated_at desc
+          limit ${limit}
+        `
+      : await db`
+          select * from ideas
+          where (information_classification in ('public','internal') or created_by = ${user})
+          order by updated_at desc
+          limit ${limit}
+        `;
   }
   return c.json(
     await Promise.all(
@@ -679,6 +700,83 @@ app.patch(
     `;
     await audit(c.env, user, "idea.update", "idea", id, {
       updatedFields: Object.keys(patch),
+    });
+    return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+  },
+);
+
+// 情報区分・公開制御（migration 012）: 案件の情報区分を更新する。
+// - public/internal への変更: 提出者本人または管理者。
+// - confidential/restricted への昇格・区分変更: 管理者のみ（機密設定は承認を要する）。
+//   逆に機密→社内等への「降格」（公開側への変更）も管理者のみ。
+// 変更履歴は idea_classification_history へ記録する（監査）。
+app.patch(
+  "/api/ideas/:id/classification",
+  zValidator(
+    "json",
+    z.object({
+      informationClassification: z.enum(informationClassifications),
+      classificationNotes: z.string().max(500).optional(),
+      reason: z.string().max(500).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const locked = await db`
+      select * from ideas
+      where id = ${id}
+      for update
+    `;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(locked[0]);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
+    const next = body.informationClassification;
+    // 機密(confidential/restricted)への設定・解除は管理者のみ（canChangeClassification）。
+    const decision = canChangeClassification({
+      current: current.informationClassification ?? "internal",
+      next,
+      isAdmin,
+      isOwner,
+    });
+    if (!decision.allowed) {
+      const message =
+        decision.reason === "admin_required"
+          ? "機密・限定区分の設定・変更は管理者のみ可能です。"
+          : "分類変更は提出者本人または管理者のみ可能です。";
+      throw new ApiError(
+        decision.reason === "admin_required" ? "CLASSIFICATION_ADMIN_REQUIRED" : "FORBIDDEN",
+        message,
+        403,
+      );
+    }
+    const notes =
+      body.classificationNotes !== undefined
+        ? body.classificationNotes
+        : current.classificationNotes;
+    const rows = await db`
+      update ideas
+      set information_classification = ${next},
+          classification_notes = ${notes}
+      where id = ${id}
+      returning *
+    `;
+    await db`
+      insert into idea_classification_history (
+        idea_id, from_classification, to_classification, reason, changed_by
+      )
+      values (
+        ${id}, ${current.informationClassification}, ${next},
+        ${body.reason ?? ""}, ${user}
+      )
+    `;
+    await audit(c.env, user, "idea.classification.changed", "idea", id, {
+      from: current.informationClassification,
+      to: next,
+      notes,
     });
     return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
   },
@@ -3650,6 +3748,8 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     approvalReason: row.approval_reason ? String(row.approval_reason) : undefined,
     phaseNo: row.phase_no != null ? Number(row.phase_no) : undefined,
     phaseNote: row.phase_note ? String(row.phase_note) : undefined,
+    informationClassification: (row.information_classification as InformationClassification | null) ?? "internal",
+    classificationNotes: row.classification_notes ? String(row.classification_notes) : "",
     createdBy: String(row.created_by),
     ownerId: row.owner_id ? String(row.owner_id) : undefined,
     createdAt: toIsoString(row.created_at),

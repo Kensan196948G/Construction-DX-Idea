@@ -598,6 +598,23 @@ a:hover { text-decoration: underline; }
                   </sc-if>
                 </div>
                 <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
+                  <div style="font-size:14px;font-weight:600;color:#1A2433;">🔒 情報区分</div>
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <select value="{{ classificationDraft.value }}" onChange="{{ onClassificationDraftChange }}" style="flex:1;font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                      <option value="public">公開（Public）</option>
+                      <option value="internal">社内（Internal）</option>
+                      <option value="confidential">機密（Confidential）</option>
+                      <option value="restricted">限定（Restricted）</option>
+                    </select>
+                    <button onClick="{{ saveClassification }}" disabled="{{ classificationBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;">{{ classificationSaveLabel }}</button>
+                  </div>
+                  <sc-if value="{{ classificationRequiresAdmin }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:11.5px;color:#8A97A8;">機密・限定区分の設定・変更は管理者のみ可能です。</div>
+                  </sc-if>
+                  <input value="{{ classificationDraft.notes }}" onChange="{{ onClassificationNotesDraftChange }}" placeholder="区分の補足（任意・例: 対象範囲）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                  <div style="font-size:11px;color:#8A97A8;">現在: <span style="font-weight:600;color:#1A2433;">{{ classificationCurrentLabel }}</span><sc-if value="{{ classificationCurrentNotes }}" hint-placeholder-val="{{ false }}">（{{ classificationCurrentNotes }}）</sc-if></div>
+                </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
                   <div style="font-size:14px;font-weight:600;color:#1A2433;">✅ 承認</div>
                   <div style="font-size:12px;color:#5A6678;">状態: <span style="font-weight:600;color:#1A2433;">{{ selectedIdeaView.approvalStatusLabel }}</span><sc-if value="{{ selectedIdeaView.approverEmail }}" hint-placeholder-val="{{ false }}">（承認者: {{ selectedIdeaView.approverEmail }}）</sc-if></div>
                   <sc-if value="{{ selectedIdeaView.approvalShowRequest }}" hint-placeholder-val="{{ false }}">
@@ -1159,6 +1176,9 @@ class Component extends DCLogic {
     aiEvalState: { busy: false, result: null, provider: 'demo' },
     commentDraft: '',
     approvalDraft: { approverEmail: '', reason: '' },
+    // 情報区分・公開制御（migration 012）: 詳細画面の区分編集
+    classificationDraft: { value: 'internal', notes: '' },
+    classificationBusy: false,
     gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '' },
     // 選択中アイデアのGate1-5承認データ（初期化されていなければnull）。
     // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
@@ -1201,7 +1221,18 @@ class Component extends DCLogic {
   goTo = (view) => { this.setState({ view }); };
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
-    this.setState({ selectedIdeaId: id, view: 'detail', similarData: null, similarBusy: false });
+    const idea = this.state.ideas.find((i) => i.id === id);
+    this.setState({
+      selectedIdeaId: id,
+      view: 'detail',
+      similarData: null,
+      similarBusy: false,
+      classificationDraft: {
+        value: (idea && idea.informationClassification) || 'internal',
+        notes: (idea && idea.classificationNotes) || '',
+      },
+      classificationBusy: false,
+    });
     // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
     if (this.loadIdeaPhase) void this.loadIdeaPhase();
@@ -1265,6 +1296,52 @@ class Component extends DCLogic {
 
   updateApprovalField = (key) => (e) => {
     this.setState({ approvalDraft: { ...this.state.approvalDraft, [key]: e.target.value } });
+  };
+
+  // ---- 情報区分・公開制御（migration 012）----
+  // 実API接続時は App.tsx ブリッジが saveClassification を差し替える。
+  // モック時はローカルstate更新で動作する。
+  onClassificationDraftChange = (e) => {
+    this.setState((s) => ({ classificationDraft: { ...s.classificationDraft, value: e.target.value } }));
+  };
+  onClassificationNotesDraftChange = (e) => {
+    this.setState((s) => ({ classificationDraft: { ...s.classificationDraft, notes: e.target.value } }));
+  };
+  saveClassification = async () => {
+    const id = this.state.selectedIdeaId;
+    const { value, notes } = this.state.classificationDraft;
+    if (id == null) return;
+    // 実API時はブリッジが __saveClassificationBridge を差し替える。
+    if (this.__saveClassificationBridge) {
+      this.setState({ classificationBusy: true });
+      try {
+        const updated = await this.__saveClassificationBridge(String(id), value, notes);
+        this.setState((s) => ({
+          classificationBusy: false,
+          ideas: s.ideas.map((i) =>
+            i.id === id
+              ? { ...i, informationClassification: updated.informationClassification || value, classificationNotes: updated.classificationNotes || notes }
+              : i,
+          ),
+          toast: { message: '情報区分を更新しました。' },
+        }));
+        this.pushAudit('設定変更', `「${this.state.selectedIdeaId}」の情報区分を${value}へ変更`);
+      } catch (e) {
+        this.setState((s) => ({ classificationBusy: false, toast: { message: `情報区分の更新に失敗しました: ${String(e)}` } }));
+      }
+      return;
+    }
+    // モック: ローカル更新
+    this.setState((s) => ({
+      classificationBusy: false,
+      ideas: s.ideas.map((i) =>
+        i.id === id
+          ? { ...i, informationClassification: value, classificationNotes: notes }
+          : i,
+      ),
+      toast: { message: `情報区分を ${value} に更新しました（モック表示。本番はAPI経由）。` },
+    }));
+    this.pushAudit('設定変更', `「${id}」の情報区分を${value}へ変更`);
   };
 
   requestApproval = () => {
@@ -2043,6 +2120,20 @@ class Component extends DCLogic {
     const commentDraftInvalid = !s.commentDraft.trim();
     const submitCommentStyle = 'align-self:flex-end;background:#E08A2B;color:#fff;border:1px solid #E08A2B;padding:8px 14px;border-radius:8px;font-weight:600;font-size:12px;cursor:' + (commentDraftInvalid ? 'not-allowed' : 'pointer') + ';opacity:' + (commentDraftInvalid ? '.5' : '1') + ';';
 
+    // ---- 情報区分 view-model（migration 012）----
+    const classificationLabelMap = {
+      public: '公開（Public）', internal: '社内（Internal）',
+      confidential: '機密（Confidential）', restricted: '限定（Restricted）',
+    };
+    const classificationCurrent = selectedIdeaRaw?.informationClassification || 'internal';
+    const classificationCurrentLabel = classificationLabelMap[classificationCurrent] || '社内（Internal）';
+    const classificationCurrentNotes = selectedIdeaRaw?.classificationNotes || '';
+    const classificationRequiresAdmin =
+      !!selectedIdeaRaw &&
+      (classificationCurrent === 'confidential' || classificationCurrent === 'restricted' ||
+        s.classificationDraft.value === 'confidential' || s.classificationDraft.value === 'restricted');
+    const classificationSaveLabel = s.classificationBusy ? '保存中…' : '💾 保存';
+
     // ---- Gate1-5 view-model（#50/#57）----
     const gateLabelsMap = {
       1: 'Gate1 企画承認', 2: 'Gate2 開発承認', 3: 'Gate3 MVP承認',
@@ -2340,6 +2431,17 @@ class Component extends DCLogic {
       advanceSelected: selectedIdeaView && selectedIdeaView.canAdvance ? () => this.advanceStage(selectedIdeaView.id) : () => {},
       commentDraft: s.commentDraft, onCommentDraftChange: this.updateCommentDraft,
       submitComment: this.submitComment, commentDraftInvalid, submitCommentStyle,
+
+      // 情報区分・公開制御（migration 012）
+      classificationDraft: s.classificationDraft,
+      classificationBusy: !!s.classificationBusy,
+      classificationCurrentLabel,
+      classificationCurrentNotes,
+      classificationRequiresAdmin,
+      classificationSaveLabel,
+      onClassificationDraftChange: this.onClassificationDraftChange,
+      onClassificationNotesDraftChange: this.onClassificationNotesDraftChange,
+      saveClassification: this.saveClassification,
 
       adminSettings: a, usagePercent, adminUsageBarStyle, adminToggleTrackStyle, adminToggleDotStyle,
       adminEnabledLabel, testButtonLabel, adminTestSuccess, adminApiKeySavedMsg: a.apiKeySavedMsg,

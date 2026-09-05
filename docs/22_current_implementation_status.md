@@ -54,6 +54,31 @@
   「統合候補/既存案件へ追加/新規」判定のAI化・Provider/Model Registry・Prompt管理・
   情報区分・公開制御・ポートフォリオ+KPI/ROI。
 
+## 0.15 最新（2026-09-05: 情報区分・公開制御 / migration 012）
+
+- **migration 012 `information_classification`**: ideas に情報区分
+  `information_classification`（public=社外公開可 / internal=社内のみ（既定・fail-closed） /
+  confidential=機密（要管理者） / restricted=限定（要管理者））と補足
+  `classification_notes`、変更履歴テーブル `idea_classification_history` を追加。
+  本番・MVP DB（dx_idea/dx_idea_mvp）へ適用済み。
+- **権限制御の純関数化**（src/lib/shared.ts）: `canChangeClassification` を追加。
+  - 本人または管理者は public/internal 間の変更可。
+  - confidential/restricted への設定・解除（機密に触れる変更）は管理者のみ。
+  - 他人の案件の変更は管理者のみ。単体テスト（tests/classification.test.ts 6件）で担保。
+- **worker**: `PATCH /api/ideas/:id/classification`（区分+補足+理由。canChangeClassification
+  で判定し 403 を返す。履歴を idea_classification_history へ記録、監査
+  `idea.classification.changed`）。一覧 `GET /api/ideas` は admin 以外に
+  confidential/restricted を非表示（public/internal・本人案件のみ。SQLで可視性制御）。
+- **WebUI**: 詳細ビューに「🔒 情報区分」カード（Public/Internal/Confidential/Restricted
+  選択・補足入力・保存・現在値表示。機密区分は「管理者のみ」注記）。App.tsx ブリッジ
+  `__saveClassificationBridge`、mockApi はローカル更新。
+- **検証**: `npm run verify` PASS（test 121件、classification 6件含む）。実DB E2E
+  （scripts/classification-e2e.mjs）: 作成→internal既定→public→confidential→一覧可視性を確認。
+  psqlで非admin可視性SQL（confidential非表示）とadmin（全件表示）を確認。
+  Playwright: 詳細画面で情報区分カード表示・公開へ保存→「現在: 公開（Public）」・エラー0。
+- 次段階（docs/29 §2.17 の続き）: 添付Virus Scan・DLP・Retention Policy・Export制限・
+  情報区分に応じたエクスポート/通知の伝播・ポートフォリオ+KPI/ROI。
+
 ## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
 
 - **DB はローカル PostgreSQL（Neon 廃止済み）で運用**: 本番 `.env`（`dx_idea`@127.0.0.1:5432）と

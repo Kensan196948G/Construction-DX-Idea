@@ -26,6 +26,7 @@ import type {
   IdeaListParams,
   IdeaStage,
   IdeaValuePhaseEntry,
+  InformationClassification,
   IssueInput,
   PrivacyFinding,
   RagSearchResult,
@@ -189,6 +190,16 @@ export const api = useMock
         request<Idea>(`/api/ideas/${id}/stage`, {
           method: "POST",
           body: JSON.stringify(reason ? { stage, reason } : { stage }),
+        }),
+      updateClassification: (
+        id: string,
+        informationClassification: InformationClassification,
+        classificationNotes?: string,
+        reason?: string,
+      ) =>
+        request<Idea>(`/api/ideas/${id}/classification`, {
+          method: "PATCH",
+          body: JSON.stringify({ informationClassification, classificationNotes, reason }),
         }),
       getAiSettings: () => request<AiSettings>("/api/admin/ai-settings"),
       updateAiSettings: (settings: AiSettingsPatch) =>

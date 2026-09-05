@@ -14,6 +14,55 @@ export const ideaStages = [
 
 export type IdeaStage = (typeof ideaStages)[number];
 
+// ---- 情報区分・公開制御（migration 012・docs/29 §2.17）----
+// public=社外公開可 / internal=社内のみ（既定） / confidential=要承認（機密） /
+// restricted=限定公開（要個別許可）。既定は fail-closed の internal。
+export const informationClassifications = [
+  "public",
+  "internal",
+  "confidential",
+  "restricted",
+] as const;
+export type InformationClassification = (typeof informationClassifications)[number];
+
+export const informationClassificationLabels: Record<InformationClassification, string> = {
+  public: "公開（Public）",
+  internal: "社内（Internal）",
+  confidential: "機密（Confidential）",
+  restricted: "限定（Restricted）",
+};
+
+export function informationClassificationLabel(
+  value: InformationClassification | null | undefined,
+): string {
+  if (!value) return "社内（Internal）";
+  return informationClassificationLabels[value] ?? "社内（Internal）";
+}
+
+// 情報区分の変更可否を判定する（docs/29 §2.17・migration 012）。
+// - 誰でも自分の案件の区分変更は可能だが、機密(confidential)・限定(restricted)への
+//   設定・解除（＝機密に触れる変更）は管理者のみ。
+// - 他人の案件の区分変更は管理者のみ。
+export function canChangeClassification(params: {
+  current: InformationClassification;
+  next: InformationClassification;
+  isAdmin: boolean;
+  isOwner: boolean;
+}): { allowed: boolean; reason?: "forbidden" | "admin_required" } {
+  const { current, next, isAdmin, isOwner } = params;
+  if (!isAdmin && !isOwner) {
+    return { allowed: false, reason: "forbidden" };
+  }
+  const currentIsRestricted =
+    current === "confidential" || current === "restricted";
+  const nextIsRestricted = next === "confidential" || next === "restricted";
+  const touchesRestricted = currentIsRestricted || nextIsRestricted;
+  if (!isAdmin && touchesRestricted) {
+    return { allowed: false, reason: "admin_required" };
+  }
+  return { allowed: true };
+}
+
 /**
  * "demo" is a deterministic, cost-free provider for the MVP/Prototype
  * environment only. It never calls an external AI API and is rejected by the
@@ -194,6 +243,9 @@ export const ideaSchema = structuredIdeaSchema.extend({
   // 20フェーズ Idea-to-Value 進捗（migration 010）。null=未設定。
   phaseNo: z.number().int().min(1).max(20).nullable().optional(),
   phaseNote: z.string().max(1000).optional(),
+  // 情報区分・公開制御（migration 012）。未設定=internal扱い（UI/API層で補完）。
+  informationClassification: z.enum(informationClassifications).optional(),
+  classificationNotes: z.string().max(500).optional(),
   createdBy: z.string(),
   ownerId: z.string().optional(),
   createdAt: z.string(),
