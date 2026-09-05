@@ -894,6 +894,32 @@ a:hover { text-decoration: underline; }
           <sc-if value="{{ adminTestSuccess }}" hint-placeholder-val="{{ false }}">
             <div style="background:#E4F3EC;color:#1F8255;padding:9px 13px;border-radius:8px;font-size:12.5px;font-weight:500;">✅ 接続成功: Claude API に到達できました</div>
           </sc-if>
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:15px 18px;display:flex;flex-direction:column;gap:10px;">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:#1A2433;">🧪 AI品質Eval</div>
+              <div style="font-size:11.5px;color:#8A97A8;">Golden Dataset（5業務ケース）で質問生成・構造化の品質を回帰検証します</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <select value="{{ aiEvalProvider }}" onChange="{{ onAiEvalProviderChange }}" style="font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                <option value="demo">demo（決定的・無料）</option>
+                <option value="current">current（実AI設定）</option>
+              </select>
+              <button onClick="{{ runAiEval }}" disabled="{{ aiEvalBusy }}" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:7px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ aiEvalRunLabel }}</button>
+            </div>
+            <sc-if value="{{ aiEvalResultLabel }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:9px 13px;border-radius:8px;font-size:12.5px;font-weight:600;{{ aiEvalSummaryStyle }}">📊 {{ aiEvalResultLabel }}（合格率 {{ aiEvalPassPct }}%）</div>
+            </sc-if>
+            <sc-if value="{{ aiEvalDetailRows }}" hint-placeholder-val="{{ false }}">
+              <sc-for list="{{ aiEvalDetailRows }}" as="er" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                  <span style="font-family:'IBM Plex Mono',monospace;color:#8A97A8;flex-shrink:0;">{{ er.caseId }}</span>
+                  <span style="color:#1A2433;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ er.label }}</span>
+                  <span style="{{ er.okStyle }}">{{ er.okLabel }}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+            <div style="font-size:11px;color:#8A97A8;">current実行はAI利用枠を消費します（5ケース×2処理）。結果は監査ログ（ai.eval.ran）に記録されます。</div>
+          </div>
         </div>
         <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);">
           <div style="padding:15px 18px;border-bottom:1px solid #EEF1F5;">
@@ -1129,6 +1155,8 @@ class Component extends DCLogic {
     wizard: { questions: [], answers: [], draftAnswer: '', thinking: false, sourceIntake: null },
     reviewDraft: null,
     adminSettings: { provider: 'claude', model: 'claude-sonnet-5', enabled: true, monthlyCap: 500, used: 238, testing: false, testResult: null, apiKey: '', apiKeySaved: false, apiKeySavedMsg: false, keyLast4: '', keyStatus: 'not_configured' },
+    // AI品質Eval（Issue #13）: Golden Dataset の回帰試験の実行状態と結果
+    aiEvalState: { busy: false, result: null, provider: 'demo' },
     commentDraft: '',
     approvalDraft: { approverEmail: '', reason: '' },
     gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '' },
@@ -1789,6 +1817,40 @@ class Component extends DCLogic {
     }, 1100);
   };
 
+  // ---- AI品質Eval（Issue #13）----
+  // 実API接続時は App.tsx ブリッジが runAiEval を差し替える。モック時は
+  // 全ケース合格のサマリを返す（デモAI相当の決定的結果）。
+  setAiEvalProvider = (e) => {
+    this.setState((s) => ({ aiEvalState: { ...s.aiEvalState, provider: e.target.value } }));
+  };
+
+  runAiEval = async () => {
+    if (this.state.aiEvalState.busy) return;
+    this.setState((s) => ({ aiEvalState: { ...s.aiEvalState, busy: true, result: null } }));
+    const provider = this.state.aiEvalState.provider === 'demo' ? 'demo' : 'current';
+    // 実API接続時はブリッジが実装を差し替える。ここはモック(全合格)を返す。
+    const mockResult = {
+      totalCases: 5, passedCases: 5, passRate: 1,
+      executedWith: 'demo',
+      checkedAt: new Date().toISOString(),
+      results: [],
+    };
+    if (this.__aiEvalBridge) {
+      try {
+        const result = await this.__aiEvalBridge(provider);
+        this.setState({ aiEvalState: { busy: false, result, provider: this.state.aiEvalState.provider } });
+        this.pushAudit('AI品質Eval', `Golden Dataset を ${result.executedWith} で実行: ${result.passedCases}/${result.totalCases} 合格`);
+        return;
+      } catch (e) {
+        this.setState((s) => ({ aiEvalState: { ...s.aiEvalState, busy: false }, toast: { message: `AI品質Evalに失敗しました: ${String(e)}` } }));
+        return;
+      }
+    }
+    // モック: 実行感を出して全合格サマリを表示
+    this.setState({ aiEvalState: { busy: false, result: mockResult, provider: this.state.aiEvalState.provider } });
+    this.pushAudit('AI品質Eval', 'Golden Dataset を demo で実行: 5/5 合格（モック表示）');
+  };
+
   dismissToast = () => this.setState({ toast: null });
 
   buildStageColumns(list, stageMeta, stageOrder) {
@@ -2178,6 +2240,31 @@ class Component extends DCLogic {
       : 'サーバー登録キー: 未登録（実際のAI利用にはCloudflare Secretへの登録が必要です）';
     const adminTestSuccess = a.testResult === 'success' && !a.testing;
 
+    // ---- AI品質Eval view-model（Issue #13）----
+    const aiEval = s.aiEvalState || { busy: false, result: null, provider: 'demo' };
+    const aiEvalBusy = !!aiEval.busy;
+    const aiEvalResult = aiEval.result || null;
+    const aiEvalRunLabel = aiEvalBusy ? '評価中…' : '🏃 AI品質Evalを実行';
+    const aiEvalPassPct = aiEvalResult ? Math.round(aiEvalResult.passRate * 100) : null;
+    const aiEvalSummaryStyle = aiEvalResult && aiEvalResult.passRate === 1
+      ? 'background:#E4F3EC;color:#1F8255;'
+      : aiEvalResult
+        ? 'background:#FDEFE0;color:#B5701A;'
+        : '';
+    const aiEvalDetailRows = aiEvalResult && Array.isArray(aiEvalResult.results) && aiEvalResult.results.length > 0
+      ? aiEvalResult.results.map((r) => ({
+          caseId: r.caseId,
+          label: r.label,
+          okLabel: r.ok ? '✓' : '✗',
+          okStyle: r.ok ? 'color:#1F8255;font-weight:600;' : 'color:#C5392F;font-weight:600;',
+        }))
+      : [];
+    // モックは results を持たないため、合格数ベースの簡易行を1つ表示する
+    const aiEvalShowMockRow = aiEvalResult && aiEvalResult.totalCases > 0 && aiEvalDetailRows.length === 0;
+    const aiEvalResultLabel = aiEvalResult
+      ? `合格: ${aiEvalResult.passedCases} / ${aiEvalResult.totalCases} ケース（${aiEvalResult.executedWith}）`
+      : '';
+
     const auditRows = s.auditLog.map((e) => {
       const map = {
         'AI利用': { fg: '#2E5AAC', bg: '#E9F0FB' },
@@ -2261,6 +2348,13 @@ class Component extends DCLogic {
       onApiKeyChange: this.updateAdmin('apiKey'), saveApiKey: this.saveApiKey,
       toggleAiEnabled: this.toggleAiEnabled, runConnectionTest: this.runConnectionTest,
       resetApiKeyInput: this.resetApiKeyInput, adminKeyStatusLabel,
+
+      // AI品質Eval（Issue #13）
+      aiEvalBusy, aiEvalRunLabel, aiEvalResultLabel, aiEvalSummaryStyle,
+      aiEvalPassPct, aiEvalDetailRows, aiEvalShowMockRow,
+      aiEvalProvider: aiEval.provider,
+      onAiEvalProviderChange: this.setAiEvalProvider,
+      runAiEval: this.runAiEval,
 
       approvalDraft: s.approvalDraft,
       onApprovalApproverChange: this.updateApprovalField('approverEmail'),

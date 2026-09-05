@@ -1,4 +1,5 @@
 import { mockApi } from "./mockApi";
+import type { AiEvalSummary } from "./aiEval";
 import { normalizeApiBaseUrl } from "./shared";
 import type {
   AppUser,
@@ -199,6 +200,11 @@ export const api = useMock
         request<AiConnectionTestResult>("/api/admin/ai-settings/test", {
           method: "POST",
           body: JSON.stringify({ apiKey, model, provider }),
+        }),
+      runAiEval: (provider: "demo" | "current" = "demo") =>
+        request<AiEvalSummary>("/api/admin/ai-eval", {
+          method: "POST",
+          body: JSON.stringify({ provider }),
         }),
       getAuditLogs: (limit = 100) =>
         request<{ items: AuditLogEntry[] }>(`/api/admin/audit-logs?limit=${limit}`),

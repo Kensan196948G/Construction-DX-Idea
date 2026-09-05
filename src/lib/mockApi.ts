@@ -1,4 +1,5 @@
 import { inspectIssueInput } from "./privacy";
+import type { AiEvalSummary } from "./aiEval";
 import type {
   AppUser,
   AppUserInput,
@@ -40,6 +41,8 @@ import {
   ragSimilarityLevel,
   summarizeGateApprovals,
 } from "./shared";
+import { buildDemoQuestions, buildDemoStructure } from "./demoAi";
+import { runAiEval } from "./aiEval";
 
 const gateApprovals = new Map<string, IdeaGateApproval[]>();
 const phaseHistory = new Map<
@@ -551,6 +554,15 @@ export const mockApi = {
       keyLast4: "mock",
       checkedAt: now(),
     };
+  },
+
+  async runAiEval(): Promise<AiEvalSummary> {
+    // モックはデモAI（決定的）で実行し、実APIと同じサマリ構造を返す。
+    return runAiEval({
+      providerLabel: "demo",
+      generateQuestions: (input) => Promise.resolve(buildDemoQuestions(input)),
+      structureIdea: (input, answers) => Promise.resolve(buildDemoStructure(input, answers)),
+    });
   },
 
   async getAuditLogs(limit = 100): Promise<{ items: AuditLogEntry[] }> {
