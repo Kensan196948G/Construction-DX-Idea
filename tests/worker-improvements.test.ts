@@ -335,6 +335,7 @@ describe("failure alert message", () => {
         aiFailures7d: 1,
         notifyFailures7d: 0,
         activeUsers: 5,
+        kpiReviewDue: 0,
       },
       true,
     );
@@ -342,6 +343,23 @@ describe("failure alert message", () => {
     assert.match(text, /登録アイデア: 15件（今週 \+3件）/);
     assert.match(text, /AI呼び出し: 42回（失敗 1件）/);
     assert.match(text, /監査チェーン: 正常/);
+    assert.match(text, /KPIレビュー期限: なし/);
+  });
+
+  it("flags KPI review due in the weekly digest", () => {
+    const text = formatWeeklyDigest(
+      {
+        totalIdeas: 1,
+        newIdeas: 0,
+        aiCalls7d: 0,
+        aiFailures7d: 0,
+        notifyFailures7d: 0,
+        activeUsers: 1,
+        kpiReviewDue: 2,
+      },
+      true,
+    );
+    assert.match(text, /🔔 KPIレビュー期限: 2件/);
   });
 });
 

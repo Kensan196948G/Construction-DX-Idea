@@ -171,6 +171,14 @@ export const api = useMock
           kpiBaselineCost: number | null;
           records: IdeaKpi[];
         }>(`/api/ideas/${id}/kpi`),
+      updateKpiBaseline: (
+        id: string,
+        baseline: { kpiBaselineHours?: number | null; kpiBaselineCost?: number | null; reason?: string },
+      ) =>
+        request<Idea>(`/api/ideas/${id}/kpi/baseline`, {
+          method: "PATCH",
+          body: JSON.stringify(baseline),
+        }),
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
       exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),

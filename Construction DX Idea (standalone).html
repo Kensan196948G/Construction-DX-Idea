@@ -616,7 +616,12 @@ a:hover { text-decoration: underline; }
                 </div>
                 <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
                   <div style="font-size:14px;font-weight:600;color:#1A2433;">📈 効果測定（KPI）</div>
-                  <div style="font-size:11.5px;color:#8A97A8;">ベースライン: {{ kpiBaselineText }}</div>
+                  <div style="font-size:11.5px;color:#8A97A8;">ベースライン: <span style="font-weight:600;color:#1A2433;">{{ kpiBaselineText }}</span></div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <input type="text" inputmode="decimal" value="{{ kpiBaselineDraft.hours }}" onChange="{{ onKpiBaselineHoursChange }}" placeholder="月間工数(人時)" style="width:120px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                    <input type="text" inputmode="numeric" value="{{ kpiBaselineDraft.cost }}" onChange="{{ onKpiBaselineCostChange }}" placeholder="月間コスト(円)" style="width:140px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                    <button onClick="{{ saveKpiBaseline }}" disabled="{{ kpiBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #B5701A;background:#B5701A;color:#fff;padding:6px 11px;border-radius:7px;font-size:11.5px;font-weight:600;">{{ kpiBaselineSaveLabel }}</button>
+                  </div>
                   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                     <input type="text" inputmode="decimal" value="{{ kpiDraft.actualReductionPct }}" onChange="{{ onKpiReductionChange }}" placeholder="実績削減率(%)" style="width:110px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
                     <select value="{{ kpiDraft.outcome }}" onChange="{{ onKpiOutcomeChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
@@ -892,6 +897,67 @@ a:hover { text-decoration: underline; }
             </tbody>
           </table>
         </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isPortfolio }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="ポートフォリオ" style="display:flex;flex-direction:column;gap:14px;max-width:1100px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#8A97A8;">Value（優先度スコア）× Effort（月間ベースライン工数）で案件を俯瞰します。本番化率・KPI測定状況も確認できます。</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ loadPortfolio }}" disabled="{{ pfLoading }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">{{ pfReloadLabel }}</button>
+        </div>
+        <sc-if value="{{ pfHasSummary }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
+            <sc-for list="{{ pfSummaryCards }}" as="card" hint-placeholder-count="6">
+              <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:14px 16px;box-shadow:0 1px 2px rgba(16,24,40,.04);">
+                <div style="font-size:11.5px;color:#8A97A8;">{{ card.label }}</div>
+                <div style="font-size:22px;font-weight:700;color:{{ card.accent }};margin-top:4px;">{{ card.value }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden;">
+            <div style="padding:13px 18px;border-bottom:1px solid #EEF1F5;">
+              <div style="font-size:13.5px;font-weight:600;color:#1A2433;">Value × Effort（案件一覧・スコア順）</div>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:10px 14px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">案件</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">ステージ</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">区分</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">Value</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">Effort</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">ベースライン</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">KPI</th>
+                  <th style="text-align:left;padding:10px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">削減</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ pfRows }}" as="row" hint-placeholder-count="5">
+                  <tr onClick="{{ row.onClick }}" style="cursor:pointer;">
+                    <td style="padding:10px 14px;border-bottom:1px solid #EEF1F5;">
+                      <div style="font-weight:600;color:#1A2433;">{{ row.title }}</div>
+                      <sc-if value="{{ row.caseId }}" hint-placeholder-val="{{ false }}">
+                        <div style="font-size:10.5px;color:#B5701A;font-family:'IBM Plex Mono',monospace;">{{ row.caseId }}</div>
+                      </sc-if>
+                    </td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;"><span style="{{ row.stageBadgeStyle }}">{{ row.stageLabel }}</span></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;"><span style="{{ row.clsStyle }}">{{ row.clsLabel }}</span></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;font-weight:600;color:#1A2433;">{{ row.scoreText }}<span style="color:#8A97A8;font-weight:400;font-size:11px;"> ({{ row.valueLabel }})</span></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ row.effortLabel }}</td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ row.hoursText }}</td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;"><span style="{{ row.outcomeStyle }}">{{ row.outcomeLabel }}</span></td>
+                    <td style="padding:10px 8px;border-bottom:1px solid #EEF1F5;font-weight:600;color:#1F8255;">{{ row.reductionText }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </sc-if>
+        <sc-if value="{{ pfLoading }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:26px;text-align:center;color:#8A97A8;font-size:13px;">ポートフォリオを読み込んでいます…</div>
+        </sc-if>
       </div>
       </sc-if>
 
@@ -1217,7 +1283,11 @@ class Component extends DCLogic {
     // KPI・ROI（migration 013）: 詳細画面の効果測定
     kpiData: { kpiBaselineHours: null, kpiBaselineCost: null, records: [] },
     kpiDraft: { actualReductionPct: '', outcome: 'pending', reviewNote: '', periodMonths: '3' },
+    kpiBaselineDraft: { hours: '', cost: '' },
     kpiBusy: false,
+    // ポートフォリオ（migration 013・docs/29 §2.5）: 専用画面の集計データ
+    portfolioData: { summary: null, items: [] },
+    portfolioBusy: false,
     gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '' },
     // 選択中アイデアのGate1-5承認データ（初期化されていなければnull）。
     // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
@@ -1257,7 +1327,12 @@ class Component extends DCLogic {
     return 'display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;color:' + fg + ';background:' + bg + ';';
   }
 
-  goTo = (view) => { this.setState({ view }); };
+  goTo = (view) => {
+    this.setState({ view });
+    // 実API接続時は App.tsx ブリッジが portfolioData をロードする。
+    if (view === 'portfolio' && this.loadPortfolio) void this.loadPortfolio();
+    if (view === 'detail' && this.loadKpi) void this.loadKpi();
+  };
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
     const idea = this.state.ideas.find((i) => i.id === id);
@@ -1394,7 +1469,14 @@ class Component extends DCLogic {
     if (this.__loadKpiBridge) {
       try {
         const data = await this.__loadKpiBridge(String(id));
-        this.setState({ kpiData: data, kpiBusy: false });
+        this.setState({
+          kpiData: data,
+          kpiBaselineDraft: {
+            hours: data.kpiBaselineHours != null ? String(data.kpiBaselineHours) : '',
+            cost: data.kpiBaselineCost != null ? String(data.kpiBaselineCost) : '',
+          },
+          kpiBusy: false,
+        });
       } catch (e) {
         this.setState({ kpiBusy: false, toast: { message: `効果測定の取得に失敗しました: ${String(e)}` } });
       }
@@ -1463,6 +1545,100 @@ class Component extends DCLogic {
       toast: { message: '効果測定を記録しました（モック表示。本番はAPI経由）。' },
     });
     this.pushAudit('設定変更', `効果測定を記録（削減率${pct}%・${draft.outcome}）`);
+  };
+
+  // KPIベースライン登録（migration 013）: Before/After測定の基準値
+  onKpiBaselineHoursChange = (e) => {
+    this.setState((s) => ({ kpiBaselineDraft: { ...s.kpiBaselineDraft, hours: e.target.value } }));
+  };
+  onKpiBaselineCostChange = (e) => {
+    this.setState((s) => ({ kpiBaselineDraft: { ...s.kpiBaselineDraft, cost: e.target.value } }));
+  };
+  saveKpiBaseline = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const draft = this.state.kpiBaselineDraft;
+    const baseline = {
+      kpiBaselineHours: draft.hours === '' ? null : Number(draft.hours),
+      kpiBaselineCost: draft.cost === '' ? null : Number(draft.cost),
+      reason: 'WebUIからベースライン設定',
+    };
+    this.setState({ kpiBusy: true });
+    if (this.__saveKpiBaselineBridge) {
+      try {
+        const updated = await this.__saveKpiBaselineBridge(String(id), baseline);
+        this.setState({
+          kpiBusy: false,
+          kpiData: {
+            ...this.state.kpiData,
+            kpiBaselineHours: updated.kpiBaselineHours ?? null,
+            kpiBaselineCost: updated.kpiBaselineCost ?? null,
+          },
+          toast: { message: 'ベースラインを設定しました。' },
+        });
+        this.pushAudit('設定変更', `KPIベースラインを設定（工数${baseline.kpiBaselineHours ?? '-'}・コスト${baseline.kpiBaselineCost ?? '-'}）`);
+      } catch (e) {
+        this.setState({ kpiBusy: false, toast: { message: `ベースライン設定に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック
+    this.setState((s) => ({
+      kpiBusy: false,
+      kpiData: {
+        ...s.kpiData,
+        kpiBaselineHours: baseline.kpiBaselineHours,
+        kpiBaselineCost: baseline.kpiBaselineCost,
+      },
+      toast: { message: 'ベースラインを設定しました（モック表示。本番はAPI経由）。' },
+    }));
+    this.pushAudit('設定変更', `KPIベースラインを設定（モック）`);
+  };
+
+  // ---- ポートフォリオ（docs/29 §2.5）----
+  // 実API接続時は App.tsx ブリッジが loadPortfolio を差し替える。
+  loadPortfolio = async () => {
+    if (this.__loadPortfolioBridge) {
+      this.setState({ portfolioBusy: true });
+      try {
+        const data = await this.__loadPortfolioBridge();
+        this.setState({ portfolioData: data, portfolioBusy: false });
+      } catch (e) {
+        this.setState({ portfolioBusy: false, toast: { message: `ポートフォリオの取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: ローカルのideasから簡易集計
+    const ideas = this.state.ideas;
+    const active = ideas.filter((i) => !['rejected', 'archived'].includes(i.stage));
+    const stageCounts = {};
+    ideas.forEach((i) => { stageCounts[i.stage] = (stageCounts[i.stage] || 0) + 1; });
+    const classificationCounts = { public: 0, internal: 0, confidential: 0, restricted: 0 };
+    ideas.forEach((i) => { classificationCounts[i.informationClassification || 'internal'] += 1; });
+    const productionIdeas = stageCounts['production'] || 0;
+    const decided = (stageCounts['submitted'] || 0) + (stageCounts['planning'] || 0) +
+      (stageCounts['mvp'] || 0) + (stageCounts['verification'] || 0) +
+      (stageCounts['production_candidate'] || 0) + productionIdeas;
+    this.setState({
+      portfolioData: {
+        summary: {
+          totalIdeas: ideas.length, activeIdeas: active.length,
+          productionIdeas, rejectedIdeas: stageCounts['rejected'] || 0,
+          productionRate: decided ? productionIdeas / decided : 0,
+          kpiMeasuredCount: [...kpiRecords.values()].filter((r) => r.length > 0).length,
+          totalBaselineHoursPerMonth: 0, totalBaselineCostPerMonth: 0,
+          classificationCounts, stageCounts,
+        },
+        items: active.map((i) => ({
+          ideaId: i.id, caseId: i.caseId || '', title: i.title, stage: i.stage,
+          informationClassification: i.informationClassification || 'internal',
+          priorityScore: Math.min(10, (i.securityNotes?.length || 0) * 2 + (i.mvpProposal ? 2 : 0)),
+          kpiBaselineHours: null, kpiBaselineCost: null,
+          latestKpiOutcome: null, latestActualReductionPct: null,
+        })),
+      },
+      portfolioBusy: false,
+    });
   };
 
   requestApproval = () => {
@@ -2100,6 +2276,7 @@ class Component extends DCLogic {
         { key: 'listIdea', icon: '💡', label: '業務アイデア一覧' },
         { key: 'kanbanIdea', icon: '🗂️', label: '業務アイデアステージ管理' },
         { key: 'evaluation', icon: '🏆', label: '評価ボード' },
+        { key: 'portfolio', icon: '📈', label: 'ポートフォリオ' },
       ] },
       { label: 'ITシステム管理', items: [
         { key: 'adminSettings', icon: '⚙️', label: 'AI設定' },
@@ -2137,6 +2314,7 @@ class Component extends DCLogic {
       kanban: { title: '困りごとステージ管理', sub: '企画 → MVP → 検証 → 本番化' },
       kanbanIdea: { title: '業務アイデアステージ管理', sub: '企画 → MVP → 検証 → 本番化' },
       evaluation: { title: '評価ボード', sub: '優先度スコア順のDXアイデア一覧' },
+      portfolio: { title: 'DX案件ポートフォリオ', sub: '価値・進捗・効果の全体俯瞰（管理者）' },
       adminSettings: { title: 'AI設定', sub: 'モデル・利用上限・接続管理' },
       userManagement: { title: 'ログインユーザー管理', sub: `${s.users.length}名のアカウント` },
       integrations: { title: '外部連携管理', sub: 'Slack・Teams・メール通知の連携設定' },
@@ -2287,6 +2465,7 @@ class Component extends DCLogic {
       return parts.join('・') || '未設定';
     })();
     const kpiSaveLabel = s.kpiBusy ? '保存中…' : '💾 記録';
+    const kpiBaselineSaveLabel = s.kpiBusy ? '保存中…' : '📐 基準設定';
 
     // ---- Gate1-5 view-model（#50/#57）----
     const gateLabelsMap = {
@@ -2538,12 +2717,81 @@ class Component extends DCLogic {
       ),
     }));
 
+    // ---- ポートフォリオ view-model（docs/29 §2.5・migration 013）----
+    const pf = s.portfolioData || { summary: null, items: [] };
+    const pfSummary = pf.summary;
+    const pfItems = pf.items || [];
+    const pfHasSummary = !!pfSummary;
+    const pfLoading = !!s.portfolioBusy;
+    const pfReloadLabel = pfLoading ? '読み込み中…' : '🔄 更新';
+    const pfStageLabels = {
+      draft: '企画', submitted: '企画', planning: '企画', mvp: 'MVP',
+      verification: '検証', production_candidate: '検証', production: '本番化',
+      rejected: '却下', archived: '保管',
+    };
+    const pfRows = pfItems.map((row) => {
+      const stageLabel = pfStageLabels[row.stage] || row.stage;
+      const cls = row.informationClassification || 'internal';
+      const clsLabel = { public: '公開', internal: '社内', confidential: '機密', restricted: '限定' }[cls] || '社内';
+      const clsStyle = {
+        public: this.badgeStyle('#1F8255', '#E4F3EC'),
+        internal: this.badgeStyle('#2E5AAC', '#E9F0FB'),
+        confidential: this.badgeStyle('#C5392F', '#FCE9E7'),
+        restricted: this.badgeStyle('#B5701A', '#FDEFE0'),
+      }[cls] || this.badgeStyle('#2E5AAC', '#E9F0FB');
+      const outcome = row.latestKpiOutcome || null;
+      const outcomeLabel = { continue: '継続', improve: '改善', stop: '停止' }[outcome] || (outcome ? outcome : '未測定');
+      const outcomeStyle = outcome === 'continue'
+        ? this.badgeStyle('#1F8255', '#E4F3EC')
+        : outcome === 'improve'
+          ? this.badgeStyle('#2E5AAC', '#E9F0FB')
+          : outcome === 'stop'
+            ? this.badgeStyle('#C5392F', '#FCE9E7')
+            : this.badgeStyle('#8A97A8', '#F2F4F8');
+      const hasReduction = row.latestActualReductionPct != null;
+      const reductionText = hasReduction ? `${row.latestActualReductionPct}%` : '—';
+      // Value(縦軸=優先度スコア 0-10) × Effort(横軸=ベースライン工数の対数目安)
+      const score = Math.max(0, Math.min(10, Number(row.priorityScore) || 0));
+      const hours = Number(row.kpiBaselineHours) || 0;
+      const valueLabel = score >= 7 ? '高' : score >= 4 ? '中' : '低';
+      const effortLabel = hours >= 200 ? '大' : hours >= 50 ? '中' : '小';
+      return {
+        ideaId: row.ideaId, caseId: row.caseId || '', title: row.title,
+        stage: row.stage, stageLabel,
+        stageBadgeStyle: this.badgeStyle(
+          (stageMeta[row.stage] || {}).fg || '#5A6678',
+          (stageMeta[row.stage] || {}).bg || '#F2F4F8',
+        ),
+        clsLabel, clsStyle,
+        score, scoreText: score.toFixed(1),
+        valueLabel, effortLabel,
+        hoursText: hours ? `${hours}人時` : '—',
+        outcomeLabel, outcomeStyle, reductionText,
+        onClick: () => this.selectIdea(row.ideaId),
+      };
+    });
+    const pfValueEffortRows = pfRows;
+    const pfSummaryCards = pfHasSummary
+      ? [
+          { label: '全案件', value: String(pfSummary.totalIdeas), accent: '#2E5AAC' },
+          { label: '本番化', value: String(pfSummary.productionIdeas), accent: '#1F8255' },
+          { label: '本番化率', value: `${Math.round((pfSummary.productionRate || 0) * 100)}%`, accent: '#1F8255' },
+          { label: 'KPI測定済み', value: String(pfSummary.kpiMeasuredCount), accent: '#6B45B0' },
+          { label: '月間工数(見込)', value: `${Math.round(pfSummary.totalBaselineHoursPerMonth)}h`, accent: '#B5701A' },
+          { label: '月間コスト(見込)', value: `¥${Math.round(pfSummary.totalBaselineCostPerMonth).toLocaleString()}`, accent: '#B5701A' },
+        ]
+      : [];
+
     return {
       view: s.view,
       isDashboard: s.view === 'dashboard', isIntake: s.view === 'intake', isWizard: s.view === 'wizard',
       isReview: s.view === 'review', isList: s.view === 'list', isListIdea: s.view === 'listIdea', isDetail: s.view === 'detail',
       isKanban: s.view === 'kanban', isKanbanIdea: s.view === 'kanbanIdea', isAdmin: s.view === 'adminSettings', isAudit: s.view === 'auditLog',
       isEvaluation: s.view === 'evaluation',
+      isPortfolio: s.view === 'portfolio',
+      // ポートフォリオ
+      pfSummary, pfHasSummary, pfLoading, pfReloadLabel, pfSummaryCards,
+      pfRows, pfValueEffortRows, loadPortfolio: this.loadPortfolio,
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
       toast: s.toast, dismissToast: this.dismissToast,
@@ -2598,13 +2846,17 @@ class Component extends DCLogic {
       saveClassification: this.saveClassification,
 
       // KPI・ROI（migration 013）
-      kpiRows, kpiHasRecords, kpiBaselineText, kpiSaveLabel,
+      kpiRows, kpiHasRecords, kpiBaselineText, kpiSaveLabel, kpiBaselineSaveLabel,
       kpiBusy: !!s.kpiBusy,
       kpiDraft: s.kpiDraft,
+      kpiBaselineDraft: s.kpiBaselineDraft,
       onKpiReductionChange: this.onKpiReductionChange,
       onKpiOutcomeChange: this.onKpiOutcomeChange,
       onKpiPeriodChange: this.onKpiPeriodChange,
       onKpiNoteChange: this.onKpiNoteChange,
+      onKpiBaselineHoursChange: this.onKpiBaselineHoursChange,
+      onKpiBaselineCostChange: this.onKpiBaselineCostChange,
+      saveKpiBaseline: this.saveKpiBaseline,
       recordKpi: this.recordKpi,
       loadKpi: this.loadKpi,
 

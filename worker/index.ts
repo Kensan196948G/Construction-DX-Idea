@@ -603,6 +603,57 @@ app.get("/api/ideas/:id/kpi", async (c) => {
   });
 });
 
+// KPIベースライン登録（migration 013・docs/29 §2.6）: 現状の月間工数/コストを案件へ設定。
+// 提出者本人または管理者。Before/After 効果測定の基準値となる。
+app.patch(
+  "/api/ideas/:id/kpi/baseline",
+  zValidator(
+    "json",
+    z.object({
+      kpiBaselineHours: z.number().min(0).max(100000).nullable().optional(),
+      kpiBaselineCost: z.number().min(0).max(1e12).nullable().optional(),
+      reason: z.string().max(500).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const ideaRows = await db`
+      select * from ideas where id = ${id} limit 1
+    `;
+    if (!ideaRows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(ideaRows[0]);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
+    if (!isAdmin && !isOwner) {
+      throw new ApiError("FORBIDDEN", "ベースラインの設定は提出者本人または管理者のみ可能です。", 403);
+    }
+    const nextHours =
+      body.kpiBaselineHours !== undefined
+        ? body.kpiBaselineHours
+        : current.kpiBaselineHours ?? null;
+    const nextCost =
+      body.kpiBaselineCost !== undefined
+        ? body.kpiBaselineCost
+        : current.kpiBaselineCost ?? null;
+    const rows = await db`
+      update ideas
+      set kpi_baseline_hours = ${nextHours},
+          kpi_baseline_cost = ${nextCost}
+      where id = ${id}
+      returning *
+    `;
+    await audit(c.env, user, "idea.kpi.baseline_set", "idea", id, {
+      kpiBaselineHours: nextHours,
+      kpiBaselineCost: nextCost,
+      reason: body.reason ?? "",
+    });
+    return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+  },
+);
+
 app.get("/api/ideas/evaluation", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   await requireAdmin(c.env, user);
@@ -3718,6 +3769,7 @@ function formatWeeklyDigest(
     aiFailures7d: number;
     notifyFailures7d: number;
     activeUsers: number;
+    kpiReviewDue: number;
   },
   chainValid: boolean,
 ): string {
@@ -3727,6 +3779,9 @@ function formatWeeklyDigest(
     `AI呼び出し: ${stats.aiCalls7d}回（失敗 ${stats.aiFailures7d}件）`,
     `Slack通知失敗: ${stats.notifyFailures7d}件`,
     `アクティブユーザー: ${stats.activeUsers}人`,
+    stats.kpiReviewDue > 0
+      ? `🔔 KPIレビュー期限: ${stats.kpiReviewDue}件（本番化案件の効果測定が未実施）`
+      : "KPIレビュー期限: なし",
     `監査チェーン: ${chainValid ? "正常" : "⚠️ 不正検出"}`,
   ].join("\n");
 }
@@ -3745,6 +3800,20 @@ async function sendWeeklyDigest(env: Env) {
         (select count(*) from app_users where status = 'active')::int as active_users
     `;
     const chain = await verifyAuditChainFromDb(env);
+    // 本番化(production)案件のうち、直近のKPI測定が無い、または最終測定が
+    // 3か月以上前の案件を「レビュー期限」として数える（3/6/12か月レビューの運用補助）。
+    const kpiDueRows = await db`
+      select count(*)::int as n
+      from ideas i
+      where i.stage = 'production'
+        and (
+          not exists (
+            select 1 from idea_kpis k where k.idea_id = i.id
+          )
+          or (select max(measured_at) from idea_kpis k where k.idea_id = i.id)
+             < now() - interval '3 months'
+        )
+    `;
     const message = formatWeeklyDigest(
       {
         totalIdeas: Number(rows[0]?.total_ideas ?? 0),
@@ -3753,6 +3822,7 @@ async function sendWeeklyDigest(env: Env) {
         aiFailures7d: Number(rows[0]?.ai_failures_7d ?? 0),
         notifyFailures7d: Number(rows[0]?.notify_failures_7d ?? 0),
         activeUsers: Number(rows[0]?.active_users ?? 0),
+        kpiReviewDue: Number(kpiDueRows[0]?.n ?? 0),
       },
       chain.valid,
     );

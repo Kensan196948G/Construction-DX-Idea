@@ -103,6 +103,28 @@
 - 残（次ラウンド）: ポートフォリオ専用の一覧/集計画面（Value×Effort等）をダッシュボードへ
   追加、ベースライン登録UI、3/6/12か月レビューリマインダー。
 
+## 0.17 最新（2026-09-05: ポートフォリオ強化 — 専用画面・ベースライン登録UI・レビューリマインダー）
+
+- **ポートフォリオ専用画面を追加**（docs/29 §2.5・migration 013基盤）:
+  - 左メニュー「管理」に「📈 ポートフォリオ」を追加（管理者限定・goToで権限ガード）。
+  - サマリカード（全案件/本番化/本番化率/KPI測定済み/月間工数・コスト見込）と
+    **Value×Effort 一覧**（Value=優先度スコア 0-10・Effort=月間ベースライン工数の大小・
+    ステージ/情報区分/KPI最新outcome/実績削減率を表示、行クリックで詳細へ）。
+    App.tsx ブリッジ `__loadPortfolioBridge`→`GET /api/portfolio`（管理者限定）接続。
+- **KPIベースライン登録UI**: 詳細画面の効果測定カードに「月間工数(人時)/月間コスト(円)」入力と
+  「📐 基準設定」ボタンを追加。`PATCH /api/ideas/:id/kpi/baseline`（本人 or 管理者・監査
+  idea.kpi.baseline_set）を新設し、Before/After測定の基準値を案件へ設定可能に。
+- **3/6/12か月レビューリマインダー**: 週次ダイジェスト（sendWeeklyDigest）に
+  「🔔 KPIレビュー期限: N件（本番化案件の効果測定が未実施/最終測定から3か月以上）」を追加。
+  production案件でKPI測定が無い・最終測定が3か月以上前の件数を集計してSlack通知に含める。
+- **検証**: `npm run verify` PASS（test 124件、weekly digestのKPI期限表示2件含む）。
+  実DB E2E: ベースライン設定（120人時・¥500,000）→ KPI取得で反映を確認。Playwright:
+  ポートフォリオ画面（サマリ+Value×Effort表示）と詳細のベースライン設定
+  （工数120/¥500,000 → 「ベースライン: 工数 120人時/月・コスト ¥500,000/月」）・エラー0。
+- 残（次ラウンド候補）: Gate高度化（期限/Reminder/代理/条件付き/滞留分析）、GitHub連携、
+  Knowledge Management、Risk×Return・Bubble Chartの可視化。
+
+
 ## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
 
 - **DB はローカル PostgreSQL（Neon 廃止済み）で運用**: 本番 `.env`（`dx_idea`@127.0.0.1:5432）と

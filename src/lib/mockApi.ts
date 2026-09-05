@@ -327,6 +327,22 @@ export const mockApi = {
     };
   },
 
+  async updateKpiBaseline(
+    id: string,
+    baseline: { kpiBaselineHours?: number | null; kpiBaselineCost?: number | null; reason?: string },
+  ): Promise<Idea> {
+    const found = ideas.find((candidate) => candidate.id === id);
+    if (!found) throw new Error("Idea not found");
+    if (baseline.kpiBaselineHours !== undefined) {
+      found.kpiBaselineHours = baseline.kpiBaselineHours ?? undefined;
+    }
+    if (baseline.kpiBaselineCost !== undefined) {
+      found.kpiBaselineCost = baseline.kpiBaselineCost ?? undefined;
+    }
+    found.updatedAt = now();
+    return found;
+  },
+
   async getSimilarIdeas(id: string, limit = 5): Promise<RagSearchResult> {
     const idea = ideas.find((candidate) => candidate.id === id);
     if (!idea) throw new Error("Idea not found");
