@@ -20,15 +20,21 @@ import type {
   GateNo,
   GateOverviewResult,
   GateReminderRunResult,
+  GitHubSyncResult,
   Idea,
   IdeaComment,
   IdeaGateApproval,
+  IdeaGitHubEvidence,
+  IdeaGitHubOverviewResult,
   IdeaHistory,
   IdeaKpi,
+  IdeaRepoLink,
+  IdeaRepoListResult,
   IdeaStage,
   IdeaValuePhaseEntry,
   InformationClassification,
   IssueInput,
+  KnowledgeCandidate,
   KpiOutcome,
   PortfolioSummary,
   PortfolioSummaryRow,
@@ -40,6 +46,7 @@ import type {
   UserProfile,
 } from "./shared";
 import {
+  classifyKnowledgeSource,
   defaultGateApprovalRows,
   defaultPhaseForStage,
   gateNumbers,
@@ -54,6 +61,9 @@ import { buildDemoQuestions, buildDemoStructure } from "./demoAi";
 import { runAiEval } from "./aiEval";
 
 const gateApprovals = new Map<string, IdeaGateApproval[]>();
+const repoLinks = new Map<string, IdeaRepoLink[]>();
+const githubEvidence = new Map<string, IdeaGitHubEvidence[]>();
+const knowledgeItems: KnowledgeCandidate[] = [];
 const phaseHistory = new Map<
   string,
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
@@ -615,6 +625,229 @@ export const mockApi = {
       else if (item.dueSoon) reminded += 1;
     }
     return { reminded, escalated, skipped: 0 };
+  },
+
+  // ---- GitHub Engineering 連携（migration 015）モック ----
+  async listIdeaRepos(id: string): Promise<IdeaRepoListResult> {
+    return {
+      items: (repoLinks.get(id) ?? []).map((link) => ({ ...link })),
+      evidence: (githubEvidence.get(id) ?? []).map((e) => ({ ...e })),
+    };
+  },
+
+  async linkIdeaRepo(id: string, repoFullName: string): Promise<IdeaRepoLink> {
+    const normalized = repoFullName
+      .trim()
+      .replace(/^https?:\/\/github\.com\//i, "")
+      .replace(/\.git$/i, "")
+      .replace(/\/+$/, "");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+      throw new Error("repo は owner/repo 形式で指定してください。");
+    }
+    const links = repoLinks.get(id) ?? [];
+    const existing = links.find((l) => l.repoFullName === normalized);
+    if (existing) {
+      existing.updatedAt = now();
+      return existing;
+    }
+    const link: IdeaRepoLink = {
+      id: `repo-${id}-${links.length + 1}`,
+      ideaId: id,
+      repoFullName: normalized,
+      defaultBranch: "main",
+      createdBy: "demo.user@example.com",
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    repoLinks.set(id, [...links, link]);
+    return link;
+  },
+
+  async unlinkIdeaRepo(id: string, linkId: string): Promise<{ ok: boolean }> {
+    repoLinks.set(id, (repoLinks.get(id) ?? []).filter((l) => l.id !== linkId));
+    return { ok: true };
+  },
+
+  async getIdeaGitHubOverview(id: string): Promise<IdeaGitHubOverviewResult> {
+    const links = repoLinks.get(id) ?? [];
+    return {
+      repos: links.map((link) => ({
+        repoFullName: link.repoFullName,
+        defaultBranch: link.defaultBranch ?? "main",
+        stars: 12,
+        openIssuesCount: 3,
+        pushedAt: now(),
+        archived: false,
+        ciStatus: "success",
+        ciUrl: `https://github.com/${link.repoFullName}/actions`,
+        latestRelease: {
+          tagName: "v0.1.0",
+          name: "MVP",
+          publishedAt: now(),
+          url: `https://github.com/${link.repoFullName}/releases/tag/v0.1.0`,
+          prerelease: false,
+        },
+        openPullRequests: [
+          {
+            number: 1,
+            title: "feat: MVP実装",
+            state: "open",
+            draft: false,
+            url: `https://github.com/${link.repoFullName}/pull/1`,
+            updatedAt: now(),
+            caseIdMatched: false,
+          },
+        ],
+        openIssues: [],
+        fetchedAt: now(),
+      })),
+      evidence: (githubEvidence.get(id) ?? []).map((e) => ({ ...e })),
+    };
+  },
+
+  async syncIdeaGitHub(id: string): Promise<GitHubSyncResult> {
+    const overview = await mockApi.getIdeaGitHubOverview(id);
+    const rows: IdeaGitHubEvidence[] = [];
+    const byKind: Record<string, number> = {};
+    for (const repo of overview.repos) {
+      const candidates: Array<Pick<IdeaGitHubEvidence, "kind" | "externalId" | "title" | "url" | "status">> = [];
+      if (repo.ciStatus && repo.ciStatus !== "none") {
+        candidates.push({
+          kind: "ci",
+          externalId: `ci-${repo.repoFullName}-${repo.defaultBranch}`,
+          title: `CI（${repo.repoFullName}@${repo.defaultBranch}）`,
+          url: repo.ciUrl,
+          status: repo.ciStatus,
+        });
+      }
+      if (repo.latestRelease) {
+        candidates.push({
+          kind: "release",
+          externalId: `rel-${repo.repoFullName}-${repo.latestRelease.tagName}`,
+          title: repo.latestRelease.name || repo.latestRelease.tagName,
+          url: repo.latestRelease.url ?? null,
+          status: "published",
+        });
+      }
+      for (const pr of repo.openPullRequests) {
+        candidates.push({
+          kind: "pr",
+          externalId: `pr-${repo.repoFullName}-${pr.number}`,
+          title: pr.title,
+          url: pr.url ?? null,
+          status: pr.state,
+        });
+      }
+      for (const issue of repo.openIssues) {
+        candidates.push({
+          kind: "issue",
+          externalId: `issue-${repo.repoFullName}-${issue.number}`,
+          title: issue.title,
+          url: issue.url ?? null,
+          status: issue.state,
+        });
+      }
+      for (const candidate of candidates) {
+        rows.push({
+          id: `ev-${candidate.externalId}`,
+          ideaId: id,
+          ...candidate,
+          occurredAt: now(),
+          createdAt: now(),
+          updatedAt: now(),
+        });
+        byKind[candidate.kind] = (byKind[candidate.kind] ?? 0) + 1;
+      }
+    }
+    githubEvidence.set(id, rows);
+    return { upserted: rows.length, byKind };
+  },
+
+  // ---- Knowledge Management（migration 016）モック ----
+  async listKnowledge(params: { status?: string; category?: string } = {}): Promise<{ items: KnowledgeCandidate[] }> {
+    let items = [...knowledgeItems];
+    if (params.status) items = items.filter((k) => k.status === params.status);
+    if (params.category) items = items.filter((k) => k.category === params.category);
+    return { items };
+  },
+
+  async submitKnowledge(input: {
+    title: string;
+    category: KnowledgeCandidate["category"];
+    body?: string;
+    sourceIdeaId?: string;
+  }): Promise<KnowledgeCandidate> {
+    const row: KnowledgeCandidate = {
+      id: `kn-${knowledgeItems.length + 1}`,
+      sourceType: "manual",
+      sourceIdeaId: input.sourceIdeaId ?? null,
+      category: input.category,
+      title: input.title,
+      body: input.body ?? "",
+      status: "candidate",
+      qualityScore: 3,
+      submittedBy: "demo.user@example.com",
+      reviewedBy: null,
+      reviewedAt: null,
+      promotionUrl: null,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    knowledgeItems.unshift(row);
+    return row;
+  },
+
+  async extractKnowledge(): Promise<{ created: number; scanned: Record<string, number> }> {
+    // モック: 「解決」「教訓」等を含むコメントを候補化（決定論的）。
+    let created = 0;
+    for (const idea of ideas) {
+      const text = `${idea.currentIssue} ${idea.expectedEffects}`;
+      const classified = classifyKnowledgeSource(text);
+      if (!classified) continue;
+      const title = `${idea.title} — モック抽出`;
+      if (knowledgeItems.some((k) => k.title === title)) continue;
+      knowledgeItems.unshift({
+        id: `kn-${knowledgeItems.length + 1}`,
+        sourceType: "idea_comment",
+        sourceIdeaId: String(idea.id),
+        category: classified.category,
+        title,
+        body: text,
+        status: "candidate",
+        qualityScore: 3,
+        submittedBy: "system:extract",
+        reviewedBy: null,
+        reviewedAt: null,
+        promotionUrl: null,
+        createdAt: now(),
+        updatedAt: now(),
+      });
+      created += 1;
+    }
+    return { created, scanned: { comments: ideas.length } };
+  },
+
+  async reviewKnowledge(
+    id: string,
+    input: { action: "approve" | "reject"; qualityScore?: number; note?: string },
+  ): Promise<KnowledgeCandidate> {
+    const row = knowledgeItems.find((k) => k.id === id);
+    if (!row) throw new Error("Knowledge not found");
+    row.status = input.action === "approve" ? "approved" : "rejected";
+    row.qualityScore = input.qualityScore ?? row.qualityScore;
+    row.reviewedBy = "demo.admin@example.com";
+    row.reviewedAt = now();
+    row.updatedAt = now();
+    return row;
+  },
+
+  async promoteKnowledge(id: string, url: string): Promise<KnowledgeCandidate> {
+    const row = knowledgeItems.find((k) => k.id === id);
+    if (!row) throw new Error("Knowledge not found");
+    row.status = "promoted";
+    row.promotionUrl = url;
+    row.updatedAt = now();
+    return row;
   },
 
   async inspectInput(input: IssueInput): Promise<PrivacyFinding[]> {

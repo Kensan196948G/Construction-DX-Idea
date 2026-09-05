@@ -812,3 +812,165 @@ export function normalizeApiBaseUrl(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, "");
   return trimmed.replace(/\/api$/i, "");
 }
+
+// ---- GitHub Engineering 連携（docs/29 §2.12・migration 015）----
+
+// 案件とGitHub Repoの紐付け（1案件に複数Repo可）。
+export type IdeaRepoLink = {
+  id: string;
+  ideaId: string;
+  repoFullName: string;
+  defaultBranch?: string | null;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Repo紐付け登録の入力。
+export type RepoLinkInput = {
+  // "owner/repo" 形式（GitHub の full_name）。
+  repoFullName: string;
+};
+
+// GitHub APIから取得したRepo/Issue/PR/CI/Releaseの状態（案件画面へ統合）。
+export type GitHubOverview = {
+  repoFullName: string;
+  // リポジトリ基本情報
+  defaultBranch?: string | null;
+  stars: number;
+  openIssuesCount: number;
+  pushedAt?: string | null;
+  archived: boolean;
+  // 既定ブランチのCI（combined status）
+  ciStatus?: "success" | "failure" | "error" | "pending" | "none" | null;
+  ciUrl?: string | null;
+  // 最新Release
+  latestRelease?: {
+    tagName: string;
+    name?: string;
+    publishedAt?: string | null;
+    url?: string;
+    prerelease: boolean;
+  } | null;
+  // オープンPR（案件ID DX-YYYY-NNNN を title/body に含むものは caseIdMatched=true）
+  openPullRequests: Array<{
+    number: number;
+    title: string;
+    state: string;
+    draft: boolean;
+    url?: string;
+    updatedAt?: string;
+    caseIdMatched: boolean;
+  }>;
+  // オープンIssue（案件IDを含むものは caseIdMatched=true）
+  openIssues: Array<{
+    number: number;
+    title: string;
+    state: string;
+    url?: string;
+    updatedAt?: string;
+    caseIdMatched: boolean;
+  }>;
+  fetchedAt: string;
+};
+
+// Evidence（証跡）1件。/github/sync がPR/Issue/Release/CIをupsertする。
+export type IdeaGitHubEvidence = {
+  id: string;
+  ideaId: string;
+  kind: "pr" | "issue" | "release" | "commit" | "ci";
+  externalId: string;
+  title: string;
+  url?: string | null;
+  status?: string | null;
+  occurredAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Repo一覧API（GET /api/ideas/:id/repos）のレスポンス。
+export type IdeaRepoListResult = {
+  items: IdeaRepoLink[];
+  evidence: IdeaGitHubEvidence[];
+};
+
+// /api/ideas/:id/github/overview のレスポンス（Repoごとの状態+Evidence収集状況）。
+export type IdeaGitHubOverviewResult = {
+  repos: GitHubOverview[];
+  evidence: IdeaGitHubEvidence[];
+};
+
+// /github/sync のレスポンス。
+export type GitHubSyncResult = {
+  upserted: number;
+  byKind: Record<string, number>;
+};
+
+// ---- Knowledge Management（docs/29 §2.16・migration 016）----
+
+export const knowledgeCategories = [
+  "decision",
+  "problem_solution",
+  "lessons",
+  "adr",
+  "best_practice",
+  "runbook",
+  "faq",
+] as const;
+export type KnowledgeCategory = (typeof knowledgeCategories)[number];
+
+export const knowledgeCategoryLabels: Record<KnowledgeCategory, string> = {
+  decision: "決定",
+  problem_solution: "課題と解決策",
+  lessons: "教訓",
+  adr: "ADR",
+  best_practice: "ベストプラクティス",
+  runbook: "Runbook",
+  faq: "FAQ",
+};
+
+export type KnowledgeStatus = "candidate" | "approved" | "rejected" | "promoted";
+
+// Knowledge 候補1件（Review Queueの行）。
+export type KnowledgeCandidate = {
+  id: string;
+  sourceType: "gate_decision" | "idea_comment" | "kpi_review" | "manual";
+  sourceIdeaId?: string | null;
+  category: KnowledgeCategory;
+  title: string;
+  body: string;
+  status: KnowledgeStatus;
+  qualityScore?: number | null;
+  submittedBy?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  promotionUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// Knowledge候補の抽出ルール（決定論的・workerとテストで共有）。
+// gate判定理由/コメント/効果測定レビューのテキストからカテゴリとタイトル候補を導く。
+export function classifyKnowledgeSource(text: string): {
+  category: KnowledgeCategory;
+  matched: boolean;
+} | null {
+  const t = (text ?? "").trim();
+  if (!t) return null;
+  if (/教訓|学んだ|学び|再発防止|ノウハウ/.test(t)) {
+    return { category: "lessons", matched: true };
+  }
+  if (/解決|対応した|対応済|回避|修正して|直した/.test(t)) {
+    return { category: "problem_solution", matched: true };
+  }
+  if (/決定|承認|合意|採用|方針/.test(t)) {
+    return { category: "decision", matched: true };
+  }
+  if (/手順|Runbook|ランブック|運用手順/.test(t)) {
+    return { category: "runbook", matched: true };
+  }
+  if (/FAQ|よくある質問|質問が多い/.test(t)) {
+    return { category: "faq", matched: true };
+  }
+  return null;
+}

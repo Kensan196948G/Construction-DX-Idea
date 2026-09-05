@@ -742,6 +742,69 @@ a:hover { text-decoration: underline; }
                   </sc-if>
                 </div>
                 <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
+                  <div style="font-size:14px;font-weight:600;color:#1A2433;">🔗 GitHub Engineering連携</div>
+                  <div style="font-size:11.5px;color:#8A97A8;">案件ID（{{ selectedIdeaView.caseId || 'DX-YYYY-NNNN' }}）をGitHubのPR・Issueと紐付け、CI・Releaseの状態を取得します。</div>
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <input value="{{ repoInput }}" onChange="{{ onRepoInputChange }}" placeholder="owner/repo（GitHub URL可）" style="flex:1;min-width:180px;font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;"></input>
+                    <button onClick="{{ linkRepo }}" disabled="{{ rdBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;">Repoを紐付け</button>
+                  </div>
+                  <sc-if value="{{ rdHasLinks }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-direction:column;gap:6px;">
+                      <sc-for list="{{ rdLinks }}" as="link" hint-placeholder-count="2">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;border:1px solid #EEF1F5;border-radius:7px;padding:7px 10px;">
+                          <span style="font-family:'IBM Plex Mono',monospace;color:#1A2433;font-weight:600;">{{ link.repoFullName }}<sc-if value="{{ link.defaultBranch }}" hint-placeholder-val="{{ false }}"><span style="color:#8A97A8;font-weight:400;">@{{ link.defaultBranch }}</span></sc-if></span>
+                          <button onClick="{{ link.onUnlink }}" style="cursor:pointer;border:1px solid #FCE9E7;background:#fff;color:#C5392F;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:600;">解除</button>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                      <button onClick="{{ loadRepoOverview }}" disabled="{{ rdBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;">🔄 状態取得</button>
+                      <button onClick="{{ syncRepoEvidence }}" disabled="{{ rdBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;">⬇ Evidence同期</button>
+                    </div>
+                  </sc-if>
+                  <sc-for list="{{ rdOverviewRows }}" as="repo" hint-placeholder-count="1">
+                    <div style="border:1px solid #EEF1F5;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:11.5px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:#1A2433;">{{ repo.repoFullName }}</span>
+                        <span style="color:#5A6678;">{{ repo.ciLabel }}</span>
+                      </div>
+                      <div style="color:#5A6678;">最新Release: {{ repo.releaseText }} / オープンPR: {{ repo.prCount }}件（案件ID一致 {{ repo.prCaseMatched }}件）/ オープンIssue: {{ repo.issueCount }}件（一致 {{ repo.issueCaseMatched }}件）</div>
+                      <sc-if value="{{ repo.prs.length }}" hint-placeholder-val="{{ false }}">
+                        <sc-for list="{{ repo.prs }}" as="pr" hint-placeholder-count="2">
+                          <div style="display:flex;align-items:center;gap:6px;color:#5A6678;">
+                            <span style="display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:600;color:#2E5AAC;background:#E9F0FB;">PR#{{ pr.number }}</span>
+                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ pr.title }}</span>
+                            <sc-if value="{{ pr.caseIdMatched }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:600;color:#B5701A;">🎯 案件ID一致</span></sc-if>
+                          </div>
+                        </sc-for>
+                      </sc-if>
+                      <sc-if value="{{ repo.issues.length }}" hint-placeholder-val="{{ false }}">
+                        <sc-for list="{{ repo.issues }}" as="iss" hint-placeholder-count="2">
+                          <div style="display:flex;align-items:center;gap:6px;color:#5A6678;">
+                            <span style="display:inline-block;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:600;color:#6B45B0;background:#F1EBFA;">Issue#{{ iss.number }}</span>
+                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ iss.title }}</span>
+                            <sc-if value="{{ iss.caseIdMatched }}" hint-placeholder-val="{{ false }}"><span style="font-size:10px;font-weight:600;color:#B5701A;">🎯 案件ID一致</span></sc-if>
+                          </div>
+                        </sc-for>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ rdHasEvidence }}" hint-placeholder-val="{{ false }}">
+                    <div style="border-top:1px solid #EEF1F5;padding-top:10px;">
+                      <div style="font-size:12px;font-weight:600;color:#1A2433;margin-bottom:6px;">収集済みEvidence（{{ rdEvidenceRows.length }}件）</div>
+                      <div style="display:flex;flex-direction:column;gap:4px;">
+                        <sc-for list="{{ rdEvidenceRows }}" as="ev" hint-placeholder-count="3">
+                          <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:#5A6678;">
+                            <span style="{{ ev.kindStyle }}">{{ ev.kindLabel }}</span>
+                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">{{ ev.title }}</span>
+                            <span style="color:#8A97A8;">{{ ev.status || '' }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
                   <div style="display:flex;align-items:center;justify-content:space-between;">
                     <div style="font-size:14px;font-weight:600;color:#1A2433;">🧭 Idea-to-Value 進捗</div>
                     <sc-if value="{{ phaseView }}" hint-placeholder-val="{{ false }}">
@@ -1035,6 +1098,67 @@ a:hover { text-decoration: underline; }
         <sc-if value="{{ goHasData }}" hint-placeholder-val="{{ false }}">
           <div style="font-size:11px;color:#8A97A8;">期限の既定は依頼から5日後。期限まで2日以内は「期限接近」、超過は「期限超過」として表示し、日次ジョブ（毎時実行・1日1回）がSlackへ通知します。</div>
         </sc-if>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isKnowledge }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="知識管理" style="display:flex;flex-direction:column;gap:14px;max-width:1100px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#8A97A8;">Gate判定・コメント・効果測定からKnowledge候補を抽出し、Human Approval（Review Queue）を経て昇格します。</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ extractKnowledge }}" disabled="{{ knBusy }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">✨ 候補を抽出</button>
+          <button onClick="{{ reloadKnowledge }}" disabled="{{ knBusy }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">🔄 更新</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <sc-for list="{{ knStatusChips }}" as="chip" hint-placeholder-count="4">
+            <span onClick="{{ chip.onClick }}" style="{{ chip.style }}">{{ chip.label }}</span>
+          </sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:15px 18px;display:flex;flex-direction:column;gap:10px;">
+          <div style="font-size:13.5px;font-weight:600;color:#1A2433;">✍️ 知識候補を手動登録</div>
+          <input value="{{ knowledgeForm.title }}" onChange="{{ onKnowledgeTitleChange }}" placeholder="タイトル（例: 出来形検収の写真チェック運用手順）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <select value="{{ knowledgeForm.category }}" onChange="{{ onKnowledgeCategoryChange }}" style="flex:1;min-width:160px;font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+              <sc-for list="{{ knCategoryOptions }}" as="opt" hint-placeholder-count="4">
+                <option value="{{ opt.value }}">{{ opt.label }}</option>
+              </sc-for>
+            </select>
+          </div>
+          <textarea value="{{ knowledgeForm.body }}" onChange="{{ onKnowledgeBodyChange }}" rows="3" placeholder="内容（背景・手順・教訓など）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:none;box-sizing:border-box;width:100%;"></textarea>
+          <button onClick="{{ submitKnowledge }}" disabled="{{ knBusy }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">候補として登録</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <sc-for list="{{ knRows }}" as="k" hint-placeholder-count="4">
+            <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:14px 18px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="{{ k.statusStyle }}">{{ k.statusLabel }}</span>
+                <span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;color:#2E5AAC;background:#E9F0FB;">{{ k.categoryLabel }}</span>
+                <span style="font-size:11px;color:#8A97A8;">抽出元: {{ k.sourceLabel }}・{{ k.dateText }}<sc-if value="{{ k.qualityScore }}" hint-placeholder-val="{{ false }}">・品質スコア {{ k.qualityScore }}/5</sc-if></span>
+              </div>
+              <div style="font-size:13px;font-weight:600;color:#1A2433;">{{ k.title }}</div>
+              <sc-if value="{{ k.hasBody }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:12px;color:#5A6678;white-space:pre-wrap;">{{ k.body }}</div>
+              </sc-if>
+              <sc-if value="{{ k.hasPromotionUrl }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:11.5px;color:#6B45B0;">🔗 昇格先: {{ k.promotionUrl }}</div>
+              </sc-if>
+              <sc-if value="{{ k.canReview }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button onClick="{{ k.onApprove }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">承認</button>
+                  <button onClick="{{ k.onReject }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #C5392F;background:#C5392F;color:#fff;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">却下</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ k.canPromote }}" hint-placeholder-val="{{ false }}">
+                <div>
+                  <button onClick="{{ k.onPromote }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">🚀 昇格（Notion等のURLを記録）</button>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{ knBusy }}" hint-placeholder-val="{{ false }}">
+            <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:26px;text-align:center;color:#8A97A8;font-size:13px;">知識候補を読み込んでいます…</div>
+          </sc-if>
+        </div>
       </div>
       </sc-if>
 
@@ -1368,6 +1492,14 @@ class Component extends DCLogic {
     // Gate滞留分析（migration 014・docs/29 §2.7）: 専用画面のデータ（システム管理者）。
     gateOverview: null,
     gateOverviewBusy: false,
+    // GitHub Engineering 連携（migration 015・docs/29 §2.12）: 詳細画面のカードデータ。
+    repoData: { links: [], evidence: [], overview: null },
+    repoBusy: false,
+    repoInput: '',
+    // Knowledge Management（migration 016・docs/29 §2.16）: Review Queue画面のデータ。
+    knowledgeData: null,
+    knowledgeBusy: false,
+    knowledgeForm: { title: '', category: 'lessons', body: '' },
     gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '', dueDate: '', delegateTo: '', conditionNote: '' },
     // 選択中アイデアのGate1-5承認データ（初期化されていなければnull）。
     // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
@@ -1417,9 +1549,10 @@ class Component extends DCLogic {
 
   goTo = (view) => {
     this.setState({ view });
-    // 実API接続時は App.tsx ブリッジが portfolioData / gateOverview をロードする。
+    // 実API接続時は App.tsx ブリッジが portfolioData / gateOverview / knowledgeData をロードする。
     if (view === 'portfolio' && this.loadPortfolio) void this.loadPortfolio();
     if (view === 'gateDashboard' && this.loadGateOverview) void this.loadGateOverview();
+    if (view === 'knowledge' && this.loadKnowledge) void this.loadKnowledge();
     if (view === 'detail' && this.loadKpi) void this.loadKpi();
   };
   goToIntake = () => this.goTo('intake');
@@ -1438,11 +1571,12 @@ class Component extends DCLogic {
       kpiData: { kpiBaselineHours: null, kpiBaselineCost: null, records: [] },
       kpiBusy: false,
     });
-    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas / loadKpi を差し替える。
+    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas / loadKpi / loadReposForSelected を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
     if (this.loadIdeaPhase) void this.loadIdeaPhase();
     if (this.loadSimilarIdeas) void this.loadSimilarIdeas();
     if (this.loadKpi) void this.loadKpi();
+    if (this.loadReposForSelected) void this.loadReposForSelected();
   };
   backToList = () => {
     const idea = this.state.ideas.find((i) => i.id === this.state.selectedIdeaId);
@@ -1798,6 +1932,235 @@ class Component extends DCLogic {
     this.setState({ toast: { message: 'リマインダーを送信しました（モック表示。本番はAPI経由）。' } });
   };
 
+  // ---- GitHub Engineering 連携（docs/29 §2.12・migration 015）----
+  // 実API接続時は App.tsx ブリッジが各メソッドを差し替える。
+  onRepoInputChange = (e) => this.setState({ repoInput: e.target.value });
+
+  loadReposForSelected = async () => {
+    if (this.__loadReposBridge) {
+      const id = this.state.selectedIdeaId;
+      if (id == null) return;
+      this.setState({ repoBusy: true });
+      try {
+        const data = await this.__loadReposBridge(String(id));
+        this.setState({ repoData: { ...data, overview: null }, repoBusy: false, repoInput: '' });
+      } catch (e) {
+        this.setState({ repoBusy: false, toast: { message: `Repo連携の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: 何もしない（連携なし状態）。
+  };
+
+  linkRepo = async () => {
+    const id = this.state.selectedIdeaId;
+    const repoFullName = this.state.repoInput.trim();
+    if (!repoFullName || id == null) {
+      this.setState({ toast: { message: 'owner/repo 形式でリポジトリを入力してください。' } });
+      return;
+    }
+    if (this.__linkRepoBridge) {
+      this.setState({ repoBusy: true });
+      try {
+        await this.__linkRepoBridge(String(id), repoFullName);
+        this.setState({ toast: { message: `${repoFullName} を紐付けました。` } });
+        await this.loadReposForSelected();
+      } catch (e) {
+        this.setState({ repoBusy: false, toast: { message: `紐付けに失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: ローカルstateへ追加。
+    const links = this.state.repoData.links;
+    this.setState({
+      repoData: {
+        ...this.state.repoData,
+        links: [...links, { id: `mock-${links.length + 1}`, ideaId: String(id), repoFullName, defaultBranch: 'main' }],
+      },
+      repoInput: '',
+      toast: { message: `${repoFullName} を紐付けました（モック表示。本番はAPI経由）。` },
+    });
+  };
+
+  unlinkRepo = async (linkId) => {
+    if (this.__unlinkRepoBridge) {
+      const id = this.state.selectedIdeaId;
+      if (id == null) return;
+      this.setState({ repoBusy: true });
+      try {
+        await this.__unlinkRepoBridge(String(id), String(linkId));
+        this.setState({ toast: { message: 'Repo紐付けを解除しました。' } });
+        await this.loadReposForSelected();
+      } catch (e) {
+        this.setState({ repoBusy: false, toast: { message: `解除に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      repoData: { ...s.repoData, links: s.repoData.links.filter((l) => l.id !== linkId) },
+      toast: { message: 'Repo紐付けを解除しました（モック表示）。' },
+    }));
+  };
+
+  loadRepoOverview = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    if (this.__loadRepoOverviewBridge) {
+      this.setState({ repoBusy: true });
+      try {
+        const data = await this.__loadRepoOverviewBridge(String(id));
+        this.setState((s) => ({
+          repoBusy: false,
+          repoData: {
+            ...s.repoData,
+            overview: data.repos,
+          },
+        }));
+      } catch (e) {
+        this.setState({ repoBusy: false, toast: { message: `GitHub状態の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: 紐付け済みRepoへ簡易状態を表示。
+    this.setState((s) => ({
+      repoData: {
+        ...s.repoData,
+        overview: s.repoData.links.map((l) => ({
+          repoFullName: l.repoFullName,
+          defaultBranch: l.defaultBranch || 'main',
+          stars: 12,
+          ciStatus: 'success',
+          ciUrl: `https://github.com/${l.repoFullName}/actions`,
+          latestRelease: { tagName: 'v0.1.0', name: 'MVP', publishedAt: null, url: null, prerelease: false },
+          openPullRequests: [],
+          openIssues: [],
+        })),
+      },
+      toast: { message: 'GitHub状態を取得しました（モック表示。本番はAPI経由）。' },
+    }));
+  };
+
+  syncRepoEvidence = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    if (this.__syncRepoBridge) {
+      this.setState({ repoBusy: true });
+      try {
+        const result = await this.__syncRepoBridge(String(id));
+        this.setState({ toast: { message: `Evidenceを${result.upserted}件収集しました。` } });
+        await this.loadReposForSelected();
+      } catch (e) {
+        this.setState({ repoBusy: false, toast: { message: `Evidenceの収集に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ toast: { message: 'Evidenceを収集しました（モック表示。本番はAPI経由）。' } });
+  };
+
+  // ---- Knowledge Management（docs/29 §2.16・migration 016）----
+  // 実API接続時は App.tsx ブリッジが各メソッドを差し替える。
+  onKnowledgeFormField = (key) => (e) => {
+    this.setState({ knowledgeForm: { ...this.state.knowledgeForm, [key]: e.target.value } });
+  };
+
+  loadKnowledge = async (statusFilter) => {
+    const filter = statusFilter ?? (this.state.knowledgeData ? this.state.knowledgeData.statusFilter : '');
+    if (this.__loadKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        const data = await this.__loadKnowledgeBridge(filter);
+        this.setState({ knowledgeData: { ...data, statusFilter: filter }, knowledgeBusy: false });
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `知識候補の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ knowledgeData: { items: [], statusFilter: filter }, knowledgeBusy: false });
+  };
+
+  submitKnowledge = async () => {
+    const form = this.state.knowledgeForm;
+    if (!form.title.trim()) {
+      this.setState({ toast: { message: 'タイトルを入力してください。' } });
+      return;
+    }
+    if (this.__submitKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__submitKnowledgeBridge({ title: form.title.trim(), category: form.category, body: form.body.trim() || undefined });
+        this.setState({
+          knowledgeBusy: false,
+          knowledgeForm: { ...form, title: '', body: '' },
+          toast: { message: '知識候補を登録しました（Review Queueで承認待ち）。' },
+        });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `登録に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ toast: { message: '知識候補を登録しました（モック表示。本番はAPI経由）。' } });
+  };
+
+  extractKnowledge = async () => {
+    if (this.__extractKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        const result = await this.__extractKnowledgeBridge();
+        this.setState({ toast: { message: `知識候補を${result.created}件抽出しました。` } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `抽出に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ toast: { message: '知識候補を抽出しました（モック表示。本番はAPI経由）。' } });
+  };
+
+  reviewKnowledge = async (id, action) => {
+    if (this.__reviewKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__reviewKnowledgeBridge(String(id), action);
+        this.setState({ toast: { message: action === 'approve' ? '知識を承認しました。' : '知識を却下しました。' } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `レビューに失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, status: action === 'approve' ? 'approved' : 'rejected' } : k)),
+      },
+      toast: { message: (action === 'approve' ? '知識を承認しました' : '知識を却下しました') + '（モック表示）。' },
+    }));
+  };
+
+  promoteKnowledge = async (id) => {
+    const url = window.prompt('昇格先（Notion等）のURLを入力してください。');
+    if (!url) return;
+    if (this.__promoteKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__promoteKnowledgeBridge(String(id), url.trim());
+        this.setState({ toast: { message: '知識を昇格しました（URL記録済み）。' } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `昇格に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, status: 'promoted', promotionUrl: url.trim() } : k)),
+      },
+      toast: { message: '知識を昇格しました（モック表示）。' },
+    }));
+  };
+
   requestApproval = () => {
     const { approverEmail, reason } = this.state.approvalDraft;
     const id = this.state.selectedIdeaId;
@@ -1896,6 +2259,7 @@ class Component extends DCLogic {
                 ...g, status: 'requested', approverEmail: approverEmail.trim(),
                 requestedAt: new Date().toISOString(), requestedBy: 'local.dev@example.com',
                 reason: reason || '（理由未記載）',
+                // date入力（YYYY-MM-DD）はローカル時刻の日末として解釈する（UTC深夜にしない）。
                 requestedDueAt: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : undefined,
                 delegateTo: delegateTo.trim() || undefined,
               }
@@ -2446,6 +2810,7 @@ class Component extends DCLogic {
         { key: 'kanbanIdea', icon: '🗂️', label: '業務アイデアステージ管理' },
         { key: 'evaluation', icon: '🏆', label: '評価ボード' },
         { key: 'portfolio', icon: '📈', label: 'ポートフォリオ' },
+        { key: 'knowledge', icon: '📚', label: '知識管理' },
       ] },
       { label: 'ITシステム管理', items: [
         { key: 'adminSettings', icon: '⚙️', label: 'AI設定' },
@@ -2485,6 +2850,7 @@ class Component extends DCLogic {
       kanbanIdea: { title: '業務アイデアステージ管理', sub: '企画 → MVP → 検証 → 本番化' },
       evaluation: { title: '評価ボード', sub: '優先度スコア順のDXアイデア一覧' },
       portfolio: { title: 'DX案件ポートフォリオ', sub: '価値・進捗・効果の全体俯瞰（管理者）' },
+      knowledge: { title: '知識管理', sub: 'Knowledge候補の抽出・Review Queue・昇格（システム管理者）' },
       gateDashboard: { title: 'Gate滞留分析', sub: '承認期限・滞留・エスカレーションの一覧（システム管理者）' },
       adminSettings: { title: 'AI設定', sub: 'モデル・利用上限・接続管理' },
       userManagement: { title: 'ログインユーザー管理', sub: `${s.users.length}名のアカウント` },
@@ -3005,6 +3371,99 @@ class Component extends DCLogic {
       };
     });
 
+    // ---- GitHub Engineering 連携 view-model（migration 015・docs/29 §2.12）----
+    const repoData = selectedIdeaRaw ? s.repoData : { links: [], evidence: [], overview: null };
+    const rdLinks = (repoData.links || []).map((link) => ({
+      ...link,
+      onUnlink: () => this.unlinkRepo(link.id),
+    }));
+    const rdHasLinks = rdLinks.length > 0;
+    const rdEvidence = repoData.evidence || [];
+    const rdHasEvidence = rdEvidence.length > 0;
+    const rdOverviews = repoData.overview || [];
+    const rdBusy = !!s.repoBusy;
+    const rdKindMeta = {
+      pr: { label: 'PR', fg: '#2E5AAC', bg: '#E9F0FB' },
+      issue: { label: 'Issue', fg: '#6B45B0', bg: '#F1EBFA' },
+      release: { label: 'Release', fg: '#1F8255', bg: '#E4F3EC' },
+      ci: { label: 'CI', fg: '#B5701A', bg: '#FDEFE0' },
+      commit: { label: 'Commit', fg: '#5A6678', bg: '#F2F4F8' },
+    };
+    const rdEvidenceRows = rdEvidence.map((e) => {
+      const meta = rdKindMeta[e.kind] || rdKindMeta.commit;
+      return {
+        ...e,
+        kindLabel: meta.label,
+        kindStyle: this.badgeStyle(meta.fg, meta.bg),
+        hasUrl: !!e.url,
+      };
+    });
+    const rdCiLabels = { success: 'CI ✅', failure: 'CI ❌', error: 'CI ⚠️', pending: 'CI ⏳', none: 'CI —' };
+    const rdOverviewRows = rdOverviews.map((repo) => ({
+      ...repo,
+      ciLabel: rdCiLabels[repo.ciStatus] || 'CI —',
+      hasRelease: !!repo.latestRelease,
+      releaseText: repo.latestRelease ? `${repo.latestRelease.tagName}${repo.latestRelease.name ? ' ' + repo.latestRelease.name : ''}` : '—',
+      prCount: (repo.openPullRequests || []).length,
+      prCaseMatched: (repo.openPullRequests || []).filter((pr) => pr.caseIdMatched).length,
+      issueCount: (repo.openIssues || []).length,
+      issueCaseMatched: (repo.openIssues || []).filter((issue) => issue.caseIdMatched).length,
+      prs: (repo.openPullRequests || []).slice(0, 5),
+      issues: (repo.openIssues || []).slice(0, 5),
+    }));
+
+    // ---- Knowledge Management view-model（migration 016・docs/29 §2.16）----
+    const knData = s.view === 'knowledge' ? (s.knowledgeData || { items: [], statusFilter: '' }) : null;
+    const knItems = knData ? knData.items : [];
+    const knStatusFilter = knData ? knData.statusFilter : '';
+    const knStatusChips = [
+      { key: '', label: 'すべて' },
+      { key: 'candidate', label: '候補' },
+      { key: 'approved', label: '承認済' },
+      { key: 'rejected', label: '却下' },
+      { key: 'promoted', label: '昇格済' },
+    ].map((chip) => ({
+      ...chip,
+      active: chip.key === knStatusFilter,
+      style: chip.key === knStatusFilter
+        ? 'display:inline-block;padding:4px 12px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #B5701A;background:#FDEFE0;color:#B5701A;'
+        : 'display:inline-block;padding:4px 12px;border-radius:14px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid #E3E8EF;background:#fff;color:#5A6678;',
+      onClick: () => this.loadKnowledge(chip.key),
+    }));
+    const knCategoryLabels = {
+      decision: '決定', problem_solution: '課題と解決策', lessons: '教訓', adr: 'ADR',
+      best_practice: 'ベストプラクティス', runbook: 'Runbook', faq: 'FAQ',
+    };
+    const knSourceLabels = {
+      gate_decision: 'Gate判定', idea_comment: 'コメント', kpi_review: '効果測定', manual: '手動',
+    };
+    const knStatusMeta = {
+      candidate: { label: '候補', fg: '#B5701A', bg: '#FDEFE0' },
+      approved: { label: '承認済', fg: '#1F8255', bg: '#E4F3EC' },
+      rejected: { label: '却下', fg: '#C5392F', bg: '#FCE9E7' },
+      promoted: { label: '昇格済', fg: '#6B45B0', bg: '#F1EBFA' },
+    };
+    const knRows = knItems.map((k) => {
+      const statusMeta = knStatusMeta[k.status] || knStatusMeta.candidate;
+      return {
+        ...k,
+        categoryLabel: knCategoryLabels[k.category] || k.category,
+        sourceLabel: knSourceLabels[k.sourceType] || k.sourceType,
+        statusLabel: statusMeta.label,
+        statusStyle: this.badgeStyle(statusMeta.fg, statusMeta.bg),
+        dateText: String(k.createdAt || '').slice(0, 10),
+        hasBody: !!k.body,
+        hasPromotionUrl: !!k.promotionUrl,
+        canReview: k.status === 'candidate',
+        canPromote: k.status === 'approved',
+        // dc-runtime は引数付き呼び出し式を解決できないため、操作はクロージャで渡す。
+        onApprove: () => this.reviewKnowledge(k.id, 'approve'),
+        onReject: () => this.reviewKnowledge(k.id, 'reject'),
+        onPromote: () => this.promoteKnowledge(k.id),
+      };
+    });
+    const knCategoryOptions = Object.keys(knCategoryLabels).map((key) => ({ value: key, label: knCategoryLabels[key] }));
+
     return {
       view: s.view,
       isDashboard: s.view === 'dashboard', isIntake: s.view === 'intake', isWizard: s.view === 'wizard',
@@ -3019,6 +3478,23 @@ class Component extends DCLogic {
       // Gate滞留分析
       goHasData, goLoading, goReloadLabel, goSummaryCards, goRows,
       loadGateOverview: this.loadGateOverview, runGateReminders: this.runGateReminders,
+      // GitHub Engineering 連携（詳細カード）
+      rdHasLinks, rdLinks, rdHasEvidence, rdEvidenceRows, rdOverviewRows, rdBusy,
+      repoInput: s.repoInput, onRepoInputChange: this.onRepoInputChange,
+      linkRepo: this.linkRepo, unlinkRepo: this.unlinkRepo,
+      loadRepoOverview: this.loadRepoOverview, syncRepoEvidence: this.syncRepoEvidence,
+      // Knowledge Management（知識管理画面）
+      isKnowledge: s.view === 'knowledge',
+      knStatusChips, knRows, knCategoryOptions,
+      knBusy: !!s.knowledgeBusy,
+      knowledgeForm: s.knowledgeForm,
+      onKnowledgeTitleChange: this.onKnowledgeFormField('title'),
+      onKnowledgeCategoryChange: this.onKnowledgeFormField('category'),
+      onKnowledgeBodyChange: this.onKnowledgeFormField('body'),
+      loadKnowledge: this.loadKnowledge, submitKnowledge: this.submitKnowledge,
+      extractKnowledge: this.extractKnowledge, reviewKnowledge: this.reviewKnowledge,
+      promoteKnowledge: this.promoteKnowledge,
+      reloadKnowledge: () => this.loadKnowledge(knStatusFilter),
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
       toast: s.toast, dismissToast: this.dismissToast,
