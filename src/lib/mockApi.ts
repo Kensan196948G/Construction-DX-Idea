@@ -20,10 +20,14 @@ import type {
   IdeaComment,
   IdeaGateApproval,
   IdeaHistory,
+  IdeaKpi,
   IdeaStage,
   IdeaValuePhaseEntry,
   InformationClassification,
   IssueInput,
+  KpiOutcome,
+  PortfolioSummary,
+  PortfolioSummaryRow,
   PrivacyFinding,
   RagSearchHit,
   RagSearchResult,
@@ -50,6 +54,7 @@ const phaseHistory = new Map<
   string,
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
 >();
+const kpiRecords = new Map<string, IdeaKpi[]>();
 
 const now = () => new Date().toISOString();
 
@@ -225,6 +230,100 @@ export const mockApi = {
     return {
       history: [{ fromStage: undefined, toStage: idea.stage, changedBy: idea.createdBy, reason: "", changedAt: idea.updatedAt }],
       decisions: [],
+    };
+  },
+
+  async getPortfolio(): Promise<{ summary: PortfolioSummary; items: PortfolioSummaryRow[] }> {
+    const active = ideas.filter((i) => !["rejected", "archived"].includes(i.stage));
+    const stageCounts: Record<string, number> = {};
+    for (const idea of ideas) {
+      stageCounts[idea.stage] = (stageCounts[idea.stage] ?? 0) + 1;
+    }
+    const classificationCounts: Record<string, number> = {
+      public: 0, internal: 0, confidential: 0, restricted: 0,
+    };
+    for (const idea of ideas) {
+      const cls = idea.informationClassification ?? "internal";
+      classificationCounts[cls] = (classificationCounts[cls] ?? 0) + 1;
+    }
+    const productionIdeas = stageCounts["production"] ?? 0;
+    const decidedTotal =
+      (stageCounts["submitted"] ?? 0) + (stageCounts["planning"] ?? 0) +
+      (stageCounts["mvp"] ?? 0) + (stageCounts["verification"] ?? 0) +
+      (stageCounts["production_candidate"] ?? 0) + productionIdeas;
+    const kpiMeasuredCount = [...kpiRecords.values()].filter(
+      (records) => records.length > 0,
+    ).length;
+    const summary: PortfolioSummary = {
+      totalIdeas: ideas.length,
+      activeIdeas: active.length,
+      productionIdeas,
+      rejectedIdeas: stageCounts["rejected"] ?? 0,
+      productionRate: decidedTotal ? productionIdeas / decidedTotal : 0,
+      kpiMeasuredCount,
+      totalBaselineHoursPerMonth: ideas.reduce((s, i) => s + (i.kpiBaselineHours ?? 0), 0),
+      totalBaselineCostPerMonth: ideas.reduce((s, i) => s + (i.kpiBaselineCost ?? 0), 0),
+      classificationCounts,
+      stageCounts,
+    };
+    const items: PortfolioSummaryRow[] = active
+      .map((idea) => {
+        const records = kpiRecords.get(idea.id) ?? [];
+        const latest = records[0];
+        const score = idea.securityNotes.length * 2 + (idea.mvpCandidate ? 2 : 0) +
+          (idea.openQuestions.length === 0 ? 1 : 0);
+        return {
+          ideaId: idea.id,
+          caseId: idea.caseId,
+          title: idea.title,
+          stage: idea.stage,
+          informationClassification: idea.informationClassification ?? "internal",
+          kpiBaselineHours: idea.kpiBaselineHours,
+          kpiBaselineCost: idea.kpiBaselineCost,
+          latestKpiOutcome: latest?.outcome,
+          latestActualReductionPct: latest?.actualReductionPct,
+          priorityScore: Math.min(10, score),
+        };
+      })
+      .sort((a, b) => b.priorityScore - a.priorityScore);
+    return { summary, items };
+  },
+
+  async recordKpi(
+    id: string,
+    input: {
+      targetReductionPct?: number;
+      actualReductionPct?: number;
+      measuredAt?: string;
+      periodMonths?: number;
+      outcome?: KpiOutcome;
+      reviewNote?: string;
+    },
+  ): Promise<IdeaKpi> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const record: IdeaKpi = {
+      id: `kpi-${Date.now()}`,
+      ideaId: id,
+      targetReductionPct: input.targetReductionPct,
+      actualReductionPct: input.actualReductionPct,
+      measuredAt: input.measuredAt ?? now(),
+      periodMonths: input.periodMonths ?? 3,
+      outcome: input.outcome ?? "pending",
+      reviewNote: input.reviewNote ?? "",
+      recordedBy: "demo.user@example.com",
+    };
+    kpiRecords.set(id, [record, ...(kpiRecords.get(id) ?? [])]);
+    return record;
+  },
+
+  async getIdeaKpis(id: string): Promise<{ kpiBaselineHours: number | null; kpiBaselineCost: number | null; records: IdeaKpi[] }> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    return {
+      kpiBaselineHours: idea.kpiBaselineHours ?? null,
+      kpiBaselineCost: idea.kpiBaselineCost ?? null,
+      records: kpiRecords.get(id) ?? [],
     };
   },
 

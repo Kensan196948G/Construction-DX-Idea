@@ -79,6 +79,30 @@
 - 次段階（docs/29 §2.17 の続き）: 添付Virus Scan・DLP・Retention Policy・Export制限・
   情報区分に応じたエクスポート/通知の伝播・ポートフォリオ+KPI/ROI。
 
+## 0.16 最新（2026-09-05: DX案件ポートフォリオ＋KPI/ROI・Benefit Realization / migration 013）
+
+- **migration 013 `kpi_roi`**: ideas に `kpi_baseline_hours`（現状月間工数・人時）と
+  `kpi_baseline_cost`（現状月間コスト・円）、効果測定レコードテーブル `idea_kpis`
+  （target/actual削減率・測定日・対象月数・outcome（pending/continue/improve/stop）・
+  review_note・記録者）を追加。本番・MVP DBへ適用済み。
+- **worker**:
+  - `GET /api/portfolio`（管理者限定・機密含む全体像）: summary（総数/本番化数・本番化率・
+    KPI測定済み件数・月間ベースライン工数/コスト合計・情報区分別/ステージ別件数）と
+    items（案件×評価スコア・KPI最新outcome/実績削減率）を返す。
+  - `POST /api/ideas/:id/kpi`（本人 or 管理者）: 効果測定を記録（履歴蓄積・監査
+    `idea.kpi.recorded`）。
+  - `GET /api/ideas/:id/kpi`: ベースライン＋測定履歴を返す（confidential案件は要管理者/本人）。
+- **src/lib**: shared.ts に `kpiOutcomes`/`IdeaKpi`/`IdeaKpiInput`/`PortfolioSummary`/
+  `PortfolioSummaryRow` を追加。api.ts/mockApi.ts（getPortfolio/recordKpi/getIdeaKpis）同期。
+- **WebUI**: 詳細ビューに「📈 効果測定（KPI）」カード（ベースライン表示・実績削減率/
+  outcome/期間/所見の入力・記録ボタン・測定履歴一覧）。App.tsx ブリッジ
+  `__loadKpiBridge`/`__recordKpiBridge`。
+- **検証**: `npm run verify` PASS（test 123件、kpi 2件含む）。実DB E2E: ポートフォリオ
+  summary/items と KPI記録（削減25%・outcome=continue）・履歴取得を確認。Playwright:
+  詳細画面の効果測定カードで記録→履歴表示（継続・削減25%・3か月）・エラー0。
+- 残（次ラウンド）: ポートフォリオ専用の一覧/集計画面（Value×Effort等）をダッシュボードへ
+  追加、ベースライン登録UI、3/6/12か月レビューリマインダー。
+
 ## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
 
 - **DB はローカル PostgreSQL（Neon 廃止済み）で運用**: 本番 `.env`（`dx_idea`@127.0.0.1:5432）と
