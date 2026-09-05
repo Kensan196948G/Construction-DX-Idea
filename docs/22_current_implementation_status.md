@@ -27,8 +27,32 @@
     コンソールエラー0）を確認。
 - 本番適用: 本番ローカルDB `dx_idea` への migration 011 適用とモノレポ
   `DX-Project-Portfolio-Atlas/apps/dx-idea` へのコード同期は承認後（本番反映手順に従う）。
-- 次段階（docs/29 §2.3 の続き）: 過去PoC/却下理由検索・既存システム照合・
-  「統合候補/既存案件へ追加/新規」判定のAI化・根拠引用の構造化・AI品質Eval。
+
+## 0.14 最新（2026-09-05: AI品質Eval・本番適用完了 / Issue #13残り）
+
+- **本番適用（承認後に実施）**:
+  - 本番ローカルDB `dx_idea` へ migration 011 を適用（search_text 生成列・GIN (gin_trgm_ops)・
+    pg_trgm・rag_search_logs）。psqlで適用・検証（word_similarity 0.625）。
+  - モノレポ `DX-Project-Portfolio-Atlas/apps/dx-idea` へ本家 main（f7261a5 相当）のコードを同期
+    （worker/index.ts・src/lib・migrations 006-011・migrate-local・package.jsonのpostgres依存）。
+    コミット: dee3605 / 829d524 / 972e2a3（apps/dx-idea配下のみ・他アプリのステージを非破壊）。
+  - 本番サービス dx-idea-api.service を再起動（systemd Restart=on-failure 経由・新PIDで稼働）。
+    health 200・Cloudflare Access 保護（401）維持を確認。
+- **AI品質Eval（Golden Dataset・回帰試験）を実装**（Issue #13の「誤判定が計測できる」に対応）:
+  - `src/lib/aiEval.ts`: Golden Dataset（5業務ケース: 出来形写真/測量/日報/安全/工程）と
+    評価ロジック（質問生成: 3問・形式valid / 構造化: スキーマ適合・PII非含有・業務分類の
+    妥当性・必須フィールド充足）。`runAiEval` が合格率を返す。
+  - worker: `POST /api/admin/ai-eval`（システム管理者限定）。provider=demo（既定・決定的・
+    コスト0）または current（実AI設定、AI利用枠消費・明示指定時のみ）。監査 `ai.eval.ran`。
+  - api.ts / mockApi.ts（デモAIで同一サマリ）に `runAiEval` を追加。
+  - WebUI: AI設定画面に「🧪 AI品質Eval」カード（demo/current切替・実行ボタン・合格率・
+    ケース別結果表示）。App.tsx ブリッジ `__aiEvalBridge`。
+  - 検証: `npm run verify` PASS（test 115件、ai-eval 4件含む）。実DB E2E
+    （scripts/ai-eval-e2e.mjs）: 5/5合格・executedWith=demo・監査記録。Playwrightで
+    AI設定画面のEval実行→合格100%表示・コンソールエラー0。
+- 次段階（docs/29 §2.3/§2.14 の続き）: 過去PoC/却下理由検索・既存システム照合・
+  「統合候補/既存案件へ追加/新規」判定のAI化・Provider/Model Registry・Prompt管理・
+  情報区分・公開制御・ポートフォリオ+KPI/ROI。
 
 ## 0.11 最新（2026-09-04: 本番ローカルDBを migration 001-009 へ移行＋Gate Policy Engine v2）
 

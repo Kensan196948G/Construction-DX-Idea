@@ -7,6 +7,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
 import { buildDemoQuestions, buildDemoStructure } from "../src/lib/demoAi";
+import { runAiEval, type AiEvalSummary } from "../src/lib/aiEval";
 import { inspectIssueInput, inspectStructuredIdea, maskSensitiveText } from "../src/lib/privacy";
 import {
   aiModels,
@@ -1590,6 +1591,57 @@ app.post(
       model: model ?? (await getAiSettings(c.env)).model,
     });
     return c.json(result);
+  },
+);
+
+// AI品質Eval（Issue #13）: Golden Dataset を実行し、AI出力（質問生成・構造化）の
+// スキーマ適合・PII非含有・分類妥当性を機械検証してスコア化する。
+// - provider=demo（既定）: 決定的なデモAIで回帰検証（コスト0・CIで毎回実行可能）
+// - provider 省略で実AI設定が有効: 現在のプロバイダ（claude/deepseek）で実行
+// 実AI実行はAI利用枠を消費するため、デフォルトはdemo。実AI評価は明示的に
+// provider=current を指定した場合のみ行う。
+app.post(
+  "/api/admin/ai-eval",
+  zValidator(
+    "json",
+    z
+      .object({
+        provider: z.enum(["demo", "current"]).optional(),
+      })
+      .optional(),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const body = c.req.valid("json");
+    const aiSettings = await getAiSettings(c.env);
+    const useDemo = (body?.provider ?? "demo") === "demo" || aiSettings.provider === "demo";
+
+    let summary: AiEvalSummary;
+    if (useDemo) {
+      summary = await runAiEval({
+        providerLabel: "demo",
+        generateQuestions: (input) => Promise.resolve(buildDemoQuestions(input)),
+        structureIdea: (input, answers) => Promise.resolve(buildDemoStructure(input, answers)),
+      });
+    } else {
+      // 実AI評価。AI利用枠を消費する（5ケース×2処理=最大10回）。
+      const providerLabel = aiSettings.provider;
+      summary = await runAiEval({
+        providerLabel,
+        generateQuestions: (input) => generateQuestions(c.env, input),
+        structureIdea: (input, answers) => structureIdea(c.env, input, answers),
+      });
+      // 実AIはプロンプト注入済み structureIdea をそのまま使う（RAGメタは省略）。
+    }
+
+    await audit(c.env, user, "ai.eval.ran", "ai_settings", "eval", {
+      provider: summary.executedWith,
+      totalCases: summary.totalCases,
+      passedCases: summary.passedCases,
+      passRate: summary.passRate,
+    });
+    return c.json(summary);
   },
 );
 
