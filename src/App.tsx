@@ -51,6 +51,7 @@ type StandaloneComponent = {
   decideGateApproval?: (decision: string) => () => Promise<void>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
+  loadSimilarIdeas?: () => Promise<void>;
   saveUser?: () => void;
   deleteUser?: (id: string | number) => void;
   toggleUserStatus?: (id: string | number) => void;
@@ -179,6 +180,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     decideGateApprovalThroughApi(component, decision);
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
+  component.loadSimilarIdeas = () => loadSimilarIdeas(component);
   component.saveUser = () => {
     void saveUserThroughApi(component);
   };
@@ -214,6 +216,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       void loadCommentsForSelected(component);
       void loadGatesForSelected(component);
       void loadIdeaPhase(component);
+      void loadSimilarIdeas(component);
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
@@ -1050,6 +1053,42 @@ async function loadIdeaPhase(component: StandaloneComponent) {
     });
   } catch (error) {
     showToast(component, `フェーズ情報を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// ---- RAG 類似・重複候補（Issue #13・migration 011）----
+
+function selectedIdeaForSimilar(component: StandaloneComponent) {
+  const idea = component.state.ideas.find(
+    (candidate) => candidate.id === component.state.selectedIdeaId,
+  );
+  return idea && idea.apiStage ? idea : null;
+}
+
+async function loadSimilarIdeas(component: StandaloneComponent) {
+  const idea = selectedIdeaForSimilar(component);
+  if (!idea) return;
+  component.setState({ similarBusy: true });
+  try {
+    const data = await api.getSimilarIdeas(String(idea.id), 5);
+    component.setState({
+      similarData: {
+        query: data.query,
+        items: data.items.map((hit) => ({
+          idea: hit.idea,
+          title: hit.idea.title,
+          stage: hit.idea.stage,
+          caseId: hit.idea.caseId ?? "",
+          similarity: hit.similarity,
+          level: hit.level,
+        })),
+      },
+      similarBusy: false,
+    });
+  } catch (error) {
+    // 類似検索は補助機能のため、失敗しても詳細表示を妨げない。
+    component.setState({ similarBusy: false });
+    showToast(component, `類似案件を取得できませんでした: ${toErrorMessage(error)}`);
   }
 }
 

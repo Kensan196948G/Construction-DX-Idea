@@ -34,6 +34,7 @@
 | 26 | [改善台帳](26_improvement_ledger.md) | 改善項目と対応記録 |
 | 27 | [改善評価レポート](27_improvement_evaluation_report.md) | 改善後の再評価結果 |
 | 28 | [MVP/Prototypeデモ手順書](28_mvp_prototype_demo.md) | MVP環境URL・ダミーデータ構成・デモ手順・既知制約 |
+| 29 | [追加実装機能バックログ](29_additional_implementation_backlog.md) | 追加実装すべき機能の完全リスト（2026-09-05・ローカルPostgreSQL基盤確定版） |
 | — | [2026-08-13総合アセスメント](audit/2026-08-13-assessment.md) | 精査結果・P0〜P3・MVP実装記録 |
 
 ## 全社Idea-to-Valueプロセスにおける位置付け

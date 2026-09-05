@@ -726,6 +726,39 @@ a:hover { text-decoration: underline; }
                     </div>
                   </sc-for>
                 </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="font-size:14px;font-weight:600;color:#1A2433;">🔎 類似・重複候補</div>
+                    <sc-if value="{{ similarNotLoaded }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ loadSimilarIdeas }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;">類似案件を検索</button>
+                    </sc-if>
+                  </div>
+                  <sc-if value="{{ similarBusy }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:12px;color:#8A97A8;">類似案件を検索しています…</div>
+                  </sc-if>
+                  <sc-if value="{{ similarLoaded }}" hint-placeholder-val="{{ false }}">
+                    <sc-for list="{{ similarRows }}" as="sr" hint-placeholder-count="2">
+                      <div style="border:1px solid #EEF1F5;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                          <div style="font-size:12.5px;font-weight:600;color:#1A2433;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ sr.title }}</div>
+                          <span style="{{ sr.levelStyle }}">{{ sr.levelLabel }} {{ sr.simPct }}%</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                          <div style="flex:1;height:5px;border-radius:3px;background:#EEF1F5;overflow:hidden;">
+                            <div style="{{ sr.barStyle }}"></div>
+                          </div>
+                          <sc-if value="{{ sr.showCaseId }}" hint-placeholder-val="{{ false }}">
+                            <span style="font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:#B5701A;font-weight:600;">{{ sr.caseId }}</span>
+                          </sc-if>
+                        </div>
+                      </div>
+                    </sc-for>
+                    <sc-if value="{{ noSimilarHits }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:12px;color:#1F8255;background:#E4F3EC;border-radius:8px;padding:9px 12px;">類似案件は見つかりませんでした。重複の可能性が低いため、新規案件として進められます。</div>
+                    </sc-if>
+                  </sc-if>
+                  <div style="font-size:11px;color:#8A97A8;">過去案件との重複・類似をAIが支援します。類似度は本文テキストの類似性に基づきます。</div>
+                </div>
               </div>
             </div>
           </div>
@@ -1107,6 +1140,9 @@ class Component extends DCLogic {
     phaseData: null,
     phaseBusy: false,
     phaseNoteDraft: '',
+    // RAG 類似・重複候補（選択中アイデア。実API時はブリッジがロード）
+    similarData: null,
+    similarBusy: false,
     userForm: { email: '', name: '', department: '', role: 'user', authority: '', editingId: null },
     users: this.makeSeedUsers(),
     integrations: this.makeSeedIntegrations(),
@@ -1137,10 +1173,11 @@ class Component extends DCLogic {
   goTo = (view) => { this.setState({ view }); };
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
-    this.setState({ selectedIdeaId: id, view: 'detail' });
-    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase を差し替える。
+    this.setState({ selectedIdeaId: id, view: 'detail', similarData: null, similarBusy: false });
+    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
     if (this.loadIdeaPhase) void this.loadIdeaPhase();
+    if (this.loadSimilarIdeas) void this.loadSimilarIdeas();
   };
   backToList = () => {
     const idea = this.state.ideas.find((i) => i.id === this.state.selectedIdeaId);
@@ -1389,6 +1426,54 @@ class Component extends DCLogic {
 
   updatePhaseNoteDraft = (e) => {
     this.setState({ phaseNoteDraft: e.target.value });
+  };
+
+  // ---- RAG 類似・重複候補（Issue #13）----
+  // 実API接続時は App.tsx ブリッジが loadSimilarIdeas を差し替える。
+  // モック時は、選択中アイデアの本文と他のモックアイデアの2-gram重なりで
+  // 簡易類似度を計算して表示する（実際の類似度はDBのpg_trgm word_similarity）。
+  mockIdeaSearchTextOf = (idea) => {
+    const parts = [idea.title, idea.problem, idea.currentProcess, idea.expectedEffect, idea.mvpProposal];
+    return parts.filter((p) => p && String(p).trim()).join(' ');
+  };
+
+  mockSimilarityOf = (aText, bText) => {
+    const grams = (text) => {
+      const norm = String(text).trim().toLowerCase().replace(/\s+/g, '');
+      const set = new Set();
+      for (let i = 0; i < norm.length - 1; i++) set.add(norm.slice(i, i + 2));
+      return set;
+    };
+    const a = grams(aText);
+    const b = grams(bText);
+    if (a.size === 0 || b.size === 0) return 0;
+    let overlap = 0;
+    for (const g of a) if (b.has(g)) overlap++;
+    return (2 * overlap) / (a.size + b.size);
+  };
+
+  loadSimilarIdeas = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const target = this.state.ideas.find((i) => i.id === id);
+    if (!target) return;
+    this.setState({ similarBusy: true });
+    const queryText = this.mockIdeaSearchTextOf(target);
+    const items = this.state.ideas
+      .filter((i) => i.id !== id)
+      .map((i) => ({ idea: i, similarity: this.mockSimilarityOf(queryText, this.mockIdeaSearchTextOf(i)) }))
+      .filter((hit) => hit.similarity >= 0.15)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5)
+      .map((hit) => ({
+        id: hit.idea.id,
+        title: hit.idea.title,
+        stage: hit.idea.stage,
+        caseId: hit.idea.caseId || '',
+        similarity: Math.round(hit.similarity * 1000) / 1000,
+        level: hit.similarity >= 0.5 ? 'high' : hit.similarity >= 0.25 ? 'medium' : 'low',
+      }));
+    this.setState({ similarData: { query: queryText.slice(0, 120), items }, similarBusy: false });
   };
 
   toggleUserStatus = (id) => {
@@ -1983,6 +2068,38 @@ class Component extends DCLogic {
       : null;
     const noPhaseView = !phaseView;
 
+    // ---- RAG 類似・重複候補 view-model（Issue #13）----
+    // similarData.items は { idea?, title, stage, caseId, similarity, level } の形。
+    // 実API時は idea 全体（redact済み）が乗るため、表示用に title/stage/caseId を優先する。
+    const rawSims = selectedIdeaRaw ? s.similarData : null;
+    const similarRows = (rawSims ? rawSims.items : []).map((hit) => {
+      const title = hit.title || (hit.idea && hit.idea.title) || '（無題）';
+      const stage = hit.stage || (hit.idea && hit.idea.stage) || '';
+      const caseId = hit.caseId || (hit.idea && hit.idea.caseId) || '';
+      const sim = Number(hit.similarity) || 0;
+      const level = hit.level || (sim >= 0.5 ? 'high' : sim >= 0.25 ? 'medium' : 'low');
+      const levelMeta = {
+        high: { fg: '#C5392F', bg: '#FCE9E7', label: '重複の可能性が高い' },
+        medium: { fg: '#B5701A', bg: '#FDEFE0', label: '類似案件あり' },
+        low: { fg: '#5A6678', bg: '#F2F4F8', label: '参考' },
+      }[level] || { fg: '#5A6678', bg: '#F2F4F8', label: '参考' };
+      return {
+        title,
+        stage,
+        caseId,
+        showCaseId: !!caseId,
+        similarity: sim,
+        simPct: Math.round(sim * 100),
+        levelLabel: levelMeta.label,
+        levelStyle: this.badgeStyle(levelMeta.fg, levelMeta.bg),
+        barStyle: 'height:100%;border-radius:3px;background:' + (sim >= 0.5 ? '#C5392F' : sim >= 0.25 ? '#E08A2B' : '#8A97A8') + ';width:' + Math.round(sim * 100) + '%;',
+      };
+    });
+    const similarBusy = selectedIdeaRaw ? s.similarBusy : false;
+    const similarLoaded = selectedIdeaRaw && !!rawSims && !s.similarBusy;
+    const noSimilarHits = similarLoaded && similarRows.length === 0;
+    const similarNotLoaded = selectedIdeaRaw && !rawSims && !s.similarBusy;
+
     const authorityLabelMap = { business: 'Business', domain: 'Domain', engineering: 'Engineering' };
     const userRows = s.users.map((u) => {
       const active = u.status === 'active';
@@ -2186,6 +2303,14 @@ class Component extends DCLogic {
       loadIdeaPhase: this.loadIdeaPhase,
       advanceIdeaPhase: this.advanceIdeaPhase,
       ideaValuePhaseCount20: 20,
+
+      // RAG 類似・重複候補（Issue #13）
+      similarRows,
+      similarBusy,
+      similarLoaded,
+      noSimilarHits,
+      similarNotLoaded,
+      loadSimilarIdeas: this.loadSimilarIdeas,
 
       userRows, integrationRows,
       userForm: s.userForm,

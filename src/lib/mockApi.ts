@@ -23,6 +23,8 @@ import type {
   IdeaValuePhaseEntry,
   IssueInput,
   PrivacyFinding,
+  RagSearchHit,
+  RagSearchResult,
   SaveIdeaResult,
   StructuredIdea,
   UserProfile,
@@ -34,6 +36,8 @@ import {
   gateAuthorityPolicy,
   ideaValuePhaseLabel,
   ideaValuePhases,
+  ragMinSimilarity,
+  ragSimilarityLevel,
   summarizeGateApprovals,
 } from "./shared";
 
@@ -218,6 +222,21 @@ export const mockApi = {
       history: [{ fromStage: undefined, toStage: idea.stage, changedBy: idea.createdBy, reason: "", changedAt: idea.updatedAt }],
       decisions: [],
     };
+  },
+
+  async getSimilarIdeas(id: string, limit = 5): Promise<RagSearchResult> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const query = mockIdeaSearchText(idea);
+    const items = mockRagSearch(query, { excludeIdeaId: id, limit });
+    return { query: query.slice(0, 200), items };
+  },
+
+  async searchRag(q: string, limit = 5): Promise<RagSearchResult> {
+    const query = q.trim();
+    if (query.length < 4) throw new Error("検索クエリは4文字以上で指定してください。");
+    const items = mockRagSearch(query, { excludeIdeaId: undefined, limit });
+    return { query, items };
   },
 
   async getIdeaPhase(id: string): Promise<IdeaValuePhaseEntry> {
@@ -687,4 +706,66 @@ function csvCell(value: unknown): string {
     return `"${text.replaceAll('"', '""')}"`;
   }
   return text;
+}
+
+// ---- モック用 RAG 類似検索（pg_trgm の代替）----
+// 実DBでは migration 011 の search_text + word_similarity を使うが、モックは
+// ブラウザ内で完結させるため、bigram の Dice 係数で類似度 0..1 を近似する。
+
+function mockIdeaSearchText(idea: Idea): string {
+  return [
+    idea.title,
+    idea.currentIssue,
+    idea.targetBusiness,
+    idea.targetUsers,
+    idea.currentWorkflow,
+    idea.improvementIdea,
+    idea.expectedEffects,
+    idea.mvpCandidate,
+  ]
+    .filter((part) => part && part.trim())
+    .join(" ");
+}
+
+function bigrams(text: string): Set<string> {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, "");
+  const grams = new Set<string>();
+  for (let i = 0; i < normalized.length - 1; i++) {
+    grams.add(normalized.slice(i, i + 2));
+  }
+  return grams;
+}
+
+// クエリのbigramが対象テキストのbigramにどの程度含まれるか(0..1)を返す。
+function diceSimilarity(query: string, target: string): number {
+  const a = bigrams(query);
+  const b = bigrams(target);
+  if (a.size === 0 || b.size === 0) return 0;
+  let overlap = 0;
+  for (const gram of a) {
+    if (b.has(gram)) overlap += 1;
+  }
+  return (2 * overlap) / (a.size + b.size);
+}
+
+function mockRagSearch(
+  query: string,
+  options: { excludeIdeaId?: string; limit?: number },
+): RagSearchHit[] {
+  const limit = Math.min(Math.max(1, options.limit ?? 5), 20);
+  const hits = ideas
+    .filter((idea) => idea.id !== options.excludeIdeaId)
+    .map((idea) => {
+      const similarity = diceSimilarity(query, mockIdeaSearchText(idea));
+      return { idea, similarity, level: ragSimilarityLevel(similarity) };
+    })
+    .filter((hit) => hit.similarity >= ragMinSimilarity)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit)
+    .map((hit) => ({
+      idea: hit.idea,
+      similarity: Math.round(hit.similarity * 1000) / 1000,
+      level: hit.level,
+    }));
+  return hits;
 }

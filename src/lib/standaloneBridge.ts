@@ -125,6 +125,19 @@ export type StandaloneState = {
   } | null;
   phaseBusy: boolean;
   phaseNoteDraft: string;
+  // RAG 類似・重複候補（Issue #13）: 選択中アイデアの類似案件一覧。
+  similarData: {
+    query: string;
+    items: Array<{
+      idea?: Idea;
+      title?: string;
+      stage?: string;
+      caseId?: string;
+      similarity: number;
+      level: "high" | "medium" | "low";
+    }>;
+  } | null;
+  similarBusy: boolean;
   userForm: {
     email: string;
     name: string;
