@@ -28,6 +28,10 @@ import type {
   IdeaValuePhaseEntry,
   InformationClassification,
   IssueInput,
+  IdeaKpi,
+  KpiOutcome,
+  PortfolioSummary,
+  PortfolioSummaryRow,
   PrivacyFinding,
   RagSearchResult,
   SaveIdeaResult,
@@ -145,6 +149,28 @@ export const api = useMock
           body: JSON.stringify(payload),
         }),
       getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
+      getPortfolio: () => request<{ summary: PortfolioSummary; items: PortfolioSummaryRow[] }>("/api/portfolio"),
+      recordKpi: (
+        id: string,
+        input: {
+          targetReductionPct?: number;
+          actualReductionPct?: number;
+          measuredAt?: string;
+          periodMonths?: number;
+          outcome?: KpiOutcome;
+          reviewNote?: string;
+        },
+      ) =>
+        request<IdeaKpi>(`/api/ideas/${id}/kpi`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      getIdeaKpis: (id: string) =>
+        request<{
+          kpiBaselineHours: number | null;
+          kpiBaselineCost: number | null;
+          records: IdeaKpi[];
+        }>(`/api/ideas/${id}/kpi`),
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
       exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),

@@ -31,6 +31,7 @@ import {
   type IdeaStage,
   type InformationClassification,
   type IssueInput,
+  type KpiOutcome,
   type RagSearchHit,
   type StructuredIdea,
   authorities,
@@ -46,6 +47,7 @@ import {
   ideaValuePhases,
   informationClassifications,
   issueInputSchema,
+  kpiOutcomes,
   ragMinSimilarity,
   ragSimilarityLevel,
   structuredIdeaSchema,
@@ -399,6 +401,206 @@ app.get("/api/ideas", async (c) => {
       rows.map(async (row) => redactIdeaForUser(mapIdeaRow(row), user, c.env)),
     ),
   );
+});
+
+// DX案件ポートフォリオ（docs/29 §2.5・migration 013）:
+// 全案件を価値・ステージ・情報区分・KPIベースラインで集計する。管理者向け
+// （機密・限定案件も含む全体像のため、参照は管理者に限定する）。
+app.get("/api/portfolio", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireAdmin(c.env, user);
+  const db = getDb(c.env);
+  const ideaRows = await db`
+    select * from ideas
+    where stage not in ('rejected', 'archived')
+    order by updated_at desc
+    limit 500
+  `;
+  const stageRows = await db`
+    select stage, count(*)::int as n from ideas group by stage
+  `;
+  const classificationRows = await db`
+    select information_classification as cls, count(*)::int as n
+    from ideas group by information_classification
+  `;
+  const kpiRows = await db`
+    select k.idea_id,
+           (array_agg(k.outcome order by k.measured_at desc))[1] as latest_outcome,
+           (array_agg(k.actual_reduction_pct order by k.measured_at desc))[1] as latest_reduction
+    from idea_kpis k
+    group by k.idea_id
+  `;
+  const kpiByIdea = new Map(
+    kpiRows.map((row) => [
+      String(row.idea_id),
+      { outcome: row.latest_outcome ? String(row.latest_outcome) : undefined, reduction: row.latest_reduction != null ? Number(row.latest_reduction) : undefined },
+    ]),
+  );
+  const ideas = ideaRows.map((row) => {
+    const idea = mapIdeaRow(row);
+    const latest = kpiByIdea.get(idea.id);
+    return { idea, latest };
+  });
+  const stageCounts = Object.fromEntries(
+    stageRows.map((row) => [String(row.stage), Number(row.n ?? 0)]),
+  );
+  const classificationCounts: Record<string, number> = {};
+  for (const cls of informationClassifications) classificationCounts[cls] = 0;
+  for (const row of classificationRows) {
+    const key = String(row.cls ?? "internal");
+    classificationCounts[key] = Number(row.n ?? 0);
+  }
+  const productionIdeas = Number(stageCounts["production"] ?? 0);
+  const decidedTotal =
+    (Number(stageCounts["submitted"] ?? 0) +
+      Number(stageCounts["planning"] ?? 0) +
+      Number(stageCounts["mvp"] ?? 0) +
+      Number(stageCounts["verification"] ?? 0) +
+      Number(stageCounts["production_candidate"] ?? 0) +
+      productionIdeas) || 0;
+  const totalBaselineHoursPerMonth = ideas.reduce(
+    (sum, { idea }) => sum + (idea.kpiBaselineHours ?? 0),
+    0,
+  );
+  const totalBaselineCostPerMonth = ideas.reduce(
+    (sum, { idea }) => sum + (idea.kpiBaselineCost ?? 0),
+    0,
+  );
+  const kpiMeasuredCount = [...kpiByIdea.values()].filter(
+    (value) => value.reduction !== undefined,
+  ).length;
+  const summary = {
+    totalIdeas: ideas.length,
+    activeIdeas: ideas.filter(({ idea }) => !["rejected", "archived"].includes(idea.stage)).length,
+    productionIdeas,
+    rejectedIdeas: Number(stageCounts["rejected"] ?? 0),
+    productionRate: decidedTotal ? Math.round((productionIdeas / decidedTotal) * 100) / 100 : 0,
+    kpiMeasuredCount,
+    totalBaselineHoursPerMonth: Math.round(totalBaselineHoursPerMonth * 10) / 10,
+    totalBaselineCostPerMonth: Math.round(totalBaselineCostPerMonth),
+    classificationCounts,
+    stageCounts,
+  };
+  const items: Array<Record<string, unknown>> = ideas
+    .map(({ idea, latest }) => {
+      const { score } = evaluationScore(idea);
+      return {
+        ideaId: idea.id,
+        caseId: idea.caseId ?? "",
+        title: idea.title,
+        stage: idea.stage,
+        informationClassification: idea.informationClassification,
+        kpiBaselineHours: idea.kpiBaselineHours ?? null,
+        kpiBaselineCost: idea.kpiBaselineCost ?? null,
+        latestKpiOutcome: latest?.outcome ?? null,
+        latestActualReductionPct: latest?.reduction ?? null,
+        priorityScore: score,
+      };
+    })
+    .sort((a, b) => Number(b.priorityScore) - Number(a.priorityScore));
+  return c.json({ summary, items });
+});
+
+// KPI登録・実績入力（docs/29 §2.6・migration 013）: 案件の効果測定レコードを記録する。
+// 管理者または提出者本人が記録できる（実績の客観性は運用で担保）。
+app.post(
+  "/api/ideas/:id/kpi",
+  zValidator(
+    "json",
+    z.object({
+      targetReductionPct: z.number().min(0).max(100).optional(),
+      actualReductionPct: z.number().min(-100).max(100).optional(),
+      measuredAt: z.string().optional(),
+      periodMonths: z.number().int().min(1).max(60).optional(),
+      outcome: z.enum(kpiOutcomes).optional(),
+      reviewNote: z.string().max(1000).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const ideaRows = await db`
+      select * from ideas where id = ${id} limit 1
+    `;
+    if (!ideaRows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(ideaRows[0]);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
+    if (!isAdmin && !isOwner) {
+      throw new ApiError("FORBIDDEN", "効果測定の記録は提出者本人または管理者のみ可能です。", 403);
+    }
+    const outcome = body.outcome ?? "pending";
+    const rows = await db`
+      insert into idea_kpis (
+        idea_id, target_reduction_pct, actual_reduction_pct, measured_at,
+        period_months, outcome, review_note, recorded_by
+      )
+      values (
+        ${id}, ${body.targetReductionPct ?? null}, ${body.actualReductionPct ?? null},
+        ${body.measuredAt ? new Date(body.measuredAt) : new Date()},
+        ${body.periodMonths ?? 3}, ${outcome}, ${body.reviewNote ?? ""}, ${user}
+      )
+      returning *
+    `;
+    await audit(c.env, user, "idea.kpi.recorded", "idea", id, {
+      outcome,
+      actualReductionPct: body.actualReductionPct ?? null,
+    });
+    const row = rows[0];
+    return c.json({
+      id: String(row.id),
+      ideaId: String(row.idea_id),
+      targetReductionPct: row.target_reduction_pct != null ? Number(row.target_reduction_pct) : undefined,
+      actualReductionPct: row.actual_reduction_pct != null ? Number(row.actual_reduction_pct) : undefined,
+      measuredAt: toIsoString(row.measured_at),
+      periodMonths: Number(row.period_months),
+      outcome: String(row.outcome) as KpiOutcome,
+      reviewNote: String(row.review_note ?? ""),
+      recordedBy: String(row.recorded_by),
+    });
+  },
+);
+
+// 案件の効果測定履歴を返す。
+app.get("/api/ideas/:id/kpi", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const ideaRows = await db`
+    select * from ideas where id = ${id} limit 1
+  `;
+  if (!ideaRows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const idea = mapIdeaRow(ideaRows[0]);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
+  const isVisible = isAdmin || isOwner || (idea.informationClassification ?? "internal") !== "confidential";
+  if (!isVisible) {
+    throw new ApiError("FORBIDDEN", "この案件の効果測定は閲覧できません。", 403);
+  }
+  const kpiRows = await db`
+    select * from idea_kpis
+    where idea_id = ${id}
+    order by measured_at desc
+    limit 30
+  `;
+  const records = kpiRows.map((row) => ({
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    targetReductionPct: row.target_reduction_pct != null ? Number(row.target_reduction_pct) : undefined,
+    actualReductionPct: row.actual_reduction_pct != null ? Number(row.actual_reduction_pct) : undefined,
+    measuredAt: toIsoString(row.measured_at),
+    periodMonths: Number(row.period_months),
+    outcome: String(row.outcome) as KpiOutcome,
+    reviewNote: String(row.review_note ?? ""),
+    recordedBy: String(row.recorded_by),
+  }));
+  return c.json({
+    kpiBaselineHours: idea.kpiBaselineHours ?? null,
+    kpiBaselineCost: idea.kpiBaselineCost ?? null,
+    records,
+  });
 });
 
 app.get("/api/ideas/evaluation", async (c) => {
@@ -3750,6 +3952,8 @@ function mapIdeaRow(row: Record<string, unknown>): Idea {
     phaseNote: row.phase_note ? String(row.phase_note) : undefined,
     informationClassification: (row.information_classification as InformationClassification | null) ?? "internal",
     classificationNotes: row.classification_notes ? String(row.classification_notes) : "",
+    kpiBaselineHours: row.kpi_baseline_hours != null ? Number(row.kpi_baseline_hours) : undefined,
+    kpiBaselineCost: row.kpi_baseline_cost != null ? Number(row.kpi_baseline_cost) : undefined,
     createdBy: String(row.created_by),
     ownerId: row.owner_id ? String(row.owner_id) : undefined,
     createdAt: toIsoString(row.created_at),

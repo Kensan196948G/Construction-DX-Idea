@@ -246,6 +246,9 @@ export const ideaSchema = structuredIdeaSchema.extend({
   // 情報区分・公開制御（migration 012）。未設定=internal扱い（UI/API層で補完）。
   informationClassification: z.enum(informationClassifications).optional(),
   classificationNotes: z.string().max(500).optional(),
+  // KPI・ROI（migration 013）: 現状の月間工数（人時）と月間コスト（円）。null=未設定。
+  kpiBaselineHours: z.number().nullable().optional(),
+  kpiBaselineCost: z.number().nullable().optional(),
   createdBy: z.string(),
   ownerId: z.string().optional(),
   createdAt: z.string(),
@@ -270,6 +273,70 @@ export type IdeaComment = {
   body: string;
   createdAt: string;
 };
+
+// ---- KPI・ROI・Benefit Realization（migration 013・docs/29 §2.6）----
+export const kpiOutcomes = ["pending", "continue", "improve", "stop"] as const;
+export type KpiOutcome = (typeof kpiOutcomes)[number];
+
+export const kpiOutcomeLabels: Record<KpiOutcome, string> = {
+  pending: "未判定",
+  continue: "継続",
+  improve: "改善",
+  stop: "停止",
+};
+
+// 1件の効果測定レコード（3/6/12か月レビュー等。1案件に複数蓄積）。
+export type IdeaKpi = {
+  id: string;
+  ideaId: string;
+  targetReductionPct?: number;
+  actualReductionPct?: number;
+  measuredAt: string;
+  periodMonths: number;
+  outcome: KpiOutcome;
+  reviewNote: string;
+  recordedBy: string;
+};
+
+export type IdeaKpiInput = {
+  targetReductionPct?: number;
+  actualReductionPct?: number;
+  measuredAt?: string;
+  periodMonths?: number;
+  outcome?: KpiOutcome;
+  reviewNote?: string;
+};
+
+// ---- DX案件ポートフォリオ（docs/29 §2.5）----
+export type PortfolioSummary = {
+  totalIdeas: number;
+  activeIdeas: number;
+  productionIdeas: number;
+  rejectedIdeas: number;
+  // アイデア→本番化のFunnel率（本番化率 = production / submitted以降の全案件）
+  productionRate: number;
+  // 効果測定のある案件（KPI実績記録済み）
+  kpiMeasuredCount: number;
+  totalBaselineHoursPerMonth: number;
+  totalBaselineCostPerMonth: number;
+  // 情報区分ごとの件数（public/internal/confidential/restricted）
+  classificationCounts: Record<string, number>;
+  stageCounts: Record<string, number>;
+};
+
+export type PortfolioSummaryRow = {
+  ideaId: string;
+  caseId?: string;
+  title: string;
+  stage: IdeaStage;
+  informationClassification?: InformationClassification;
+  kpiBaselineHours?: number | null;
+  kpiBaselineCost?: number | null;
+  latestKpiOutcome?: KpiOutcome | null;
+  latestActualReductionPct?: number | null;
+  priorityScore: number;
+};
+
 
 export type ApprovalRequest = {
   approverEmail: string;

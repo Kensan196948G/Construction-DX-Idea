@@ -21,9 +21,11 @@ import type {
   Authority,
   GateNo,
   Idea,
+  IdeaKpi,
   IdeaStage,
   InformationClassification,
   IssueInput,
+  KpiOutcome,
   StructuredIdea,
 } from "./lib/shared";
 import { authorities } from "./lib/shared";
@@ -56,6 +58,20 @@ type StandaloneComponent = {
     value: InformationClassification,
     notes: string,
   ) => Promise<Idea>;
+  __loadKpiBridge?: (id: string) => Promise<{
+    kpiBaselineHours: number | null;
+    kpiBaselineCost: number | null;
+    records: IdeaKpi[];
+  }>;
+  __recordKpiBridge?: (
+    id: string,
+    input: {
+      actualReductionPct: number;
+      outcome: KpiOutcome;
+      reviewNote: string;
+      periodMonths: number;
+    },
+  ) => Promise<IdeaKpi>;
   submitComment?: () => void;
   exportCsv?: () => void;
   exportExcel?: () => void;
@@ -179,6 +195,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   // 情報区分・公開制御（migration 012）: 詳細画面からの区分更新。
   component.__saveClassificationBridge = (id, value, notes) =>
     api.updateClassification(id, value, notes, "WebUIから変更");
+  // KPI・ROI（migration 013）: 詳細画面の効果測定。
+  component.__loadKpiBridge = (id) => api.getIdeaKpis(id);
+  component.__recordKpiBridge = (id, input) => api.recordKpi(id, input);
   component.submitComment = () => {
     void submitCommentThroughApi(component);
   };

@@ -615,6 +615,41 @@ a:hover { text-decoration: underline; }
                   <div style="font-size:11px;color:#8A97A8;">現在: <span style="font-weight:600;color:#1A2433;">{{ classificationCurrentLabel }}</span><sc-if value="{{ classificationCurrentNotes }}" hint-placeholder-val="{{ false }}">（{{ classificationCurrentNotes }}）</sc-if></div>
                 </div>
                 <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
+                  <div style="font-size:14px;font-weight:600;color:#1A2433;">📈 効果測定（KPI）</div>
+                  <div style="font-size:11.5px;color:#8A97A8;">ベースライン: {{ kpiBaselineText }}</div>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                    <input type="text" inputmode="decimal" value="{{ kpiDraft.actualReductionPct }}" onChange="{{ onKpiReductionChange }}" placeholder="実績削減率(%)" style="width:110px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                    <select value="{{ kpiDraft.outcome }}" onChange="{{ onKpiOutcomeChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                      <option value="pending">未判定</option>
+                      <option value="continue">継続</option>
+                      <option value="improve">改善</option>
+                      <option value="stop">停止</option>
+                    </select>
+                    <select value="{{ kpiDraft.periodMonths }}" onChange="{{ onKpiPeriodChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                      <option value="3">3か月</option>
+                      <option value="6">6か月</option>
+                      <option value="12">12か月</option>
+                    </select>
+                  </div>
+                  <textarea value="{{ kpiDraft.reviewNote }}" onChange="{{ onKpiNoteChange }}" rows="2" placeholder="レビュー所見（未達理由・改善Action等）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:none;box-sizing:border-box;width:100%;"></textarea>
+                  <button onClick="{{ recordKpi }}" disabled="{{ kpiBusy }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ kpiSaveLabel }}</button>
+                  <sc-if value="{{ kpiHasRecords }}" hint-placeholder-val="{{ false }}">
+                    <sc-for list="{{ kpiRows }}" as="kr" hint-placeholder-count="2">
+                      <div style="border-top:1px solid #EEF1F5;padding-top:8px;display:flex;flex-direction:column;gap:4px;">
+                        <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+                          <span style="{{ kr.outcomeStyle }}">{{ kr.outcomeLabel }}</span>
+                          <span style="font-weight:600;color:#1A2433;">削減 {{ kr.reductionText }}</span>
+                          <span style="color:#8A97A8;">{{ kr.periodText }}・{{ kr.dateText }}</span>
+                        </div>
+                        <sc-if value="{{ kr.hasNote }}" hint-placeholder-val="{{ false }}">
+                          <div style="font-size:11.5px;color:#5A6678;">{{ kr.note }}</div>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                  </sc-if>
+                  <div style="font-size:11px;color:#8A97A8;">本番化後に実績を測定し、継続/改善/停止を判定します。</div>
+                </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
                   <div style="font-size:14px;font-weight:600;color:#1A2433;">✅ 承認</div>
                   <div style="font-size:12px;color:#5A6678;">状態: <span style="font-weight:600;color:#1A2433;">{{ selectedIdeaView.approvalStatusLabel }}</span><sc-if value="{{ selectedIdeaView.approverEmail }}" hint-placeholder-val="{{ false }}">（承認者: {{ selectedIdeaView.approverEmail }}）</sc-if></div>
                   <sc-if value="{{ selectedIdeaView.approvalShowRequest }}" hint-placeholder-val="{{ false }}">
@@ -1179,6 +1214,10 @@ class Component extends DCLogic {
     // 情報区分・公開制御（migration 012）: 詳細画面の区分編集
     classificationDraft: { value: 'internal', notes: '' },
     classificationBusy: false,
+    // KPI・ROI（migration 013）: 詳細画面の効果測定
+    kpiData: { kpiBaselineHours: null, kpiBaselineCost: null, records: [] },
+    kpiDraft: { actualReductionPct: '', outcome: 'pending', reviewNote: '', periodMonths: '3' },
+    kpiBusy: false,
     gateDraft: { gateNo: 1, authority: 'business', approverEmail: '', reason: '' },
     // 選択中アイデアのGate1-5承認データ（初期化されていなければnull）。
     // 形式: { items: IdeaGateApproval[], summary: GateSummary[] }（src/lib/shared.tsと同一）。
@@ -1232,11 +1271,14 @@ class Component extends DCLogic {
         notes: (idea && idea.classificationNotes) || '',
       },
       classificationBusy: false,
+      kpiData: { kpiBaselineHours: null, kpiBaselineCost: null, records: [] },
+      kpiBusy: false,
     });
-    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas を差し替える。
+    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas / loadKpi を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
     if (this.loadIdeaPhase) void this.loadIdeaPhase();
     if (this.loadSimilarIdeas) void this.loadSimilarIdeas();
+    if (this.loadKpi) void this.loadKpi();
   };
   backToList = () => {
     const idea = this.state.ideas.find((i) => i.id === this.state.selectedIdeaId);
@@ -1342,6 +1384,85 @@ class Component extends DCLogic {
       toast: { message: `情報区分を ${value} に更新しました（モック表示。本番はAPI経由）。` },
     }));
     this.pushAudit('設定変更', `「${id}」の情報区分を${value}へ変更`);
+  };
+
+  // ---- KPI・ROI（migration 013）----
+  // 実API接続時は App.tsx ブリッジが loadKpi / recordKpi を差し替える。
+  loadKpi = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    if (this.__loadKpiBridge) {
+      try {
+        const data = await this.__loadKpiBridge(String(id));
+        this.setState({ kpiData: data, kpiBusy: false });
+      } catch (e) {
+        this.setState({ kpiBusy: false, toast: { message: `効果測定の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: 既存のモック記録を表示（無ければ空）
+    this.setState({ kpiBusy: false });
+  };
+  onKpiReductionChange = (e) => {
+    this.setState((s) => ({ kpiDraft: { ...s.kpiDraft, actualReductionPct: e.target.value } }));
+  };
+  onKpiOutcomeChange = (e) => {
+    this.setState((s) => ({ kpiDraft: { ...s.kpiDraft, outcome: e.target.value } }));
+  };
+  onKpiPeriodChange = (e) => {
+    this.setState((s) => ({ kpiDraft: { ...s.kpiDraft, periodMonths: e.target.value } }));
+  };
+  onKpiNoteChange = (e) => {
+    this.setState((s) => ({ kpiDraft: { ...s.kpiDraft, reviewNote: e.target.value } }));
+  };
+  recordKpi = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const draft = this.state.kpiDraft;
+    const pct = draft.actualReductionPct === '' ? undefined : Number(draft.actualReductionPct);
+    if (pct === undefined) {
+      this.setState({ toast: { message: '実績削減率(%)を入力してください。' } });
+      return;
+    }
+    this.setState({ kpiBusy: true });
+    if (this.__recordKpiBridge) {
+      try {
+        await this.__recordKpiBridge(String(id), {
+          actualReductionPct: pct,
+          outcome: draft.outcome,
+          reviewNote: draft.reviewNote,
+          periodMonths: Number(draft.periodMonths || 3),
+        });
+        if (this.loadKpi) await this.loadKpi();
+        this.setState({
+          kpiBusy: false,
+          kpiDraft: { ...draft, actualReductionPct: '', reviewNote: '' },
+          toast: { message: '効果測定を記録しました。' },
+        });
+        this.pushAudit('設定変更', `効果測定を記録（削減率${pct}%・${draft.outcome}）`);
+      } catch (e) {
+        this.setState({ kpiBusy: false, toast: { message: `効果測定の記録に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック
+    this.setState({
+      kpiBusy: false,
+      kpiData: {
+        ...this.state.kpiData,
+        records: [
+          {
+            id: 'mock-kpi', ideaId: String(id), actualReductionPct: pct,
+            measuredAt: new Date().toISOString(), periodMonths: Number(draft.periodMonths || 3),
+            outcome: draft.outcome, reviewNote: draft.reviewNote, recordedBy: 'local.dev@example.com',
+          },
+          ...this.state.kpiData.records,
+        ],
+      },
+      kpiDraft: { ...draft, actualReductionPct: '', reviewNote: '' },
+      toast: { message: '効果測定を記録しました（モック表示。本番はAPI経由）。' },
+    });
+    this.pushAudit('設定変更', `効果測定を記録（削減率${pct}%・${draft.outcome}）`);
   };
 
   requestApproval = () => {
@@ -2134,6 +2255,39 @@ class Component extends DCLogic {
         s.classificationDraft.value === 'confidential' || s.classificationDraft.value === 'restricted');
     const classificationSaveLabel = s.classificationBusy ? '保存中…' : '💾 保存';
 
+    // ---- KPI・ROI view-model（migration 013）----
+    const kpiOutcomeLabelsMap = {
+      pending: '未判定', continue: '継続', improve: '改善', stop: '停止',
+    };
+    const kpiRecords = (s.kpiData && s.kpiData.records) || [];
+    const kpiRows = kpiRecords.map((rec) => ({
+      id: rec.id,
+      outcomeLabel: kpiOutcomeLabelsMap[rec.outcome] || rec.outcome,
+      outcomeStyle: rec.outcome === 'continue'
+        ? this.badgeStyle('#1F8255', '#E4F3EC')
+        : rec.outcome === 'improve'
+          ? this.badgeStyle('#2E5AAC', '#E9F0FB')
+          : rec.outcome === 'stop'
+            ? this.badgeStyle('#C5392F', '#FCE9E7')
+            : this.badgeStyle('#8A97A8', '#F2F4F8'),
+      reductionText: rec.actualReductionPct != null ? `${rec.actualReductionPct}%` : '—',
+      periodText: `${rec.periodMonths}か月`,
+      dateText: String(rec.measuredAt || '').slice(0, 10),
+      note: rec.reviewNote || '',
+      hasNote: !!rec.reviewNote,
+    }));
+    const kpiHasRecords = kpiRows.length > 0;
+    const kpiBaselineText = (() => {
+      const hours = s.kpiData && s.kpiData.kpiBaselineHours;
+      const cost = s.kpiData && s.kpiData.kpiBaselineCost;
+      if (hours == null && cost == null) return '未設定';
+      const parts = [];
+      if (hours != null) parts.push(`工数 ${hours}人時/月`);
+      if (cost != null) parts.push(`コスト ¥${Number(cost).toLocaleString()}/月`);
+      return parts.join('・') || '未設定';
+    })();
+    const kpiSaveLabel = s.kpiBusy ? '保存中…' : '💾 記録';
+
     // ---- Gate1-5 view-model（#50/#57）----
     const gateLabelsMap = {
       1: 'Gate1 企画承認', 2: 'Gate2 開発承認', 3: 'Gate3 MVP承認',
@@ -2442,6 +2596,17 @@ class Component extends DCLogic {
       onClassificationDraftChange: this.onClassificationDraftChange,
       onClassificationNotesDraftChange: this.onClassificationNotesDraftChange,
       saveClassification: this.saveClassification,
+
+      // KPI・ROI（migration 013）
+      kpiRows, kpiHasRecords, kpiBaselineText, kpiSaveLabel,
+      kpiBusy: !!s.kpiBusy,
+      kpiDraft: s.kpiDraft,
+      onKpiReductionChange: this.onKpiReductionChange,
+      onKpiOutcomeChange: this.onKpiOutcomeChange,
+      onKpiPeriodChange: this.onKpiPeriodChange,
+      onKpiNoteChange: this.onKpiNoteChange,
+      recordKpi: this.recordKpi,
+      loadKpi: this.loadKpi,
 
       adminSettings: a, usagePercent, adminUsageBarStyle, adminToggleTrackStyle, adminToggleDotStyle,
       adminEnabledLabel, testButtonLabel, adminTestSuccess, adminApiKeySavedMsg: a.apiKeySavedMsg,
