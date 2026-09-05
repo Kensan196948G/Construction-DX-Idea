@@ -18,6 +18,8 @@ import {
   type AppUserInput,
   type ApprovalDecision,
   type ApprovalRequest,
+  type GateApprovalRequest,
+  type GateDecisionInput,
   type AuditChainVerifyResult,
   type AiConnectionTestResult,
   type AiQuestion,
@@ -1311,6 +1313,10 @@ app.post(
       authority: z.enum(authorities).optional(),
       approverEmail: z.string().email().max(320),
       reason: z.string().max(500).optional(),
+      // 承認期限（migration 014）。ISO文字列。省略時はシステム既定（5日後）。
+      dueAt: z.string().optional(),
+      // 代理承認者（migration 014）。元承認者の代わりに判定できる人。
+      delegateTo: z.string().email().max(320).optional(),
     }),
   ),
   async (c) => {
@@ -1318,7 +1324,7 @@ app.post(
     const db = getDb(c.env);
     const id = c.req.param("id");
     const gateNo = parseGateNo(c.req.param("gateNo"));
-    const request = c.req.valid("json") as ApprovalRequest & { authority?: Authority };
+    const request = c.req.valid("json") as GateApprovalRequest;
     const idea = await db`select id, created_by from ideas where id = ${id} limit 1`;
     if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     const ideaCreator = String(idea[0].created_by);
@@ -1370,12 +1376,20 @@ app.post(
       }
     }
     const reason = (request.reason ?? "").trim() || "（理由未記載）";
+    // 承認期限: 指定が無ければ5日後（システム既定）。過去日時は拒否。
+    const dueAt = request.dueAt ? new Date(request.dueAt) : new Date(Date.now() + 5 * 864e5);
+    if (Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
+      throw new ApiError("GATE_DUE_INVALID", "承認期限は未来の日時を指定してください。", 400);
+    }
+    const delegate = (request.delegateTo ?? "").trim().toLowerCase() || null;
     const rows = await db`
       update idea_gate_approvals
       set status = 'requested',
           approver_email = ${request.approverEmail.toLowerCase()},
           requested_at = now(),
           requested_by = ${user},
+          requested_due_at = ${dueAt},
+          delegate_to = ${delegate},
           acted_at = null,
           acted_by = null,
           reason = ${reason},
@@ -1389,6 +1403,8 @@ app.post(
       requiredAuthority: gate.requiredAuthority,
       approverEmail: gate.approverEmail,
       requestedBy: user,
+      dueAt: gate.requestedDueAt ?? null,
+      delegateTo: gate.delegateTo ?? null,
     });
     void notifySlackEvent(
       c.env,
@@ -1399,10 +1415,14 @@ app.post(
         `${gateLabels[gateNo]} 承認依頼`,
         `必要Authority: ${gate.requiredAuthority}`,
         `承認者: ${gate.approverEmail ?? ""}`,
+        gate.delegateTo ? `代理承認者: ${gate.delegateTo}` : null,
+        gate.requestedDueAt ? `承認期限: ${gate.requestedDueAt.slice(0, 10)}` : null,
         `依頼者: ${user}`,
         `理由: ${reason}`,
         `${c.env.APP_BASE_URL}/ideas/${id}`,
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       `gate.approval.requested:idea:${id}:gate${gateNo}:${gate.requiredAuthority}:${gate.approverEmail ?? ""}`,
     );
     return c.json(gate);
@@ -1418,6 +1438,9 @@ app.post(
       authority: z.enum(authorities).optional(),
       decision: z.enum(["approve", "reject", "return"]),
       reason: z.string().min(1).max(500),
+      // 条件付き承認（migration 014）: approve時に条件を付与できる。
+      conditionNote: z.string().max(1000).optional(),
+      conditionMet: z.boolean().optional(),
     }),
   ),
   async (c) => {
@@ -1425,7 +1448,7 @@ app.post(
     const db = getDb(c.env);
     const id = c.req.param("id");
     const gateNo = parseGateNo(c.req.param("gateNo"));
-    const body = c.req.valid("json") as ApprovalDecision & { authority?: Authority };
+    const body = c.req.valid("json") as GateDecisionInput & { authority?: Authority };
     const idea = await db`select id, created_by from ideas where id = ${id} limit 1`;
     if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     const ideaCreator = String(idea[0].created_by);
@@ -1457,13 +1480,16 @@ app.post(
       throw new ApiError("GATE_NOT_REQUESTED", `承認依頼中のGate行のみ判定できます（現在: ${current.status}）。`, 422);
     }
     const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
-    const isAssignedApprover = current.approverEmail?.toLowerCase() === user.toLowerCase();
+    // 代理承認（migration 014）: delegate_to に指定されたユーザーも判定できる。
+    const isAssignedApprover =
+      current.approverEmail?.toLowerCase() === user.toLowerCase() ||
+      current.delegateTo?.toLowerCase() === user.toLowerCase();
     const actorAuthority = isAssignedApprover ? await resolveAuthority(c.env, user) : undefined;
     const hasRequiredAuthority = isAssignedApprover && actorAuthority === current.requiredAuthority;
     if (!isAdmin && !hasRequiredAuthority) {
       throw new ApiError(
         "FORBIDDEN",
-        `Gate${gateNo}（${current.requiredAuthority}）の承認には${current.requiredAuthority} Authorityを持つ承認者本人、または管理者権限が必要です。`,
+        `Gate${gateNo}（${current.requiredAuthority}）の承認には${current.requiredAuthority} Authorityを持つ承認者本人（または代理承認者）、管理者権限が必要です。`,
         403,
       );
     }
@@ -1485,12 +1511,18 @@ app.post(
       reject: "rejected" as const,
       return: "returned" as const,
     };
+    // 条件付き承認（migration 014）: approve時に条件を記録する。
+    const conditionNote =
+      body.decision === "approve" ? (body.conditionNote ?? "").trim() : "";
+    const conditionMet = body.conditionMet ?? false;
     const rows = await db`
       update idea_gate_approvals
       set status = ${statusMap[body.decision]},
           acted_at = now(),
           acted_by = ${user},
           reason = ${body.reason},
+          condition_note = ${conditionNote},
+          condition_met = ${conditionNote ? conditionMet : null},
           updated_at = now()
       where idea_id = ${id} and gate_no = ${gateNo} and required_authority = ${authority}
       returning *
@@ -1500,7 +1532,8 @@ app.post(
       gateNo,
       requiredAuthority: gate.requiredAuthority,
       decision: body.decision,
-      decidedBy: user,
+      conditionNote: gate.conditionNote ?? null,
+      conditionMet: gate.conditionMet ?? null,
     });
     // 全社Gate1〜5の集約結果を、既存の単一承認フィールド（migration 004）へ反映する。
     // 集約は summarizeGateApprovals に従い「必要Authority全員がapproved」でGate通過とする。
@@ -1531,6 +1564,7 @@ app.post(
         `Authority: ${gate.requiredAuthority}`,
         `判定: ${body.decision}`,
         `判定者: ${user}`,
+        gate.conditionNote ? `条件付き承認: ${gate.conditionNote}` : null,
         `理由: ${body.reason}`,
         `${c.env.APP_BASE_URL}/ideas/${id}`,
       ].join("\n"),
@@ -1995,6 +2029,209 @@ app.post(
     return c.json(summary);
   },
 );
+
+// Gate滞留分析（docs/29 §2.7・migration 014）: 承認依頼中で期限超過・滞留中の
+// Gate承認を一覧する（管理者向け）。滞留時間は requested_at からの経過日数。
+// リマインダー/エスカレーション状況（last_reminded_at / reminder_count /
+// escalated_at）も併せて返す。
+app.get("/api/admin/gates/overview", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select g.*, i.title as idea_title, i.case_id as case_id
+    from idea_gate_approvals g
+    join ideas i on i.id = g.idea_id
+    where g.status = 'requested'
+    order by g.requested_at asc
+    limit 200
+  `;
+  const items = rows.map((row) => mapGateOverviewRow(row, new Date()));
+  const overdueCount = items.filter((item) => item.overdue).length;
+  return c.json({
+    items,
+    total: items.length,
+    overdueCount,
+    // 平均滞留日数（requested行のみ）
+    avgDwellDays: items.length
+      ? Math.round((items.reduce((sum, item) => sum + item.dwellDays, 0) / items.length) * 10) / 10
+      : 0,
+  });
+});
+
+// Gateリマインダー/エスカレーションの即時実行（管理者向け）。
+// 日次クローン（hourly cron内で毎時実行・行ごとに約24時間の間隔制御）と同じ
+// runGateReminders を呼ぶため、手動実行とクローンで挙動が一致する。
+app.post("/api/admin/gates/reminders/run", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const result = await runGateReminders(c.env);
+  await audit(c.env, user, "gate.reminders.run", "system", "gates", {
+    reminded: result.reminded,
+    escalated: result.escalated,
+  });
+  return c.json(result);
+});
+
+// 承認依頼中Gate行の滞留分析・リマインダー分類（docs/29 §2.7・migration 014）。
+// 決定論的な純関数として切り出し、単体テストとリマインダー実行の両方から使う。
+function mapGateOverviewRow(row: Record<string, unknown>, now: Date) {
+  const dueRaw = row.requested_due_at != null ? String(row.requested_due_at) : null;
+  const reqRaw = row.requested_at != null ? String(row.requested_at) : null;
+  const due = dueRaw ? new Date(dueRaw) : null;
+  const requestedAt = reqRaw ? new Date(reqRaw) : null;
+  const dwellDays = requestedAt
+    ? Math.max(0, Math.floor((now.getTime() - requestedAt.getTime()) / 864e5))
+    : 0;
+  const overdue = due ? due.getTime() < now.getTime() : false;
+  // 期限まで残り2日以内（期限超過は含まない）を「期限接近」とみなす。
+  const dueSoon = !overdue && due != null && due.getTime() - now.getTime() <= 2 * 864e5;
+  return {
+    ideaId: String(row.idea_id),
+    ideaTitle: String(row.idea_title ?? ""),
+    caseId: row.case_id ? String(row.case_id) : undefined,
+    gateNo: Number(row.gate_no),
+    requiredAuthority: String(row.required_authority),
+    approverEmail: row.approver_email ? String(row.approver_email) : undefined,
+    delegateTo: row.delegate_to ? String(row.delegate_to) : undefined,
+    requestedBy: row.requested_by ? String(row.requested_by) : undefined,
+    requestedAt: row.requested_at ? toIsoString(row.requested_at) : undefined,
+    requestedDueAt: due ? toIsoString(due) : undefined,
+    lastRemindedAt: row.last_reminded_at ? toIsoString(row.last_reminded_at) : undefined,
+    reminderCount: row.reminder_count != null ? Number(row.reminder_count) : 0,
+    escalatedAt: row.escalated_at ? toIsoString(row.escalated_at) : undefined,
+    conditionNote: row.condition_note ? String(row.condition_note) : undefined,
+    conditionMet: row.condition_met != null ? Boolean(row.condition_met) : undefined,
+    dwellDays,
+    overdue,
+    dueSoon,
+  };
+}
+
+// リマインダー/エスカレーションの対象分類。requested行のみを対象とする。
+// - overdue  : 期限超過 → エスカレーション（管理者宛）＋承認者リマインダー
+// - dueSoon  : 期限まで2日以内 → 承認者リマインダー
+// - dueなし  : 期限未設定の滞留行（滞留7日超のみエスカレーション）
+type GateReminderTarget = {
+  ideaId: string;
+  gateNo: number;
+  requiredAuthority: string;
+  approverEmail?: string;
+  delegateTo?: string;
+  requestedDueAt?: string;
+  ideaTitle: string;
+  action: "remind" | "escalate";
+};
+
+function buildGateReminderTargets(
+  rows: Array<Record<string, unknown>>,
+  now: Date,
+): GateReminderTarget[] {
+  const targets: GateReminderTarget[] = [];
+  for (const row of rows) {
+    // 対象は承認依頼中（requested）の行のみ。呼び出し側のSQLでも絞り込むが、
+    // 純関数単体でも安全にするためここで再確認する。
+    if (String(row.status ?? "") !== "requested") continue;
+    const overview = mapGateOverviewRow(row, now);
+    if (overview.overdue) {
+      targets.push({ ...overview, action: "escalate" });
+    } else if (overview.dueSoon) {
+      targets.push({ ...overview, action: "remind" });
+    } else if (!overview.requestedDueAt && overview.dwellDays >= 7) {
+      targets.push({ ...overview, action: "escalate" });
+    }
+  }
+  return targets;
+}
+
+function formatGateReminderMessage(target: GateReminderTarget): string {
+  const gateLine = `Gate${target.gateNo}（${target.requiredAuthority}）: ${target.ideaTitle}`;
+  const approverLine = target.approverEmail ? `承認者: ${target.approverEmail}` : "承認者: 未設定";
+  const dueLine = target.requestedDueAt
+    ? `期限: ${target.requestedDueAt.slice(0, 10)}`
+    : "期限: 未設定";
+  if (target.action === "escalate") {
+    return [
+      "🚨 Gate承認の期限超過（エスカレーション）",
+      gateLine,
+      approverLine,
+      target.delegateTo ? `代理承認者: ${target.delegateTo}` : null,
+      dueLine,
+      "管理者の確認が必要です。",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return [
+    "⏰ Gate承認のリマインダー",
+    gateLine,
+    approverLine,
+    target.delegateTo ? `代理承認者: ${target.delegateTo}` : null,
+    dueLine,
+    "承認の確認をお願いします。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+// Gateリマインダー/エスカレーション実行（migration 014）。
+// - 対象行の確保は UPDATE ... WHERE last_reminded_at が約24時間より前 の条件で原子的に行い、
+//   cronと手動実行が同時に走っても更新・通知は1回のみ（日1回に抑える）。
+// - エスカレーション時は escalated_at を初回のみ記録する。
+async function runGateReminders(
+  env: Env,
+): Promise<{ reminded: number; escalated: number; skipped: number }> {
+  const db = getDb(env);
+  const rows = await db`
+    select g.*, i.title as idea_title
+    from idea_gate_approvals g
+    join ideas i on i.id = g.idea_id
+    where g.status = 'requested'
+    limit 200
+  `;
+  const now = new Date();
+  const targets = buildGateReminderTargets(rows, now);
+  let reminded = 0;
+  let escalated = 0;
+  let skipped = 0;
+  for (const target of targets) {
+    // 対象行を原子的に確保する（cronと手動実行の同時実行でも更新は1回のみ）。
+    // last_reminded_at が約24時間以内の行は UPDATE の WHERE で弾かれ、skipped になる。
+    const claimed = await db`
+      update idea_gate_approvals
+      set last_reminded_at = now(),
+          reminder_count = reminder_count + 1,
+          escalated_at = case when ${target.action === "escalate"} and escalated_at is null then now() else escalated_at end,
+          updated_at = now()
+      where idea_id = ${target.ideaId}
+        and gate_no = ${target.gateNo}
+        and required_authority = ${target.requiredAuthority}
+        and status = 'requested'
+        and (last_reminded_at is null or last_reminded_at < now() - interval '20 hours')
+      returning id
+    `;
+    if (!claimed[0]) {
+      skipped += 1;
+      continue;
+    }
+    await notifySlackEvent(
+      env,
+      target.action === "escalate" ? "gate.approval.escalated" : "gate.approval.reminder",
+      "idea",
+      target.ideaId,
+      formatGateReminderMessage(target),
+      `gate.reminder:idea:${target.ideaId}:gate${target.gateNo}:${target.requiredAuthority}:${target.action}:${now.toISOString().slice(0, 10)}`,
+    );
+    await audit(env, "system:reminder", `gate.approval.${target.action}`, "idea", target.ideaId, {
+      gateNo: target.gateNo,
+      requiredAuthority: target.requiredAuthority,
+      dueAt: target.requestedDueAt ?? null,
+    }).catch((error: unknown) => console.error("Gate reminder audit failed", sanitizeLog(error)));
+    if (target.action === "escalate") escalated += 1;
+    else reminded += 1;
+  }
+  return { reminded, escalated, skipped };
+}
 
 app.get("/api/admin/audit-logs", async (c) => {
   const user = await getUser(c.req.raw, c.env);
@@ -3853,10 +4090,36 @@ async function checkAndAlertFailures(env: Env) {
       aiFailures: Number(rows[0]?.ai_failures ?? 0),
       notifyFailures: Number(rows[0]?.notify_failures ?? 0),
     };
-    if (counts.aiFailures + counts.notifyFailures === 0) return;
-    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, formatAlertMessage(counts));
+    // Gate承認の期限超過を検知し、Slackへ通知（migration 014・docs/29 §2.7）。
+    // 期限超過の requested 行を数え、あれば障害と同時に報告する。
+    const overdueRows = await db`
+      select g.id, i.title as idea_title, g.gate_no, g.required_authority
+      from idea_gate_approvals g
+      join ideas i on i.id = g.idea_id
+      where g.status = 'requested'
+        and g.requested_due_at is not null
+        and g.requested_due_at < now()
+      order by g.requested_due_at asc
+      limit 10
+    `;
+    const overdueCount = overdueRows.length;
+    if (counts.aiFailures + counts.notifyFailures + overdueCount === 0) return;
+    const lines = [
+      "🚨 Construction-DX-Idea アラート（毎時）",
+      `AI失敗: ${counts.aiFailures}件 / Slack通知失敗: ${counts.notifyFailures}件`,
+    ];
+    if (overdueCount > 0) {
+      lines.push(`⏰ Gate承認期限超過: ${overdueCount}件`);
+      for (const row of overdueRows.slice(0, 5)) {
+        lines.push(
+          `  - Gate${row.gate_no}（${row.required_authority}）: ${row.idea_title ?? ""}`,
+        );
+      }
+    }
+    const response = await postSlackWebhook(env.SLACK_WEBHOOK_URL, lines.join("\n"));
     await audit(env, "system:alert", "alert.failure.notified", "system", "hourly", {
       ...counts,
+      gateOverdueCount: overdueCount,
       delivered: response.ok,
     }).catch((error: unknown) => console.error("Alert audit failed", sanitizeLog(error)));
   } catch (error) {
@@ -4046,6 +4309,10 @@ function mapGateApprovalRow(row: Record<string, unknown>): IdeaGateApproval {
     actedBy: row.acted_by ? String(row.acted_by) : undefined,
     requestedBy: row.requested_by ? String(row.requested_by) : undefined,
     approvalSeq: row.approval_seq != null ? Number(row.approval_seq) : undefined,
+    requestedDueAt: row.requested_due_at ? toIsoString(row.requested_due_at) : undefined,
+    delegateTo: row.delegate_to ? String(row.delegate_to) : undefined,
+    conditionNote: row.condition_note ? String(row.condition_note) : undefined,
+    conditionMet: row.condition_met != null ? Boolean(row.condition_met) : undefined,
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
   };
@@ -4148,6 +4415,8 @@ export const workerSecurityTestHooks = {
   formatAlertMessage,
   formatWeeklyDigest,
   formatAuditChainAlert,
+  buildGateReminderTargets,
+  formatGateReminderMessage,
   estimateAiCost,
   normalizeRagQuery,
   parseGateNo,
@@ -4190,7 +4459,14 @@ export default {
         cron === "0 9 * * 0"
           ? sendWeeklyDigest(env)
           : cron === "0 * * * *"
-            ? Promise.all([checkAndAlertFailures(env), checkAuditChainIntegrity(env)])
+            ? Promise.all([
+                checkAndAlertFailures(env),
+                checkAuditChainIntegrity(env),
+                // Gate承認のリマインダー/エスカレーション（docs/29 §2.7）。
+                // 行ごとに last_reminded_at から約24時間の間隔制御があるため、
+                // 毎時実行でも実送信は日1回に抑えられる。
+                runGateReminders(env),
+              ])
             : retrySlackNotifications(env)
       ).catch((error: unknown) => {
         console.error("Scheduled task failed", sanitizeLog(error));

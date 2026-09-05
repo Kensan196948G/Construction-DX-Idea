@@ -17,8 +17,11 @@ import type {
   DashboardMetrics,
   EvaluationItem,
   GateApprovalRequest,
+  GateDecisionInput,
   GateListResult,
   GateNo,
+  GateOverviewResult,
+  GateReminderRunResult,
   Idea,
   IdeaComment,
   IdeaGateApproval,
@@ -143,11 +146,16 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify(payload),
         }),
-      decideGateApproval: (id: string, gateNo: GateNo, payload: ApprovalDecision & { authority?: Authority }) =>
+      decideGateApproval: (id: string, gateNo: GateNo, payload: GateDecisionInput & { authority?: Authority }) =>
         request<IdeaGateApproval>(`/api/ideas/${id}/gates/${gateNo}/approval`, {
           method: "POST",
           body: JSON.stringify(payload),
         }),
+      // Gate滞留分析（docs/29 §2.7・migration 014・管理者限定）。
+      getGateOverview: () => request<GateOverviewResult>("/api/admin/gates/overview"),
+      // Gateリマインダー/エスカレーション実行（管理者限定・日次cronと同一処理）。
+      runGateReminders: () =>
+        request<GateReminderRunResult>("/api/admin/gates/reminders/run", { method: "POST" }),
       getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
       getPortfolio: () => request<{ summary: PortfolioSummary; items: PortfolioSummaryRow[] }>("/api/portfolio"),
       recordKpi: (

@@ -14,8 +14,12 @@ import type {
   AuditLogEntry,
   Authority,
   DashboardMetrics,
+  GateApprovalRequest,
+  GateDecisionInput,
   GateListResult,
   GateNo,
+  GateOverviewResult,
+  GateReminderRunResult,
   Idea,
   IdeaComment,
   IdeaGateApproval,
@@ -508,23 +512,33 @@ export const mockApi = {
     return { items, summary: summarizeGateApprovals(items) };
   },
 
-  async requestGateApproval(id: string, gateNo: GateNo, payload: ApprovalRequest & { authority?: Authority }): Promise<IdeaGateApproval> {
+  async requestGateApproval(id: string, gateNo: GateNo, payload: GateApprovalRequest): Promise<IdeaGateApproval> {
     const gates = gateApprovals.get(id);
     const authority = payload.authority ?? gateAuthorityPolicy[gateNo][0];
     const gate = gates?.find((g) => g.gateNo === gateNo && g.requiredAuthority === authority);
     if (!gate) throw new Error("Gate not found");
+    // 期限の既定はworker準拠（5日後）。過去日時は拒否。
+    const dueAt = payload.dueAt ? new Date(payload.dueAt) : new Date(Date.now() + 5 * 864e5);
+    if (Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
+      throw new Error("承認期限は未来の日時を指定してください。");
+    }
     Object.assign(gate, {
       status: "requested",
       approverEmail: payload.approverEmail,
       requestedAt: now(),
       requestedBy: "demo.user@example.com",
       reason: payload.reason ?? "",
+      requestedDueAt: dueAt.toISOString(),
+      delegateTo: payload.delegateTo?.trim() || undefined,
+      lastRemindedAt: undefined,
+      reminderCount: 0,
+      escalatedAt: undefined,
       updatedAt: now(),
     });
     return gate;
   },
 
-  async decideGateApproval(id: string, gateNo: GateNo, payload: ApprovalDecision & { authority?: Authority }): Promise<IdeaGateApproval> {
+  async decideGateApproval(id: string, gateNo: GateNo, payload: GateDecisionInput & { authority?: Authority }): Promise<IdeaGateApproval> {
     const gates = gateApprovals.get(id);
     // authority 未指定時は requested の行が1件のみならそれへフォールバック（worker準拠）。
     let authority = payload.authority;
@@ -535,14 +549,72 @@ export const mockApi = {
     }
     const gate = gates?.find((g) => g.gateNo === gateNo && g.requiredAuthority === authority);
     if (!gate) throw new Error("Gate not found");
+    // 条件付き承認（migration 014）: approve時に条件を記録する。
+    const conditionNote = payload.decision === "approve" ? (payload.conditionNote ?? "").trim() : "";
     Object.assign(gate, {
       status: payload.decision === "approve" ? "approved" : payload.decision === "reject" ? "rejected" : "returned",
       actedAt: now(),
       actedBy: "demo.user@example.com",
       reason: payload.reason,
+      conditionNote: conditionNote || undefined,
+      conditionMet: conditionNote ? (payload.conditionMet ?? false) : null,
       updatedAt: now(),
     });
     return gate;
+  },
+
+  async getGateOverview(): Promise<GateOverviewResult> {
+    const items: GateOverviewResult["items"] = [];
+    for (const [ideaId, gates] of gateApprovals) {
+      for (const gate of gates) {
+        if (gate.status !== "requested") continue;
+        const idea = ideas.find((i) => String(i.id) === ideaId);
+        const requestedAt = gate.requestedAt ? new Date(gate.requestedAt) : null;
+        const dueAt = gate.requestedDueAt ? new Date(gate.requestedDueAt) : null;
+        const dwellDays = requestedAt
+          ? Math.max(0, Math.floor((Date.now() - requestedAt.getTime()) / 864e5))
+          : 0;
+        const overdue = dueAt ? dueAt.getTime() < Date.now() : false;
+        items.push({
+          ideaId,
+          ideaTitle: idea?.title ?? "",
+          gateNo: gate.gateNo,
+          requiredAuthority: gate.requiredAuthority,
+          approverEmail: gate.approverEmail,
+          delegateTo: gate.delegateTo,
+          requestedBy: gate.requestedBy,
+          requestedAt: gate.requestedAt,
+          requestedDueAt: gate.requestedDueAt,
+          lastRemindedAt: gate.lastRemindedAt,
+          reminderCount: gate.reminderCount ?? 0,
+          escalatedAt: gate.escalatedAt,
+          conditionNote: gate.conditionNote,
+          conditionMet: gate.conditionMet ?? null,
+          dwellDays,
+          overdue,
+          dueSoon: !overdue && dueAt != null && dueAt.getTime() - Date.now() <= 2 * 864e5,
+        });
+      }
+    }
+    return {
+      items,
+      total: items.length,
+      overdueCount: items.filter((item) => item.overdue).length,
+      avgDwellDays: items.length
+        ? Math.round((items.reduce((sum, item) => sum + item.dwellDays, 0) / items.length) * 10) / 10
+        : 0,
+    };
+  },
+
+  async runGateReminders(): Promise<GateReminderRunResult> {
+    const overview = await mockApi.getGateOverview();
+    let reminded = 0;
+    let escalated = 0;
+    for (const item of overview.items) {
+      if (item.overdue || (!item.requestedDueAt && item.dwellDays >= 7)) escalated += 1;
+      else if (item.dueSoon) reminded += 1;
+    }
+    return { reminded, escalated, skipped: 0 };
   },
 
   async inspectInput(input: IssueInput): Promise<PrivacyFinding[]> {

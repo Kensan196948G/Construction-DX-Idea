@@ -20,6 +20,8 @@ import type {
   AuditLogEntry,
   Authority,
   GateNo,
+  GateOverviewResult,
+  GateReminderRunResult,
   Idea,
   IdeaKpi,
   IdeaStage,
@@ -69,6 +71,8 @@ type StandaloneComponent = {
     summary: PortfolioSummary;
     items: PortfolioSummaryRow[];
   }>;
+  __loadGateOverviewBridge?: () => Promise<GateOverviewResult>;
+  __runGateRemindersBridge?: () => Promise<GateReminderRunResult>;
   __recordKpiBridge?: (
     id: string,
     input: {
@@ -91,6 +95,8 @@ type StandaloneComponent = {
   initGates?: () => Promise<void>;
   requestGateApproval?: () => Promise<void>;
   decideGateApproval?: (decision: string) => () => Promise<void>;
+  loadGateOverview?: () => Promise<void>;
+  runGateReminders?: () => Promise<void>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
   loadSimilarIdeas?: () => Promise<void>;
@@ -211,6 +217,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__saveKpiBaselineBridge = (id, baseline) => api.updateKpiBaseline(id, baseline);
   // ポートフォリオ（docs/29 §2.5）: 専用画面の集計データ（管理者限定API）。
   component.__loadPortfolioBridge = () => api.getPortfolio();
+  // Gate滞留分析・リマインダー（docs/29 §2.7・migration 014・システム管理者限定API）。
+  component.__loadGateOverviewBridge = () => api.getGateOverview();
+  component.__runGateRemindersBridge = () => api.runGateReminders();
   component.submitComment = () => {
     void submitCommentThroughApi(component);
   };
@@ -231,6 +240,8 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.requestGateApproval = () => requestGateApprovalThroughApi(component);
   component.decideGateApproval = (decision: string) => () =>
     decideGateApprovalThroughApi(component, decision);
+  component.loadGateOverview = () => loadGateOverviewThroughBridge(component);
+  component.runGateReminders = () => runGateRemindersThroughBridge(component);
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
   component.loadSimilarIdeas = () => loadSimilarIdeas(component);
@@ -268,6 +279,10 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       showToast(component, "ポートフォリオには管理者権限が必要です。");
       return;
     }
+    if (view === "gateDashboard" && !hasRole(component, "system_admin")) {
+      showToast(component, "Gate滞留分析にはシステム管理者権限が必要です。");
+      return;
+    }
     component.setState({ view });
     if (view === "detail") {
       void loadCommentsForSelected(component);
@@ -277,6 +292,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     }
     if (view === "portfolio") {
       void loadPortfolioThroughBridge(component);
+    }
+    if (view === "gateDashboard") {
+      void loadGateOverviewThroughBridge(component);
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
@@ -1031,23 +1049,30 @@ async function initGatesThroughApi(component: StandaloneComponent) {
 async function requestGateApprovalThroughApi(component: StandaloneComponent) {
   const idea = selectedIdeaForGate(component);
   if (!idea) return;
-  const { gateNo, authority, approverEmail, reason } = component.state.gateDraft;
+  const { gateNo, authority, approverEmail, reason, dueDate, delegateTo } =
+    component.state.gateDraft;
   const authorityValue = authority || "business";
   if (!approverEmail.trim()) {
     showToast(component, "承認者メールを入力してください。");
     return;
   }
+  // 期限（date入力・任意）。date入力はローカル時刻の当日終業時刻として解釈する
+  // （UTC深夜にしない。当日選択でも未来時刻になる）。未指定ならworker側の既定（5日後）。
+  const dueAt = dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : undefined;
+  const delegate = delegateTo.trim() || undefined;
   setGateBusy(component, true);
   try {
     await api.requestGateApproval(String(idea.id), Number(gateNo) as GateNo, {
       authority: authorityValue as Authority,
       approverEmail: approverEmail.trim(),
       reason: reason.trim() || undefined,
+      dueAt,
+      delegateTo: delegate,
     });
     await loadGatesForSelected(component);
     setGateBusy(component, false);
     component.setState((state) => ({
-      gateDraft: { ...state.gateDraft, approverEmail: "", reason: "" },
+      gateDraft: { ...state.gateDraft, approverEmail: "", reason: "", dueDate: "", delegateTo: "" },
       toast: { message: `Gate${gateNo}（${authorityValue}）の承認依頼を送信しました。` },
     }));
     component.pushAudit?.("Gate承認依頼", `「${idea.title}」Gate${gateNo}/${authorityValue}`);
@@ -1060,27 +1085,37 @@ async function requestGateApprovalThroughApi(component: StandaloneComponent) {
 async function decideGateApprovalThroughApi(component: StandaloneComponent, decision: string) {
   const idea = selectedIdeaForGate(component);
   if (!idea) return;
-  const { gateNo, authority, reason } = component.state.gateDraft;
+  const { gateNo, authority, reason, conditionNote } = component.state.gateDraft;
   const authorityValue = authority || "business";
   if (!reason.trim()) {
     showToast(component, "判定理由を入力してください。");
     return;
   }
   if (!["approve", "return", "reject"].includes(decision)) return;
+  // 条件付き承認（migration 014）: approve時に入力された条件をAPIへ渡す。
+  const condition = decision === "approve" ? conditionNote.trim() || undefined : undefined;
   setGateBusy(component, true);
   try {
     await api.decideGateApproval(String(idea.id), Number(gateNo) as GateNo, {
       authority: authorityValue as Authority,
       decision: decision as "approve" | "return" | "reject",
       reason: reason.trim(),
+      conditionNote: condition,
     });
     await loadGatesForSelected(component);
     setGateBusy(component, false);
     component.setState((state) => ({
-      gateDraft: { ...state.gateDraft, reason: "" },
-      toast: { message: `Gate${gateNo}（${authorityValue}）の判定を記録しました: ${decision}` },
+      gateDraft: { ...state.gateDraft, reason: "", conditionNote: "" },
+      toast: {
+        message: condition
+          ? `Gate${gateNo}（${authorityValue}）の判定を記録しました: ${decision}（条件付き）`
+          : `Gate${gateNo}（${authorityValue}）の判定を記録しました: ${decision}`,
+      },
     }));
-    component.pushAudit?.("Gate判定", `「${idea.title}」Gate${gateNo}/${authorityValue}: ${decision}`);
+    component.pushAudit?.(
+      "Gate判定",
+      `「${idea.title}」Gate${gateNo}/${authorityValue}: ${decision}${condition ? "（条件付き）" : ""}`,
+    );
   } catch (error) {
     setGateBusy(component, false);
     showToast(component, toErrorMessage(error));
@@ -1162,6 +1197,38 @@ async function loadPortfolioThroughBridge(component: StandaloneComponent) {
   } catch (error) {
     component.setState({ portfolioBusy: false });
     showToast(component, `ポートフォリオを取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// Gate滞留分析（docs/29 §2.7・migration 014）: 専用画面のデータ取得（システム管理者）。
+async function loadGateOverviewThroughBridge(component: StandaloneComponent) {
+  const bridge = component.__loadGateOverviewBridge;
+  if (!bridge) return;
+  component.setState({ gateOverviewBusy: true });
+  try {
+    const data = await bridge();
+    component.setState({ gateOverview: data, gateOverviewBusy: false });
+  } catch (error) {
+    component.setState({ gateOverviewBusy: false });
+    showToast(component, `Gate滞留分析を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// Gateリマインダー/エスカレーション実行（migration 014・システム管理者）。
+async function runGateRemindersThroughBridge(component: StandaloneComponent) {
+  const bridge = component.__runGateRemindersBridge;
+  if (!bridge) return;
+  component.setState({ gateOverviewBusy: true });
+  try {
+    const result = await bridge();
+    showToast(
+      component,
+      `リマインダー${result.reminded}件 / エスカレーション${result.escalated}件を送信しました（スキップ${result.skipped}件）。`,
+    );
+    await loadGateOverviewThroughBridge(component);
+  } catch (error) {
+    component.setState({ gateOverviewBusy: false });
+    showToast(component, `リマインダーを実行できませんでした: ${toErrorMessage(error)}`);
   }
 }
 

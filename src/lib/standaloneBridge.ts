@@ -85,6 +85,9 @@ export type StandaloneGateDraft = {
   authority: string;
   approverEmail: string;
   reason: string;
+  dueDate: string;
+  delegateTo: string;
+  conditionNote: string;
 };
 
 export type StandaloneState = {
@@ -168,6 +171,31 @@ export type StandaloneState = {
     }>;
   };
   portfolioBusy: boolean;
+  // Gate滞留分析（docs/29 §2.7・migration 014）: 専用画面のデータ（システム管理者）。
+  gateOverview: {
+    items: Array<{
+      ideaId: string;
+      ideaTitle: string;
+      caseId?: string;
+      gateNo: number;
+      requiredAuthority: string;
+      approverEmail?: string;
+      delegateTo?: string;
+      requestedBy?: string;
+      requestedAt?: string;
+      requestedDueAt?: string;
+      lastRemindedAt?: string;
+      reminderCount?: number;
+      escalatedAt?: string;
+      dwellDays: number;
+      overdue: boolean;
+      dueSoon?: boolean;
+    }>;
+    total: number;
+    overdueCount: number;
+    avgDwellDays: number;
+  } | null;
+  gateOverviewBusy: boolean;
   userForm: {
     email: string;
     name: string;
