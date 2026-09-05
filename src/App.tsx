@@ -16,7 +16,16 @@ import {
 } from "./lib/standaloneBridge";
 import type { StandaloneState } from "./lib/standaloneBridge";
 import type { AiEvalSummary } from "./lib/aiEval";
-import type { AuditLogEntry, Authority, GateNo, IdeaStage, IssueInput, StructuredIdea } from "./lib/shared";
+import type {
+  AuditLogEntry,
+  Authority,
+  GateNo,
+  Idea,
+  IdeaStage,
+  InformationClassification,
+  IssueInput,
+  StructuredIdea,
+} from "./lib/shared";
 import { authorities } from "./lib/shared";
 
 const designPath = "/design/construction-dx-idea.html";
@@ -42,6 +51,11 @@ type StandaloneComponent = {
   runConnectionTest?: () => void;
   resetApiKeyInput?: () => void;
   __aiEvalBridge?: (provider: "demo" | "current") => Promise<AiEvalSummary>;
+  __saveClassificationBridge?: (
+    id: string,
+    value: InformationClassification,
+    notes: string,
+  ) => Promise<Idea>;
   submitComment?: () => void;
   exportCsv?: () => void;
   exportExcel?: () => void;
@@ -162,6 +176,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   };
   // AI品質Eval（Issue #13）: システム管理者がAI設定画面から実行。
   component.__aiEvalBridge = (provider) => api.runAiEval(provider);
+  // 情報区分・公開制御（migration 012）: 詳細画面からの区分更新。
+  component.__saveClassificationBridge = (id, value, notes) =>
+    api.updateClassification(id, value, notes, "WebUIから変更");
   component.submitComment = () => {
     void submitCommentThroughApi(component);
   };

@@ -22,6 +22,7 @@ import type {
   IdeaHistory,
   IdeaStage,
   IdeaValuePhaseEntry,
+  InformationClassification,
   IssueInput,
   PrivacyFinding,
   RagSearchHit,
@@ -520,6 +521,22 @@ export const mockApi = {
       throw new Error("Idea not found");
     }
     found.stage = stage;
+    found.updatedAt = now();
+    return found;
+  },
+
+  async updateClassification(
+    id: string,
+    informationClassification: InformationClassification,
+    classificationNotes = "",
+    _reason?: string,
+  ): Promise<Idea> {
+    const found = ideas.find((idea) => idea.id === id);
+    if (!found) {
+      throw new Error("Idea not found");
+    }
+    found.informationClassification = informationClassification;
+    found.classificationNotes = classificationNotes;
     found.updatedAt = now();
     return found;
   },

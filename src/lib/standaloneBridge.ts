@@ -38,6 +38,8 @@ export type StandaloneIdea = {
   apiStage?: IdeaStage;
   approvalStatus?: string;
   approverEmail?: string;
+  informationClassification?: string;
+  classificationNotes?: string;
 };
 
 export type StandaloneReviewDraft = {
@@ -370,6 +372,8 @@ export function mapApiIdeaToStandalone(idea: Idea): StandaloneIdea {
     apiStage: idea.stage,
     approvalStatus: idea.approvalStatus ?? "none",
     approverEmail: idea.approverEmail ?? "",
+    informationClassification: idea.informationClassification ?? "internal",
+    classificationNotes: idea.classificationNotes ?? "",
   };
 }
 
