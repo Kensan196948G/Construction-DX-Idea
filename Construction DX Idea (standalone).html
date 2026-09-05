@@ -1407,6 +1407,14 @@ class Component extends DCLogic {
     return 'display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;color:' + fg + ';background:' + bg + ';';
   }
 
+  // ISO日時をローカルタイムゾーンの年月日へ整形する（UTC日付のずれ防止）。
+  localDateText(value) {
+    if (!value) return '—';
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   goTo = (view) => {
     this.setState({ view });
     // 実API接続時は App.tsx ブリッジが portfolioData / gateOverview をロードする。
@@ -1888,7 +1896,7 @@ class Component extends DCLogic {
                 ...g, status: 'requested', approverEmail: approverEmail.trim(),
                 requestedAt: new Date().toISOString(), requestedBy: 'local.dev@example.com',
                 reason: reason || '（理由未記載）',
-                requestedDueAt: dueDate ? new Date(dueDate).toISOString() : undefined,
+                requestedDueAt: dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : undefined,
                 delegateTo: delegateTo.trim() || undefined,
               }
             : g,
@@ -2683,7 +2691,7 @@ class Component extends DCLogic {
         if (a.requestedDueAt) {
           const due = new Date(a.requestedDueAt);
           const overdue = a.status === 'requested' && due.getTime() < Date.now();
-          parts.push({ text: `期限 ${due.toISOString().slice(0, 10)}${overdue ? '（超過）' : ''}`, overdue });
+          parts.push({ text: `期限 ${this.localDateText(due)}${overdue ? '（超過）' : ''}`, overdue });
         }
         if (a.delegateTo) parts.push({ text: `代理: ${a.delegateTo}`, overdue: false });
         if (a.conditionNote) parts.push({ text: `条件付き: ${a.conditionNote}${a.conditionMet === true ? '（充足済）' : ''}`, overdue: false });
@@ -2982,8 +2990,8 @@ class Component extends DCLogic {
         authorityLabel: item.requiredAuthority,
         approverEmail: item.approverEmail || '—',
         delegateTo: item.delegateTo || '',
-        requestedDate: item.requestedAt ? String(item.requestedAt).slice(0, 10) : '—',
-        dueDate: item.requestedDueAt ? String(item.requestedDueAt).slice(0, 10) : '未設定',
+        requestedDate: this.localDateText(item.requestedAt),
+        dueDate: item.requestedDueAt ? this.localDateText(item.requestedDueAt) : '未設定',
         dwellText: `${item.dwellDays}日`,
         reminderText: item.reminderCount ? `${item.reminderCount}回` : '—',
         escalated: !!item.escalatedAt,

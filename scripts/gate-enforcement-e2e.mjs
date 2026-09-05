@@ -51,6 +51,7 @@ try {
     cwd: root,
     env: { ...process.env, PORT: String(port), ALLOW_LOCAL_AUTH_BYPASS: "true" },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   let log = "";
   child.stdout.on("data", (d) => { log += d.toString(); });
@@ -65,7 +66,7 @@ try {
     } catch { /* retry */ }
     await new Promise((r) => setTimeout(r, 500));
   }
-  if (!ok) { console.error("server did not start:\n", log.slice(-1500)); process.exit(1); }
+  if (!ok) throw new Error(`server did not start:\n${log.slice(-1500)}`);
 
   const results = [];
   const dueIn3d = new Date(Date.now() + 3 * 864e5).toISOString();
@@ -86,7 +87,7 @@ try {
   };
   const created = await api(base, "POST", "/api/ideas", { structured });
   results.push(["idea register", created.status]);
-  if (created.status !== 201 && created.status !== 200) { console.error(JSON.stringify(created)); process.exit(1); }
+  if (created.status !== 201 && created.status !== 200) { throw new Error(`idea register failed: ${JSON.stringify(created)}`); }
   createdIdeaId = String(created.json.id);
 
   // 判定者（bypassユーザー local.dev）が提案者自身だと SoD 403 になるため、
@@ -121,7 +122,7 @@ try {
   // 5) 別案件でGate1のみ依頼（期限つき・後で滞留分析/エスカレーション対象にする。
   //    Gate2はGate1全Authority承認が前提のため、滞留検証はGate1のまま使う）
   const createdB = await api(base, "POST", "/api/ideas", { structured: { ...structured, title: `[E2E] Gate Enforcement Dwell ${Date.now()}` } });
-  if (createdB.status !== 201 && createdB.status !== 200) { console.error(JSON.stringify(createdB)); process.exit(1); }
+  if (createdB.status !== 201 && createdB.status !== 200) { throw new Error(`idea register (dwell) failed: ${JSON.stringify(createdB)}`); }
   dwellIdeaId = String(createdB.json.id);
   await sql`update ideas set created_by = 'demo.other@demo.example.com' where id = ${dwellIdeaId}`;
   await api(base, "POST", `/api/ideas/${dwellIdeaId}/gates/init`);
@@ -132,7 +133,7 @@ try {
     dueAt: dueIn10d,
   });
   results.push(["request滞留idea gate1", req2.status, req2.json?.status ?? ""]);
-  if (req.status !== 200 || req2.status !== 200) { console.error(JSON.stringify([req, req2])); process.exit(1); }
+  if (req.status !== 200 || req2.status !== 200) { throw new Error(`gate request failed: ${JSON.stringify([req, req2])}`); }
 
   // 6) 条件付き承認（代理承認者=bypassユーザーが判定）
   const cond = await api(base, "POST", `/api/ideas/${createdIdeaId}/gates/1/approval`, {
@@ -214,17 +215,19 @@ try {
 
   console.log(pass ? "E2E RESULT: PASS" : "E2E RESULT: FAIL");
   process.exitCode = pass ? 0 : 1;
-  // dev-server（npx tsx の孫プロセス）がstdoutを掴み続けるため、明示的に終了する。
-  process.exit(pass ? 0 : 1);
 } catch (e) {
   console.error("E2E error:", e.message);
   process.exitCode = 1;
 } finally {
+  // process.exit は finally のクリーンアップを飛ばすため、ここで必ず後始末してから終了する。
   const cleanupIds = [createdIdeaId, dwellIdeaId].filter(Boolean);
   for (const ideaId of cleanupIds) {
     try { await sql`delete from idea_gate_approvals where idea_id = ${ideaId}`; } catch { /* cleanup */ }
     try { await sql`delete from ideas where id = ${ideaId}`; } catch { /* cleanup */ }
   }
   await sql.end();
-  if (child && !child.killed) child.kill("SIGTERM");
+  if (child && child.pid) {
+    try { process.kill(-child.pid, "SIGTERM"); } catch { /* already dead */ }
+  }
+  process.exit(process.exitCode ?? 0);
 }

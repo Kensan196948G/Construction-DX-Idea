@@ -1056,8 +1056,9 @@ async function requestGateApprovalThroughApi(component: StandaloneComponent) {
     showToast(component, "承認者メールを入力してください。");
     return;
   }
-  // 期限（date入力・任意）。未指定ならworker側の既定（5日後）に任せる。
-  const dueAt = dueDate ? new Date(`${dueDate}T09:00:00`).toISOString() : undefined;
+  // 期限（date入力・任意）。date入力はローカル時刻の当日終業時刻として解釈する
+  // （UTC深夜にしない。当日選択でも未来時刻になる）。未指定ならworker側の既定（5日後）。
+  const dueAt = dueDate ? new Date(`${dueDate}T23:59:59`).toISOString() : undefined;
   const delegate = delegateTo.trim() || undefined;
   setGateBusy(component, true);
   try {

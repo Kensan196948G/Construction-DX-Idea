@@ -2175,12 +2175,11 @@ function formatGateReminderMessage(target: GateReminderTarget): string {
 }
 
 // Gateリマインダー/エスカレーション実行（migration 014）。
-// - リマインダー/エスカレーション済み行は last_reminded_at から約24時間は再送しない
-//   （hourly cronで毎時呼ばれても日1回に抑える。手動実行は force で即再送可）。
+// - 対象行の確保は UPDATE ... WHERE last_reminded_at が約24時間より前 の条件で原子的に行い、
+//   cronと手動実行が同時に走っても更新・通知は1回のみ（日1回に抑える）。
 // - エスカレーション時は escalated_at を初回のみ記録する。
 async function runGateReminders(
   env: Env,
-  options: { force?: boolean } = {},
 ): Promise<{ reminded: number; escalated: number; skipped: number }> {
   const db = getDb(env);
   const rows = await db`
@@ -2196,15 +2195,22 @@ async function runGateReminders(
   let escalated = 0;
   let skipped = 0;
   for (const target of targets) {
-    const row = rows.find(
-      (r) =>
-        String(r.idea_id) === target.ideaId &&
-        Number(r.gate_no) === target.gateNo &&
-        String(r.required_authority) === target.requiredAuthority,
-    );
-    if (!row) continue;
-    const lastReminded = row.last_reminded_at ? new Date(String(row.last_reminded_at)) : null;
-    if (!options.force && lastReminded && now.getTime() - lastReminded.getTime() < 20 * 3600e3) {
+    // 対象行を原子的に確保する（cronと手動実行の同時実行でも更新は1回のみ）。
+    // last_reminded_at が約24時間以内の行は UPDATE の WHERE で弾かれ、skipped になる。
+    const claimed = await db`
+      update idea_gate_approvals
+      set last_reminded_at = now(),
+          reminder_count = reminder_count + 1,
+          escalated_at = case when ${target.action === "escalate"} and escalated_at is null then now() else escalated_at end,
+          updated_at = now()
+      where idea_id = ${target.ideaId}
+        and gate_no = ${target.gateNo}
+        and required_authority = ${target.requiredAuthority}
+        and status = 'requested'
+        and (last_reminded_at is null or last_reminded_at < now() - interval '20 hours')
+      returning id
+    `;
+    if (!claimed[0]) {
       skipped += 1;
       continue;
     }
@@ -2216,16 +2222,6 @@ async function runGateReminders(
       formatGateReminderMessage(target),
       `gate.reminder:idea:${target.ideaId}:gate${target.gateNo}:${target.requiredAuthority}:${target.action}:${now.toISOString().slice(0, 10)}`,
     );
-    await db`
-      update idea_gate_approvals
-      set last_reminded_at = now(),
-          reminder_count = reminder_count + 1,
-          escalated_at = case when ${target.action === "escalate"} and escalated_at is null then now() else escalated_at end,
-          updated_at = now()
-      where idea_id = ${target.ideaId}
-        and gate_no = ${target.gateNo}
-        and required_authority = ${target.requiredAuthority}
-    `;
     await audit(env, "system:reminder", `gate.approval.${target.action}`, "idea", target.ideaId, {
       gateNo: target.gateNo,
       requiredAuthority: target.requiredAuthority,
