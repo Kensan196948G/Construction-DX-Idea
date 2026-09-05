@@ -26,6 +26,8 @@ import type {
   InformationClassification,
   IssueInput,
   KpiOutcome,
+  PortfolioSummary,
+  PortfolioSummaryRow,
   StructuredIdea,
 } from "./lib/shared";
 import { authorities } from "./lib/shared";
@@ -63,6 +65,10 @@ type StandaloneComponent = {
     kpiBaselineCost: number | null;
     records: IdeaKpi[];
   }>;
+  __loadPortfolioBridge?: () => Promise<{
+    summary: PortfolioSummary;
+    items: PortfolioSummaryRow[];
+  }>;
   __recordKpiBridge?: (
     id: string,
     input: {
@@ -72,6 +78,10 @@ type StandaloneComponent = {
       periodMonths: number;
     },
   ) => Promise<IdeaKpi>;
+  __saveKpiBaselineBridge?: (
+    id: string,
+    baseline: { kpiBaselineHours?: number | null; kpiBaselineCost?: number | null; reason?: string },
+  ) => Promise<Idea>;
   submitComment?: () => void;
   exportCsv?: () => void;
   exportExcel?: () => void;
@@ -198,6 +208,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   // KPI・ROI（migration 013）: 詳細画面の効果測定。
   component.__loadKpiBridge = (id) => api.getIdeaKpis(id);
   component.__recordKpiBridge = (id, input) => api.recordKpi(id, input);
+  component.__saveKpiBaselineBridge = (id, baseline) => api.updateKpiBaseline(id, baseline);
+  // ポートフォリオ（docs/29 §2.5）: 専用画面の集計データ（管理者限定API）。
+  component.__loadPortfolioBridge = () => api.getPortfolio();
   component.submitComment = () => {
     void submitCommentThroughApi(component);
   };
@@ -251,12 +264,19 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       showToast(component, "評価ボードには管理者権限が必要です。");
       return;
     }
+    if (view === "portfolio" && !hasRole(component, "admin")) {
+      showToast(component, "ポートフォリオには管理者権限が必要です。");
+      return;
+    }
     component.setState({ view });
     if (view === "detail") {
       void loadCommentsForSelected(component);
       void loadGatesForSelected(component);
       void loadIdeaPhase(component);
       void loadSimilarIdeas(component);
+    }
+    if (view === "portfolio") {
+      void loadPortfolioThroughBridge(component);
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
@@ -1129,6 +1149,19 @@ async function loadSimilarIdeas(component: StandaloneComponent) {
     // 類似検索は補助機能のため、失敗しても詳細表示を妨げない。
     component.setState({ similarBusy: false });
     showToast(component, `類似案件を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function loadPortfolioThroughBridge(component: StandaloneComponent) {
+  const bridge = component.__loadPortfolioBridge;
+  if (!bridge) return;
+  component.setState({ portfolioBusy: true });
+  try {
+    const data = await bridge();
+    component.setState({ portfolioData: data, portfolioBusy: false });
+  } catch (error) {
+    component.setState({ portfolioBusy: false });
+    showToast(component, `ポートフォリオを取得できませんでした: ${toErrorMessage(error)}`);
   }
 }
 

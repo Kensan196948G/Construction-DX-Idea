@@ -140,6 +140,34 @@ export type StandaloneState = {
     }>;
   } | null;
   similarBusy: boolean;
+  // ポートフォリオ（docs/29 §2.5）: 専用画面の集計データ（管理者）。
+  portfolioData: {
+    summary: {
+      totalIdeas: number;
+      activeIdeas: number;
+      productionIdeas: number;
+      rejectedIdeas: number;
+      productionRate: number;
+      kpiMeasuredCount: number;
+      totalBaselineHoursPerMonth: number;
+      totalBaselineCostPerMonth: number;
+      classificationCounts: Record<string, number>;
+      stageCounts: Record<string, number>;
+    } | null;
+    items: Array<{
+      ideaId: string;
+      caseId?: string;
+      title: string;
+      stage: string;
+      informationClassification?: string;
+      kpiBaselineHours?: number | null;
+      kpiBaselineCost?: number | null;
+      latestKpiOutcome?: string | null;
+      latestActualReductionPct?: number | null;
+      priorityScore: number;
+    }>;
+  };
+  portfolioBusy: boolean;
   userForm: {
     email: string;
     name: string;
