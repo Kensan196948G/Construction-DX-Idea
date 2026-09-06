@@ -67,6 +67,7 @@ import {
   evaluateGateSoD,
   canChangeClassification,
   isIdeaVisibleTo,
+  buildBlockerList,
   defaultPhaseChecklist,
   defaultPhaseForStage,
   ideaStages,
@@ -3150,6 +3151,42 @@ app.get("/api/admin/gates/overview", async (c) => {
       ? Math.round((items.reduce((sum, item) => sum + item.dwellDays, 0) / items.length) * 10) / 10
       : 0,
   });
+});
+
+// Blocker一覧（docs/29 §2.9残P2）: Gate承認待ち（期限超過/接近）と情報待ち
+// （openQuestions未解消が一定期間経過）を横断して1つのリストに集約する（管理者向け）。
+// Gate側の滞留判定は既存の GET /gates/overview と同じロジック（mapGateOverviewRow）を再利用し、
+// 二重実装を避ける。
+app.get("/api/admin/blockers", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const now = new Date();
+  const gateRows = await db`
+    select g.*, i.title as idea_title, i.case_id as case_id
+    from idea_gate_approvals g
+    join ideas i on i.id = g.idea_id
+    where g.status = 'requested'
+    order by g.requested_at asc
+    limit 200
+  `;
+  const gateItems = gateRows.map((row) => mapGateOverviewRow(row, now));
+  const openQuestionRows = await db`
+    select id, title, case_id, open_questions, created_at
+    from ideas
+    where jsonb_array_length(open_questions) > 0
+    order by created_at asc
+    limit 200
+  `;
+  const openQuestionIdeas = openQuestionRows.map((row) => ({
+    ideaId: String(row.id),
+    caseId: row.case_id ? String(row.case_id) : undefined,
+    title: String(row.title ?? ""),
+    openQuestionsCount: arrayFromJson(row.open_questions).length,
+    createdAt: toIsoString(row.created_at),
+  }));
+  const result = buildBlockerList(gateItems, openQuestionIdeas, now);
+  return c.json(result);
 });
 
 // Gateリマインダー/エスカレーションの即時実行（管理者向け）。

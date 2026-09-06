@@ -25,6 +25,7 @@ import type {
   GateListResult,
   GateNo,
   GateOverviewResult,
+  BlockerListResult,
   GateReminderRunResult,
   GitHubSyncResult,
   Idea,
@@ -175,6 +176,8 @@ export const api = useMock
       // Gateリマインダー/エスカレーション実行（管理者限定・日次cronと同一処理）。
       runGateReminders: () =>
         request<GateReminderRunResult>("/api/admin/gates/reminders/run", { method: "POST" }),
+      // Blocker一覧（docs/29 §2.9残・Gate承認待ち＋情報待ちの横断集約・管理者限定）。
+      getBlockers: () => request<BlockerListResult>("/api/admin/blockers"),
       // GitHub Engineering 連携（docs/29 §2.12・migration 015）。
       listIdeaRepos: (id: string) => request<IdeaRepoListResult>(`/api/ideas/${id}/repos`),
       linkIdeaRepo: (id: string, repoFullName: string) =>

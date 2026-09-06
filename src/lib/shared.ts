@@ -797,6 +797,90 @@ export type GateReminderRunResult = {
   skipped: number;
 };
 
+// Blocker一覧（GET /api/admin/blockers・docs/29 §2.9残P2）: Gate承認待ち（期限超過/接近）と
+// 情報待ち（openQuestions未解消が一定期間経過）を横断して1つのリストに集約する。
+export type BlockerItem = {
+  ideaId: string;
+  caseId?: string;
+  title: string;
+  kind: "gate_pending" | "open_question";
+  reason: string;
+  waitingDays: number;
+  severity: "critical" | "warning";
+};
+
+export type BlockerListResult = {
+  items: BlockerItem[];
+  total: number;
+  criticalCount: number;
+};
+
+export type OpenQuestionIdeaInput = {
+  ideaId: string;
+  caseId?: string;
+  title: string;
+  openQuestionsCount: number;
+  // updatedAtはideasテーブルのBEFORE UPDATEトリガーで任意の更新のたびに
+  // 現在時刻へ書き換わるため待機日数の起点には使えない。createdAt（登録日時）を
+  // 起点とし、「登録からX日経ってもopenQuestionsが残っている」を待機とみなす。
+  createdAt: string;
+};
+
+// Gate側は既存のGateOverviewItem（overdue/dueSoon判定込み）をそのまま入力として受け取る
+// （承認待ちの滞留判定ロジックを重複実装しない）。情報待ち側は openQuestions が1件以上残る
+// ideaのうち、待機日数が閾値（既定3日）以上のものだけをBlockerとして扱う。
+export function buildBlockerList(
+  gateItems: GateOverviewItem[],
+  openQuestionIdeas: OpenQuestionIdeaInput[],
+  now: Date,
+  openQuestionWaitingDaysThreshold = 3,
+): BlockerListResult {
+  const items: BlockerItem[] = [];
+
+  for (const g of gateItems) {
+    if (!g.overdue && !g.dueSoon) continue;
+    items.push({
+      ideaId: g.ideaId,
+      caseId: g.caseId,
+      title: g.ideaTitle,
+      kind: "gate_pending",
+      reason: g.overdue
+        ? `Gate${g.gateNo}（${g.requiredAuthority}）承認が期限超過です`
+        : `Gate${g.gateNo}（${g.requiredAuthority}）承認の期限が近づいています`,
+      waitingDays: g.dwellDays,
+      severity: g.overdue ? "critical" : "warning",
+    });
+  }
+
+  for (const oq of openQuestionIdeas) {
+    const waitingDays = Math.max(
+      0,
+      Math.floor((now.getTime() - new Date(oq.createdAt).getTime()) / 864e5),
+    );
+    if (waitingDays < openQuestionWaitingDaysThreshold) continue;
+    items.push({
+      ideaId: oq.ideaId,
+      caseId: oq.caseId,
+      title: oq.title,
+      kind: "open_question",
+      reason: `未解決の確認事項が${oq.openQuestionsCount}件残っています（${waitingDays}日経過）`,
+      waitingDays,
+      severity: waitingDays >= 7 ? "critical" : "warning",
+    });
+  }
+
+  items.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === "critical" ? -1 : 1;
+    return b.waitingDays - a.waitingDays;
+  });
+
+  return {
+    items,
+    total: items.length,
+    criticalCount: items.filter((i) => i.severity === "critical").length,
+  };
+}
+
 // Gate1件分の集約ビュー（WebUI/ダッシュボード表示用）。
 export type GateSummary = {
   gateNo: GateNo;
