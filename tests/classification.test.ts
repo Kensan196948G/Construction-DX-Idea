@@ -4,6 +4,7 @@ import {
   canChangeClassification,
   informationClassificationLabel,
   informationClassifications,
+  isIdeaVisibleTo,
 } from "../src/lib/shared";
 
 describe("情報区分・公開制御（migration 012・docs/29 §2.17）", () => {
@@ -63,5 +64,30 @@ describe("情報区分・公開制御（migration 012・docs/29 §2.17）", () =
       isOwner: false,
     });
     assert.deepEqual(result, { allowed: false, reason: "forbidden" });
+  });
+});
+
+describe("isIdeaVisibleTo（fail-closed可視性判定・PoC/UAT・KPIエンドポイントで共用）", () => {
+  it("admin can see every classification", () => {
+    for (const classification of informationClassifications) {
+      assert.equal(isIdeaVisibleTo({ classification, isAdmin: true, isOwner: false }), true, classification);
+    }
+  });
+
+  it("owner can see every classification of their own idea", () => {
+    for (const classification of informationClassifications) {
+      assert.equal(isIdeaVisibleTo({ classification, isAdmin: false, isOwner: true }), true, classification);
+    }
+  });
+
+  it("non-admin non-owner can see public and internal only", () => {
+    assert.equal(isIdeaVisibleTo({ classification: "public", isAdmin: false, isOwner: false }), true);
+    assert.equal(isIdeaVisibleTo({ classification: "internal", isAdmin: false, isOwner: false }), true);
+    assert.equal(isIdeaVisibleTo({ classification: undefined, isAdmin: false, isOwner: false }), true);
+  });
+
+  it("non-admin non-owner cannot see confidential or restricted (regression: restricted was previously not excluded)", () => {
+    assert.equal(isIdeaVisibleTo({ classification: "confidential", isAdmin: false, isOwner: false }), false);
+    assert.equal(isIdeaVisibleTo({ classification: "restricted", isAdmin: false, isOwner: false }), false);
   });
 });
