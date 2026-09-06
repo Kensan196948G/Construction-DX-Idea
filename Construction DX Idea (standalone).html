@@ -62,6 +62,13 @@ a:hover { text-decoration: underline; }
         <div style="font-size:11.5px;color:#8A97A8;">{{ topbarSub }}</div>
       </div>
       <div style="flex:1;"></div>
+      <sc-if value="{{ hasOfflineDrafts }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ syncOfflineDraftsNow }}" disabled="{{ offlineSyncBusy }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #B5701A;background:#FDEFE0;color:#B5701A;padding:6px 11px;border-radius:7px;font-size:12px;font-weight:600;">{{ offlineSyncLabel }}</button>
+      </sc-if>
+      <div style="{{ onlineIndicatorStyle }}">
+        <span style="{{ onlineIndicatorDotStyle }}"></span>
+        {{ onlineIndicatorLabel }}
+      </div>
       <div style="display:flex;align-items:center;gap:6px;background:#E4F3EC;color:#1F8255;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:600;">
         <span style="width:7px;height:7px;border-radius:50%;background:#2E9E6B;box-shadow:0 0 0 3px rgba(46,158,107,.18);"></span>
         MVP実装中
@@ -1906,6 +1913,11 @@ class Component extends DCLogic {
     // Blocker一覧（docs/29 §2.9残P2）: Gate承認待ち＋情報待ちの横断集約データ（システム管理者）。
     blockerData: null,
     blockerBusy: false,
+    // 通信/同期状態表示・手動再同期（docs/29 §2.18残・Issue #11）。
+    // 実API接続時は App.tsx が起動時にnavigator.onLine/オフライン下書き件数へ差し替える。
+    isOnline: true,
+    offlineDraftCount: 0,
+    offlineSyncBusy: false,
     // GitHub Engineering 連携（migration 015・docs/29 §2.12）: 詳細画面のカードデータ。
     repoData: { links: [], evidence: [], overview: null },
     repoBusy: false,
@@ -2011,6 +2023,13 @@ class Component extends DCLogic {
   };
   setFilterStageIssue = (stage) => this.setState({ filterStageIssue: stage });
   setFilterStageIdea = (stage) => this.setState({ filterStageIdea: stage });
+
+  // ---- 通信/同期状態表示・手動再同期（docs/29 §2.18残・Issue #11）----
+  // 実API接続時は App.tsx が起動時にこのメソッド自体を差し替える
+  // （navigator.onLine監視・localStorageのオフライン下書きキューはApp.tsx側の管轄）。
+  syncOfflineDraftsNow = async () => {
+    this.setState({ toast: { message: '同期するオフライン下書きはありません（モック表示。本番はAPI経由）。' } });
+  };
 
   // ---- 担当者引継ぎ（docs/29 §2.25残）----
   // 実API接続時は App.tsx ブリッジが __transferOwnerBridge を差し替える。
@@ -3999,6 +4018,19 @@ class Component extends DCLogic {
       auditLog: { title: '監査ログ', sub: 'AI利用・登録・設定変更の記録' },
     }[s.view] || { title: '', sub: '' };
 
+    // ---- 通信/同期状態表示・手動再同期 view-model（docs/29 §2.18残・Issue #11）----
+    const isOnline = s.isOnline !== false;
+    const offlineSyncBusy = !!s.offlineSyncBusy;
+    const hasOfflineDrafts = (s.offlineDraftCount || 0) > 0;
+    const onlineIndicatorLabel = isOnline ? 'オンライン' : `オフライン${hasOfflineDrafts ? `（保留${s.offlineDraftCount}件）` : ''}`;
+    const onlineIndicatorStyle = isOnline
+      ? 'display:flex;align-items:center;gap:6px;background:#E9F0FB;color:#2E5AAC;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:600;'
+      : 'display:flex;align-items:center;gap:6px;background:#FCE9E7;color:#C5392F;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:600;';
+    const onlineIndicatorDotStyle = isOnline
+      ? 'width:7px;height:7px;border-radius:50%;background:#2E5AAC;'
+      : 'width:7px;height:7px;border-radius:50%;background:#C5392F;';
+    const offlineSyncLabel = offlineSyncBusy ? '同期中…' : `🔄 今すぐ同期（${s.offlineDraftCount}件）`;
+
     const totalIdeas = s.ideas.length;
     const stageColumnsAll = this.buildStageColumns(s.ideas, stageMeta, stageOrder);
     const stageColumnsIssue = this.buildStageColumns(issues, stageMeta, stageOrder);
@@ -4883,6 +4915,9 @@ class Component extends DCLogic {
       },
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
+      // 通信/同期状態表示・手動再同期（docs/29 §2.18残・Issue #11）
+      hasOfflineDrafts, offlineSyncBusy, offlineSyncLabel, syncOfflineDraftsNow: this.syncOfflineDraftsNow,
+      onlineIndicatorLabel, onlineIndicatorStyle, onlineIndicatorDotStyle,
       toast: s.toast, dismissToast: this.dismissToast,
 
       kpiTotal: totalIdeas, kpiIssueCount: issues.length, kpiIdeaCount: ideasOnly.length, kpiInProgress, kpiProduction, kpiAiUsage: a.used,

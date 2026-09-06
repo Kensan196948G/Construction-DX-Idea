@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ApiClientError, api } from "./lib/api";
-import { drainQueue, enqueueDraft, normalizeQueue } from "./lib/offlineDrafts";
+import { drainQueue, enqueueDraft, normalizeQueue, type OfflineDraft } from "./lib/offlineDrafts";
 import {
   buildManualStructuredIdea,
   emptyIntakeForm,
@@ -131,6 +131,7 @@ type StandaloneComponent = {
   runGateReminders?: () => Promise<void>;
   loadBlockers?: () => Promise<void>;
   transferOwner?: () => Promise<void>;
+  syncOfflineDraftsNow?: () => Promise<void>;
   loadSavedFilters?: (listType: SavedFilterListType) => Promise<void>;
   saveCurrentFilter?: (listType: SavedFilterListType) => Promise<void>;
   removeSavedFilter?: (listType: SavedFilterListType, id: string) => Promise<void>;
@@ -213,6 +214,12 @@ export function App() {
     </main>
   );
 }
+
+// 通信/同期状態表示（docs/29 §2.18残）: iframe再読み込みをまたいで最新の
+// componentだけがwindowのonline/offlineイベントを受け取るよう、直前の
+// リスナーをここで保持し bindStandaloneWorkflowBridge から差し替える。
+let offlineOnlineHandler: (() => void) | null = null;
+let offlineOfflineHandler: (() => void) | null = null;
 
 function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   const component = getStandaloneComponent(frame);
@@ -415,6 +422,29 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       void loadSavedFiltersThroughBridge(component, "idea");
     }
   };
+
+  // 通信/同期状態表示・手動再同期（docs/29 §2.18残・Issue #11）。
+  component.syncOfflineDraftsNow = () => syncOfflineDrafts(component);
+  component.setState({
+    isOnline: typeof navigator === "undefined" || navigator.onLine,
+    offlineDraftCount: readOfflineDraftCount(),
+  });
+  if (typeof window !== "undefined") {
+    // iframeの再読み込みでbindStandaloneWorkflowBridgeが複数回呼ばれても、
+    // window（ホストページ）側のリスナーは常に最新のcomponentを指す1組だけに
+    // する（古いcomponentへの参照が残るメモリリーク・二重発火を防ぐ）。
+    if (offlineOnlineHandler) window.removeEventListener("online", offlineOnlineHandler);
+    if (offlineOfflineHandler) window.removeEventListener("offline", offlineOfflineHandler);
+    offlineOnlineHandler = () => {
+      component.setState({ isOnline: true });
+      void syncOfflineDrafts(component);
+    };
+    offlineOfflineHandler = () => {
+      component.setState({ isOnline: false });
+    };
+    window.addEventListener("online", offlineOnlineHandler);
+    window.addEventListener("offline", offlineOfflineHandler);
+  }
 
   component.setState((state) => ({ ...state }));
   void loadInitialData(component);
@@ -705,7 +735,7 @@ async function saveReviewDraftThroughApi(component: StandaloneComponent, stage: 
     component.pushAudit?.(stage === "draft" ? "下書き保存" : "新規登録", `「${savedIdea.title}」を保存`);
   } catch (error) {
     if (isNetworkLikeError(error)) {
-      queueOfflineDraft(structured, stage);
+      queueOfflineDraft(component, structured, stage);
       showToast(component, "サーバーに接続できないため、内容を端末のオフライン下書きへ保存しました。通信復旧後に自動同期します。");
       finishBridgeAction(component, actionKey);
       return;
@@ -1711,18 +1741,34 @@ function isNetworkLikeError(error: unknown): boolean {
   return true;
 }
 
-function queueOfflineDraft(structured: StructuredIdea, stage: IdeaStage) {
+function readOfflineDraftCount(): number {
+  try {
+    const raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
+    return raw ? normalizeQueue(JSON.parse(raw)).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function queueOfflineDraft(component: StandaloneComponent, structured: StructuredIdea, stage: IdeaStage) {
   try {
     const raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
     const queue = raw ? normalizeQueue(JSON.parse(raw)) : [];
     const next = enqueueDraft(queue, structured, stage);
     window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(next));
+    component.setState({ offlineDraftCount: next.length });
   } catch {
     // Storage unavailable — fall back to the regular error toast.
   }
 }
 
+// 起動時の自動同期・online復帰時の自動同期・手動「今すぐ同期」ボタンが
+// ほぼ同時に発火し得るため、同時に1本しか走らせない（多重drainによる
+// 二重送信自体はidempotencyKeyで防げるが、localStorageの読み書き競合を避ける）。
+let offlineSyncInFlight = false;
+
 async function syncOfflineDrafts(component: StandaloneComponent) {
+  if (offlineSyncInFlight) return;
   let raw: string | null = null;
   try {
     raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
@@ -1730,21 +1776,37 @@ async function syncOfflineDrafts(component: StandaloneComponent) {
     return;
   }
   if (!raw) return;
-  let queue = [];
+  let queue: OfflineDraft[] = [];
   try {
     queue = normalizeQueue(JSON.parse(raw));
   } catch {
     return;
   }
   if (queue.length === 0) return;
+  offlineSyncInFlight = true;
+  component.setState({ offlineSyncBusy: true });
+  const processedKeys = new Set(queue.map((draft) => draft.idempotencyKey));
   const { remaining, synced } = await drainQueue(queue, async (draft) => {
     await api.saveIdea(draft.structured, draft.stage, draft.idempotencyKey);
   });
+  // 同期処理中（await api.saveIdea の間）にqueueOfflineDraftで新規追加された
+  // 下書きは、この関数開始時点のqueueスナップショットに含まれていない。
+  // remainingだけをそのまま書き戻すとその新規分を消してしまうため、書き戻し
+  // 直前に最新のlocalStorageを再読込し、未処理分（processedKeysに無い項目）を
+  // マージしてから書き戻す。
+  let finalCount = remaining.length;
   try {
-    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(remaining));
+    const latestRaw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
+    const latestQueue = latestRaw ? normalizeQueue(JSON.parse(latestRaw)) : [];
+    const arrivedDuringSync = latestQueue.filter((draft) => !processedKeys.has(draft.idempotencyKey));
+    const merged = [...remaining, ...arrivedDuringSync];
+    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(merged));
+    finalCount = merged.length;
   } catch {
     // Keep the queue in memory for this session only.
   }
+  offlineSyncInFlight = false;
+  component.setState({ offlineSyncBusy: false, offlineDraftCount: finalCount });
   showToast(
     component,
     synced > 0
