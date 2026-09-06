@@ -942,8 +942,41 @@ export type AiUsageSummary = {
     result: string;
     usageCostEstimate: number;
     promptVersion: string;
+    department?: string;
     createdAt: string;
   }>;
+};
+
+// ---- AI Governance: Token Budget（案件別/部署別）（docs/29 §2.14残・migration 019）----
+// 既存の user/global に加え department を主体に持てるようにする。実際の予算判定は
+// worker の reserveAiUsage/getEffectiveUsageLimits（usage_limits・ai_usage_counters・
+// ai_monthly_usage_counters）で行う。ここは型定義のみ。
+
+export type UsageLimitSubjectType = "user" | "global" | "department";
+
+export type UsageLimitItem = {
+  subjectType: UsageLimitSubjectType;
+  subjectId: string;
+  dailyLimit: number;
+  monthlyBudget: number;
+  enabled: boolean;
+  updatedBy?: string;
+  updatedAt: string;
+};
+
+export type UsageLimitPatch = {
+  subjectType: UsageLimitSubjectType;
+  subjectId: string;
+  dailyLimit: number;
+  monthlyBudget: number;
+  enabled: boolean;
+};
+
+// 部署別AI利用実績（当月）の1行（docs/29 §2.14残・GET /api/admin/ai-usage/by-department）。
+export type AiDepartmentUsageRow = {
+  department: string;
+  totalCalls: number;
+  totalCostEstimate: number;
 };
 
 export type EvaluationItem = Idea & {

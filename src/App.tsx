@@ -17,6 +17,7 @@ import {
 import type { StandaloneState } from "./lib/standaloneBridge";
 import type { AiEvalSummary } from "./lib/aiEval";
 import type {
+  AiDepartmentUsageRow,
   AuditLogEntry,
   Authority,
   Gate3Brief,
@@ -39,6 +40,8 @@ import type {
   UatFeedbackEntry,
   UatFeedbackInput,
   UatFeedbackSummary,
+  UsageLimitItem,
+  UsageLimitPatch,
 } from "./lib/shared";
 import { authorities } from "./lib/shared";
 
@@ -125,6 +128,9 @@ type StandaloneComponent = {
   __supersedeKnowledgeBridge?: (id: string, supersededBy: string) => Promise<KnowledgeCandidate>;
   __archiveKnowledgeBridge?: (id: string) => Promise<KnowledgeCandidate>;
   __reuseKnowledgeBridge?: (id: string) => Promise<KnowledgeCandidate>;
+  __loadUsageLimitsBridge?: () => Promise<{ items: UsageLimitItem[] }>;
+  __saveUsageLimitBridge?: (patch: UsageLimitPatch) => Promise<UsageLimitItem>;
+  __loadAiUsageByDepartmentBridge?: () => Promise<{ items: AiDepartmentUsageRow[] }>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
   loadSimilarIdeas?: () => Promise<void>;
@@ -297,6 +303,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__supersedeKnowledgeBridge = (id, supersededBy) => api.supersedeKnowledge(id, supersededBy);
   component.__archiveKnowledgeBridge = (id) => api.archiveKnowledge(id);
   component.__reuseKnowledgeBridge = (id) => api.reuseKnowledge(id);
+  component.__loadUsageLimitsBridge = () => api.getUsageLimits();
+  component.__saveUsageLimitBridge = (patch) => api.updateUsageLimit(patch);
+  component.__loadAiUsageByDepartmentBridge = () => api.getAiUsageByDepartment();
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
   component.loadSimilarIdeas = () => loadSimilarIdeas(component);
@@ -516,7 +525,7 @@ async function submitIntakeThroughApi(component: StandaloneComponent) {
       return;
     }
 
-    const questions = await api.generateQuestions(input);
+    const questions = await api.generateQuestions(input, component.state.intakeForm.department);
     component.__bridgeQuestionIds = questions.map((question) => question.id);
     component.setState((state) => ({
       view: "wizard",
@@ -575,7 +584,11 @@ async function submitAnswerThroughApi(component: StandaloneComponent) {
   }));
 
   try {
-    const response = await api.structureIdea(input, answerRecord);
+    const response = await api.structureIdea(
+      input,
+      answerRecord,
+      (wizard.sourceIntake ?? component.state.intakeForm).department,
+    );
     const structured = response.structured;
     component.__bridgeStructuredDraft = structured;
     component.setState((state) => ({

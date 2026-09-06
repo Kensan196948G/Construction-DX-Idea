@@ -1,6 +1,7 @@
 import { inspectIssueInput } from "./privacy";
 import type { AiEvalSummary } from "./aiEval";
 import type {
+  AiDepartmentUsageRow,
   AppUser,
   AppUserInput,
   ApprovalDecision,
@@ -52,6 +53,8 @@ import type {
   UatFeedbackInput,
   UatFeedbackResult,
   UatFeedbackSummary,
+  UsageLimitItem,
+  UsageLimitPatch,
   UserProfile,
 } from "./shared";
 import {
@@ -79,6 +82,17 @@ const gateApprovals = new Map<string, IdeaGateApproval[]>();
 const repoLinks = new Map<string, IdeaRepoLink[]>();
 const githubEvidence = new Map<string, IdeaGitHubEvidence[]>();
 const knowledgeItems: KnowledgeCandidate[] = [];
+const usageLimitItems: UsageLimitItem[] = [
+  {
+    subjectType: "global",
+    subjectId: "*",
+    dailyLimit: 10,
+    monthlyBudget: 30000,
+    enabled: false,
+    updatedBy: "system",
+    updatedAt: new Date().toISOString(),
+  },
+];
 const phaseHistory = new Map<
   string,
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
@@ -1014,7 +1028,7 @@ export const mockApi = {
     return inspectIssueInput(input);
   },
 
-  async generateQuestions(input: IssueInput): Promise<AiQuestion[]> {
+  async generateQuestions(input: IssueInput, _department?: string): Promise<AiQuestion[]> {
     const base = [
       {
         id: "q-frequency",
@@ -1051,7 +1065,11 @@ export const mockApi = {
     ];
   },
 
-  async structureIdea(input: IssueInput, answers: Record<string, string>): Promise<AiStructureResponse> {
+  async structureIdea(
+    input: IssueInput,
+    answers: Record<string, string>,
+    _department?: string,
+  ): Promise<AiStructureResponse> {
     const frequency = answers["q-frequency"] ? `月${answers["q-frequency"]}回程度` : "頻度未確認";
     const time = answers["q-time"] ? `1回${answers["q-time"]}分程度` : "所要時間未確認";
 
@@ -1226,6 +1244,38 @@ export const mockApi = {
         },
       ],
     };
+  },
+
+  async getAiUsageByDepartment(): Promise<{ items: AiDepartmentUsageRow[] }> {
+    return {
+      items: [
+        { department: "土木工事部", totalCalls: 5, totalCostEstimate: 0.31 },
+        { department: "施工管理部", totalCalls: 2, totalCostEstimate: 0.11 },
+      ],
+    };
+  },
+
+  async getUsageLimits(): Promise<{ items: UsageLimitItem[] }> {
+    return { items: [...usageLimitItems] };
+  },
+
+  async updateUsageLimit(patch: UsageLimitPatch): Promise<UsageLimitItem> {
+    const subjectId = patch.subjectType === "global" ? "*" : patch.subjectId;
+    const existingIdx = usageLimitItems.findIndex(
+      (item) => item.subjectType === patch.subjectType && item.subjectId === subjectId,
+    );
+    const item: UsageLimitItem = {
+      subjectType: patch.subjectType,
+      subjectId,
+      dailyLimit: patch.dailyLimit,
+      monthlyBudget: patch.monthlyBudget,
+      enabled: patch.enabled,
+      updatedBy: "demo.admin@example.com",
+      updatedAt: now(),
+    };
+    if (existingIdx >= 0) usageLimitItems[existingIdx] = item;
+    else usageLimitItems.push(item);
+    return item;
   },
 
   async verifyAuditLogs(): Promise<AuditChainVerifyResult> {

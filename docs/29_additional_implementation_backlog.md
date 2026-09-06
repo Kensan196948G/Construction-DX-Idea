@@ -184,12 +184,19 @@
 - 【P1】Workflow 申請生成・結果取得・承認者同期・差戻し同期・Evidence保存
 - 【P2】同期失敗キュー・再送・差分監視
 
-### 2.14 AI Governance（元#347〜376）※一部実装済み（プロバイダ切替/モデル許可/利用制限/レート制限）
+### 2.14 AI Governance（元#347〜376）※一部実装済み（プロバイダ切替/モデル許可/利用制限/レート制限/部署別Token Budget）
 
 - 【P1】Provider/Model Registry・用途別モデル選択・Prompt Registry（version/承認）
-- 【P1】Token Budget（案件別/部署別）・コスト実績・Fallback・Circuit Breaker・障害時Human Mode
+- 【実装済】Token Budget 部署別（2026-09-06・migration 019）。既存のuser/global主体に加え
+  department主体を追加。`GET/PUT /api/admin/usage-limits`で部署別の日次上限/月次予算を設定し、
+  `/api/ai/questions`・`/api/ai/structure`が任意で受け取るdepartment（AIへは非送信・帰属記録のみ）
+  に応じて予算判定する。`GET /api/admin/ai-usage/by-department`で当月のコスト実績を部署別に
+  集計表示（WebUI「AI設定」画面にToken Budget管理・部署別AI利用実績カードを追加）。
+  ※案件別（idea単位）の予算はideaが確定する前にAI呼び出しが発生するため対象外・要再設計
+- 【P1】Token Budget: コスト実績のFallback・Circuit Breaker・障害時Human Mode
 - 【P1】AI Decision Log・Groundedness/Citation/スキーマ/Bias/Injection/PII Eval
-- 【P0】Regression Eval・Golden Dataset・モデル変更前後比較（Issue #13 と一体）
+- 【P0】Regression Eval・Golden Dataset・モデル変更前後比較（Issue #13 と一体。既にaiEval.tsで
+  Golden Dataset・回帰試験は実装済み。モデル変更「前後比較」の可視化UIは残存）
 
 ### 2.15 通知拡張（元#307〜325）※Slack 基本・週次は実装済み
 
