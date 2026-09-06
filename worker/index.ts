@@ -1307,7 +1307,10 @@ async function loadIdeaForPocAccess(
   const idea = mapIdeaRow(rows[0]);
   const isAdmin = (await resolveRoles(env, user)).includes("admin");
   const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
-  const isVisible = isAdmin || isOwner || (idea.informationClassification ?? "internal") !== "confidential";
+  // GET /api/ideas 一覧と同じ可視性条件（fail-closed）: 非admin・非本人は
+  // public/internal のみ。confidential・restricted はどちらも不可視とする。
+  const classification = idea.informationClassification ?? "internal";
+  const isVisible = isAdmin || isOwner || classification === "public" || classification === "internal";
   if (!isVisible) throw new ApiError("FORBIDDEN", "この案件のPoC/UAT情報は閲覧できません。", 403);
   return idea;
 }
@@ -5315,6 +5318,7 @@ export const workerSecurityTestHooks = {
   estimateAiCost,
   findSimilarIdeas,
   getDb,
+  loadIdeaForPocAccess,
   normalizeRagQuery,
   parseGateNo,
   formatCaseId,
