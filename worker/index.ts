@@ -14,6 +14,7 @@ import {
   aiProviderModels,
   aiProviders,
   type AiProvider,
+  type AiDepartmentUsageRow,
   type AppUser,
   type AppUserInput,
   type ApprovalDecision,
@@ -2673,15 +2674,18 @@ app.post(
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
     const { input } = c.req.valid("json");
-    const reservation = await reserveAiUsage(c.env, user, input);
+    // 部署帰属はクライアント指定を信用せず、常にapp_users.departmentから解決する
+    // （CodeRabbit指摘: 自己申告だと部署別予算の回避・他部署への付け替えが可能）。
+    const department = await resolveUserDepartment(c.env, user);
+    const reservation = await reserveAiUsage(c.env, user, input, department);
     try {
       const questions = await generateQuestions(c.env, input);
-      const cost = await auditAi(c.env, user, "questions", input, questions);
+      const cost = await auditAi(c.env, user, "questions", input, questions, department);
       await finalizeAiUsage(c.env, reservation, cost);
       return c.json(questions);
     } catch (error) {
       await releaseAiUsage(c.env, reservation);
-      await auditAiFailure(c.env, user, "questions", input, error);
+      await auditAiFailure(c.env, user, "questions", input, error, department);
       throw error;
     }
   },
@@ -2730,11 +2734,20 @@ async function buildAiStructureResponse(
 
 app.post(
   "/api/ai/structure",
-  zValidator("json", z.object({ input: issueInputSchema, answers: z.record(z.string(), z.string()) })),
+  zValidator(
+    "json",
+    z.object({
+      input: issueInputSchema,
+      answers: z.record(z.string(), z.string()),
+    }),
+  ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
     const { input, answers } = c.req.valid("json");
-    const reservation = await reserveAiUsage(c.env, user, input);
+    // 部署帰属はクライアント指定を信用せず、常にapp_users.departmentから解決する
+    // （CodeRabbit指摘: 自己申告だと部署別予算の回避・他部署への付け替えが可能）。
+    const department = await resolveUserDepartment(c.env, user);
+    const reservation = await reserveAiUsage(c.env, user, input, department);
     try {
       const structured = await structureIdea(c.env, input, answers);
       const findings = inspectStructuredIdea(structured);
@@ -2748,14 +2761,14 @@ app.post(
         });
         throw new ApiError("AI_PRIVACY_FINDING", "AI応答に機密情報候補が含まれています。", 422);
       }
-      const cost = await auditAi(c.env, user, "structure", input, structured);
+      const cost = await auditAi(c.env, user, "structure", input, structured, department);
       await finalizeAiUsage(c.env, reservation, cost);
       const db = getDb(c.env);
       const response = await buildAiStructureResponse(db, user, c.env, structured);
       return c.json(response);
     } catch (error) {
       await releaseAiUsage(c.env, reservation);
-      await auditAiFailure(c.env, user, "structure", input, error);
+      await auditAiFailure(c.env, user, "structure", input, error, department);
       throw error;
     }
   },
@@ -3451,7 +3464,7 @@ app.get("/api/admin/ai-usage", async (c) => {
   `;
   const recentRows = await db`
     select executed_by, process_type, model, input_chars, output_chars,
-           result, usage_cost_estimate, prompt_version, created_at
+           result, usage_cost_estimate, prompt_version, department, created_at
     from idea_ai_sessions
     order by created_at desc
     limit 50
@@ -3465,6 +3478,7 @@ app.get("/api/admin/ai-usage", async (c) => {
     result: String(row.result),
     usageCostEstimate: Number(row.usage_cost_estimate ?? 0),
     promptVersion: String(row.prompt_version),
+    department: row.department ? String(row.department) : undefined,
     createdAt: toIsoString(row.created_at),
   }));
   await audit(c.env, user, "ai_usage.read", "idea_ai_sessions", "monthly", {
@@ -3479,6 +3493,31 @@ app.get("/api/admin/ai-usage", async (c) => {
     },
     recent,
   });
+});
+
+// 部署別AI利用実績（当月・docs/29 §2.14残・migration 019）。
+// department は各AI呼び出し時にクライアントが任意で添えた帰属情報（AIへは非送信）。
+app.get("/api/admin/ai-usage/by-department", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select
+      department,
+      count(*)::int as total_calls,
+      coalesce(sum(usage_cost_estimate), 0)::float8 as total_cost_estimate
+    from idea_ai_sessions
+    where created_at >= date_trunc('month', now()) and department <> ''
+    group by department
+    order by total_cost_estimate desc
+  `;
+  const items: AiDepartmentUsageRow[] = rows.map((row) => ({
+    department: String(row.department),
+    totalCalls: Number(row.total_calls ?? 0),
+    totalCostEstimate: Number(row.total_cost_estimate ?? 0),
+  }));
+  await audit(c.env, user, "ai_usage.by_department.read", "idea_ai_sessions", "monthly", { count: items.length });
+  return c.json({ items });
 });
 
 app.get("/api/admin/usage-limits", async (c) => {
@@ -3508,7 +3547,7 @@ app.put(
   zValidator(
     "json",
     z.object({
-      subjectType: z.enum(["user", "global"]),
+      subjectType: z.enum(["user", "global", "department"]),
       subjectId: z.string().min(1).max(320),
       dailyLimit: z.number().int().min(0).max(10000),
       monthlyBudget: z.number().min(0).max(100000000),
@@ -3520,6 +3559,9 @@ app.put(
     await requireSystemAdmin(c.env, user);
     const db = getDb(c.env);
     const patch = c.req.valid("json");
+    if (patch.subjectType === "department" && !patch.subjectId.trim()) {
+      throw new ApiError("INVALID_INPUT", "部署別Token Budgetには部署名の指定が必要です。", 400);
+    }
     const subjectId =
       patch.subjectType === "global" ? "*" : patch.subjectId;
     const rows = await db`
@@ -4019,6 +4061,29 @@ async function resolveAuthority(env: Env, user: string): Promise<Authority | und
   }
 }
 
+// AI Governance: 部署別Token Budget（docs/29 §2.14残・migration 019）の部署帰属は、
+// クライアントが自己申告するdepartmentを信用せず、認証済みユーザーに対応する
+// app_users.departmentをサーバー側で解決する（CodeRabbit指摘: クライアント指定を
+// そのまま使うと、部署別予算の回避や他部署へのコスト付け替えが可能だった）。
+async function resolveUserDepartment(env: Env, user: string): Promise<string> {
+  if (!env.DATABASE_URL) return "";
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select department, status
+      from app_users
+      where lower(email) = ${user.toLowerCase()}
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row || String(row.status) !== "active") return "";
+    return row.department ? String(row.department) : "";
+  } catch (error) {
+    console.error("resolveUserDepartment failed", sanitizeLog(error));
+    return "";
+  }
+}
+
 function isValidIdempotencyKey(key: string): boolean {
   return IDEMPOTENCY_KEY_PATTERN.test(key);
 }
@@ -4102,22 +4167,22 @@ function assertWriteRateAllowed(c: AppContext) {
 }
 
 type UsageLimit = {
-  subjectType: "user" | "global";
+  subjectType: "user" | "global" | "department";
   subjectId: string;
   dailyLimit: number;
   monthlyBudget: number;
 };
 
 type AiReservation = {
-  dailyReservations: Array<{ subjectType: "user" | "global"; subjectId: string }>;
+  dailyReservations: Array<{ subjectType: "user" | "global" | "department"; subjectId: string }>;
   monthlyReservations: Array<{
-    subjectType: "user" | "global";
+    subjectType: "user" | "global" | "department";
     subjectId: string;
     estimatedCost: number;
   }>;
 };
 
-async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promise<AiReservation> {
+async function reserveAiUsage(env: Env, user: string, input: IssueInput, department?: string): Promise<AiReservation> {
   const aiSettings = await getAiSettings(env);
   if (aiSettings.provider === "demo") {
     if (env.ALLOW_LOCAL_AUTH_BYPASS !== "true") {
@@ -4147,7 +4212,7 @@ async function reserveAiUsage(env: Env, user: string, input: IssueInput): Promis
   }
 
   const db = getDb(env);
-  const limits = await getEffectiveUsageLimits(env, user, aiSettings.dailyLimit, aiSettings.monthlyBudget);
+  const limits = await getEffectiveUsageLimits(env, user, aiSettings.dailyLimit, aiSettings.monthlyBudget, department);
   const estimatedCost = estimateAiCost(env, text.length, 6400);
   const dailyReservations: AiReservation["dailyReservations"] = [];
   const monthlyReservations: AiReservation["monthlyReservations"] = [];
@@ -4252,6 +4317,7 @@ async function getEffectiveUsageLimits(
   user: string,
   fallbackDailyLimit: number,
   fallbackMonthlyBudget: number,
+  department?: string,
 ): Promise<UsageLimit[]> {
   const db = getDb(env);
   const rows = await db`
@@ -4261,10 +4327,12 @@ async function getEffectiveUsageLimits(
       and (
         (subject_type = 'user' and subject_id = ${user})
         or (subject_type = 'global' and subject_id = '*')
+        or (subject_type = 'department' and subject_id = ${department ?? ""} and ${!!department})
       )
   `;
   const globalLimit = rows.find((row) => row.subject_type === "global");
   const userLimit = rows.find((row) => row.subject_type === "user");
+  const departmentLimit = rows.find((row) => row.subject_type === "department");
   return [
     ...(globalLimit
       ? [
@@ -4291,6 +4359,18 @@ async function getEffectiveUsageLimits(
       dailyLimit: Number(userLimit?.daily_ai_limit ?? fallbackDailyLimit),
       monthlyBudget: Number(userLimit?.monthly_budget ?? 0),
     },
+    // 部署別Token Budget（docs/29 §2.14残・migration 019）: department指定かつ
+    // usage_limitsに有効な行がある場合のみ追加で予算判定する（既定は無制限）。
+    ...(department && departmentLimit
+      ? [
+          {
+            subjectType: "department" as const,
+            subjectId: department,
+            dailyLimit: Number(departmentLimit.daily_ai_limit),
+            monthlyBudget: Number(departmentLimit.monthly_budget ?? 0),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -4597,7 +4677,14 @@ function maskIssue(input: IssueInput): IssueInput {
   };
 }
 
-async function auditAi(env: Env, user: string, processType: string, input: unknown, output: unknown) {
+async function auditAi(
+  env: Env,
+  user: string,
+  processType: string,
+  input: unknown,
+  output: unknown,
+  department?: string,
+) {
   const model = (await getAiSettings(env)).model;
   const inputText = JSON.stringify(maskSensitiveText(JSON.stringify(input)));
   const outputText = JSON.stringify(maskSensitiveText(JSON.stringify(output)));
@@ -4608,11 +4695,12 @@ async function auditAi(env: Env, user: string, processType: string, input: unkno
   await db`
     insert into idea_ai_sessions (
       executed_by, process_type, model, input_chars, output_chars,
-      result, usage_cost_estimate, prompt_version, input_hash
+      result, usage_cost_estimate, prompt_version, input_hash, department
     )
     values (
       ${user}, ${processType}, ${model}, ${inputText.length},
-      ${outputText.length}, 'success', ${usageCostEstimate}, ${promptVersionFor(processType)}, ${inputHash}
+      ${outputText.length}, 'success', ${usageCostEstimate}, ${promptVersionFor(processType)}, ${inputHash},
+      ${department ?? ""}
     )
   `;
   return usageCostEstimate;
@@ -4624,6 +4712,7 @@ async function auditAiFailure(
   processType: string,
   input: unknown,
   error: unknown,
+  department?: string,
 ) {
   try {
     const model = (await getAiSettings(env)).model;
@@ -4634,11 +4723,12 @@ async function auditAiFailure(
     await db`
       insert into idea_ai_sessions (
         executed_by, process_type, model, input_chars, output_chars,
-        result, usage_cost_estimate, prompt_version, input_hash
+        result, usage_cost_estimate, prompt_version, input_hash, department
       )
       values (
         ${user}, ${processType}, ${model}, ${inputText.length},
-        0, ${error instanceof ApiError ? error.code : "failure"}, 0, ${promptVersionFor(processType)}, ${inputHash}
+        0, ${error instanceof ApiError ? error.code : "failure"}, 0, ${promptVersionFor(processType)}, ${inputHash},
+        ${department ?? ""}
       )
     `;
   } catch (auditError) {
@@ -5445,6 +5535,7 @@ export const workerSecurityTestHooks = {
   estimateAiCost,
   findSimilarIdeas,
   getDb,
+  getEffectiveUsageLimits,
   loadIdeaForPocAccess,
   normalizeRagQuery,
   parseGateNo,

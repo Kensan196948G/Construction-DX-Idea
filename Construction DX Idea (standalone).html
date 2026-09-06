@@ -1405,6 +1405,97 @@ a:hover { text-decoration: underline; }
           </table>
         </div>
       </div>
+
+      <div style="max-width:920px;margin-top:16px;display:flex;flex-direction:column;gap:16px;">
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:#1A2433;">🧭 Token Budget管理</div>
+            <div style="font-size:11.5px;color:#8A97A8;">全体・ユーザー別・部署別のAI利用上限を設定します（docs/29 §2.14）。</div>
+          </div>
+          <sc-if value="{{ hasUsageLimitRows }}" hint-placeholder-val="{{ false }}">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead>
+                <tr style="text-align:left;color:#8A97A8;font-size:11px;">
+                  <th style="padding:6px 8px;">対象</th><th style="padding:6px 8px;">識別子</th>
+                  <th style="padding:6px 8px;">日次上限</th><th style="padding:6px 8px;">月次予算</th>
+                  <th style="padding:6px 8px;">状態</th><th style="padding:6px 8px;">更新</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ usageLimitRows }}" as="lim" hint-placeholder-count="2">
+                  <tr style="border-top:1px solid #EEF1F5;">
+                    <td style="padding:7px 8px;color:#1A2433;">{{ lim.subjectTypeLabel }}</td>
+                    <td style="padding:7px 8px;color:#1A2433;font-family:'IBM Plex Mono',monospace;">{{ lim.subjectId }}</td>
+                    <td style="padding:7px 8px;color:#1A2433;">{{ lim.dailyLimit }}回/日</td>
+                    <td style="padding:7px 8px;color:#1A2433;">¥{{ lim.monthlyBudget }}/月</td>
+                    <td style="padding:7px 8px;"><span style="{{ lim.statusStyle }}">{{ lim.statusLabel }}</span></td>
+                    <td style="padding:7px 8px;color:#8A97A8;font-size:11px;">{{ lim.updatedBy }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+          <div style="height:1px;background:#EEF1F5;"></div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:end;">
+            <div style="display:flex;flex-direction:column;gap:5px;">
+              <label style="font-size:11.5px;font-weight:600;color:#5A6678;">対象種別</label>
+              <select value="{{ usageLimitDraft.subjectType }}" onChange="{{ onUsageLimitSubjectTypeChange }}" style="font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                <option value="department">部署別</option>
+                <option value="user">ユーザー別</option>
+                <option value="global">全体</option>
+              </select>
+            </div>
+            <sc-if value="{{ usageLimitSubjectIdVisible }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:5px;">
+                <label style="font-size:11.5px;font-weight:600;color:#5A6678;">部署名 / メールアドレス</label>
+                <input value="{{ usageLimitDraft.subjectId }}" onChange="{{ onUsageLimitSubjectIdChange }}" placeholder="例: 土木工事部" style="font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+              </div>
+            </sc-if>
+            <div style="display:flex;flex-direction:column;gap:5px;">
+              <label style="font-size:11.5px;font-weight:600;color:#5A6678;">日次上限(回)</label>
+              <input type="text" inputmode="numeric" pattern="[0-9]*" value="{{ usageLimitDraft.dailyLimit }}" onChange="{{ onUsageLimitDailyChange }}" style="font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:5px;">
+              <label style="font-size:11.5px;font-weight:600;color:#5A6678;">月次予算(円)</label>
+              <input type="text" inputmode="numeric" pattern="[0-9]*" value="{{ usageLimitDraft.monthlyBudget }}" onChange="{{ onUsageLimitMonthlyChange }}" style="font-size:12px;padding:7px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <select value="{{ usageLimitDraft.enabled }}" onChange="{{ onUsageLimitEnabledChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+              <option value="true">有効</option>
+              <option value="false">無効</option>
+            </select>
+            <button onClick="{{ saveUsageLimit }}" disabled="{{ usageLimitsBusy }}" style="cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:7px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ usageLimitSaveLabel }}</button>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px 20px;display:flex;flex-direction:column;gap:8px;">
+          <div>
+            <div style="font-size:14px;font-weight:600;color:#1A2433;">📊 部署別AI利用実績（当月）</div>
+            <div style="font-size:11.5px;color:#8A97A8;">AI呼び出し時に添えた部署情報を集計したコスト実績です。</div>
+          </div>
+          <sc-if value="{{ hasAiDeptUsageRows }}" hint-placeholder-val="{{ false }}">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead>
+                <tr style="text-align:left;color:#8A97A8;font-size:11px;">
+                  <th style="padding:6px 8px;">部署</th><th style="padding:6px 8px;">呼出回数</th><th style="padding:6px 8px;">概算コスト</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ aiDeptUsageRows }}" as="d" hint-placeholder-count="2">
+                  <tr style="border-top:1px solid #EEF1F5;">
+                    <td style="padding:7px 8px;color:#1A2433;">{{ d.department }}</td>
+                    <td style="padding:7px 8px;color:#1A2433;font-family:'IBM Plex Mono',monospace;">{{ d.totalCalls }}</td>
+                    <td style="padding:7px 8px;color:#1A2433;font-family:'IBM Plex Mono',monospace;">${{ d.totalCostEstimate }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+          <sc-if value="{{ hasNoAiDeptUsageRows }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:12px;color:#8A97A8;">今月はまだ部署別の利用実績がありません。</div>
+          </sc-if>
+        </div>
+      </div>
       </sc-if>
 
       <sc-if value="{{ isAudit }}" hint-placeholder-val="{{ false }}">
@@ -1646,6 +1737,12 @@ class Component extends DCLogic {
     uatFeedbackBusy: false,
     gate3Brief: null,
     gate3BriefBusy: false,
+    // AI Governance: Token Budget（部署別/ユーザー別/全体）・部署別AI利用実績
+    // （docs/29 §2.14残・migration 019）
+    usageLimitsData: null,
+    usageLimitsBusy: false,
+    usageLimitDraft: { subjectType: 'department', subjectId: '', dailyLimit: '10', monthlyBudget: '0', enabled: true },
+    aiDeptUsageData: null,
     // ポートフォリオ（migration 013・docs/29 §2.5）: 専用画面の集計データ
     portfolioData: { summary: null, items: [] },
     portfolioBusy: false,
@@ -1714,6 +1811,7 @@ class Component extends DCLogic {
     if (view === 'gateDashboard' && this.loadGateOverview) void this.loadGateOverview();
     if (view === 'knowledge' && this.loadKnowledge) void this.loadKnowledge();
     if (view === 'detail' && this.loadKpi) void this.loadKpi();
+    if (view === 'adminSettings') void this.loadUsageGovernance();
   };
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
@@ -2680,6 +2778,73 @@ class Component extends DCLogic {
       },
       toast: { message: `再利用として記録しました（モック表示・累計${nextCount}回）。` },
     }));
+  };
+
+  // AI Governance: Token Budget（部署別/ユーザー別/全体）・部署別AI利用実績
+  // （docs/29 §2.14残・migration 019）。実API接続時は App.tsx ブリッジが
+  // __loadUsageLimitsBridge / __saveUsageLimitBridge / __loadAiUsageByDepartmentBridge
+  // を差し替える。
+  loadUsageGovernance = async () => {
+    this.setState({ usageLimitsBusy: true });
+    if (this.__loadUsageLimitsBridge && this.__loadAiUsageByDepartmentBridge) {
+      try {
+        const [limits, deptUsage] = await Promise.all([
+          this.__loadUsageLimitsBridge(),
+          this.__loadAiUsageByDepartmentBridge(),
+        ]);
+        this.setState({ usageLimitsData: limits, aiDeptUsageData: deptUsage, usageLimitsBusy: false });
+      } catch (e) {
+        this.setState({ usageLimitsBusy: false, toast: { message: `Token Budgetの取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({
+      usageLimitsData: { items: [{ subjectType: 'global', subjectId: '*', dailyLimit: 10, monthlyBudget: 30000, enabled: false, updatedBy: 'system', updatedAt: new Date().toISOString() }] },
+      aiDeptUsageData: { items: [{ department: '土木工事部', totalCalls: 5, totalCostEstimate: 0.31 }] },
+      usageLimitsBusy: false,
+    });
+  };
+
+  onUsageLimitDraftField = (key) => (e) => {
+    const value = key === 'enabled' ? e.target.value === 'true' : e.target.value;
+    this.setState((s) => ({ usageLimitDraft: { ...s.usageLimitDraft, [key]: value } }));
+  };
+
+  saveUsageLimit = async () => {
+    const draft = this.state.usageLimitDraft;
+    if (draft.subjectType !== 'global' && !draft.subjectId.trim()) {
+      this.setState({ toast: { message: '対象（部署名またはメールアドレス）を入力してください。' } });
+      return;
+    }
+    const patch = {
+      subjectType: draft.subjectType,
+      subjectId: draft.subjectType === 'global' ? '*' : draft.subjectId.trim(),
+      dailyLimit: Number(draft.dailyLimit) || 0,
+      monthlyBudget: Number(draft.monthlyBudget) || 0,
+      enabled: !!draft.enabled,
+    };
+    this.setState({ usageLimitsBusy: true });
+    if (this.__saveUsageLimitBridge) {
+      try {
+        await this.__saveUsageLimitBridge(patch);
+        this.setState({ toast: { message: 'Token Budgetを保存しました。' } });
+        await this.loadUsageGovernance();
+      } catch (e) {
+        this.setState({ usageLimitsBusy: false, toast: { message: `保存に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => {
+      const items = [...((s.usageLimitsData && s.usageLimitsData.items) || [])];
+      const idx = items.findIndex((it) => it.subjectType === patch.subjectType && it.subjectId === patch.subjectId);
+      const item = { ...patch, updatedBy: 'demo.admin@example.com', updatedAt: new Date().toISOString() };
+      if (idx >= 0) items[idx] = item; else items.push(item);
+      return {
+        usageLimitsData: { items },
+        usageLimitsBusy: false,
+        toast: { message: 'Token Budgetを保存しました（モック表示。本番はAPI経由）。' },
+      };
+    });
   };
 
   requestApproval = () => {
@@ -4119,6 +4284,21 @@ class Component extends DCLogic {
     });
     const knCategoryOptions = Object.keys(knCategoryLabels).map((key) => ({ value: key, label: knCategoryLabels[key] }));
 
+    // ---- AI Governance: Token Budget・部署別AI利用実績 view-model（docs/29 §2.14残）----
+    const subjectTypeLabels = { global: '全体', user: 'ユーザー', department: '部署' };
+    const usageLimitRows = ((s.usageLimitsData && s.usageLimitsData.items) || []).map((item) => ({
+      ...item,
+      subjectTypeLabel: subjectTypeLabels[item.subjectType] || item.subjectType,
+      statusLabel: item.enabled ? '有効' : '無効',
+      statusStyle: item.enabled ? this.badgeStyle('#1F8255', '#E4F3EC') : this.badgeStyle('#8A97A8', '#F2F4F8'),
+    }));
+    const hasUsageLimitRows = usageLimitRows.length > 0;
+    const aiDeptUsageRows = (s.aiDeptUsageData && s.aiDeptUsageData.items) || [];
+    const hasAiDeptUsageRows = aiDeptUsageRows.length > 0;
+    const hasNoAiDeptUsageRows = !!s.aiDeptUsageData && !hasAiDeptUsageRows;
+    const usageLimitSaveLabel = s.usageLimitsBusy ? '保存中…' : '💾 Token Budgetを保存';
+    const usageLimitSubjectIdVisible = s.usageLimitDraft.subjectType !== 'global';
+
     return {
       view: s.view,
       isDashboard: s.view === 'dashboard', isIntake: s.view === 'intake', isWizard: s.view === 'wizard',
@@ -4150,6 +4330,18 @@ class Component extends DCLogic {
       extractKnowledge: this.extractKnowledge, reviewKnowledge: this.reviewKnowledge,
       promoteKnowledge: this.promoteKnowledge,
       reloadKnowledge: () => this.loadKnowledge(knStatusFilter),
+      // AI Governance: Token Budget・部署別AI利用実績（docs/29 §2.14残）
+      usageLimitRows, hasUsageLimitRows, usageLimitsBusy: !!s.usageLimitsBusy,
+      aiDeptUsageRows, hasAiDeptUsageRows, hasNoAiDeptUsageRows,
+      usageLimitDraft: s.usageLimitDraft,
+      usageLimitSubjectIdVisible,
+      onUsageLimitSubjectTypeChange: this.onUsageLimitDraftField('subjectType'),
+      onUsageLimitSubjectIdChange: this.onUsageLimitDraftField('subjectId'),
+      onUsageLimitDailyChange: this.onUsageLimitDraftField('dailyLimit'),
+      onUsageLimitMonthlyChange: this.onUsageLimitDraftField('monthlyBudget'),
+      onUsageLimitEnabledChange: this.onUsageLimitDraftField('enabled'),
+      saveUsageLimit: this.saveUsageLimit,
+      usageLimitSaveLabel,
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
       toast: s.toast, dismissToast: this.dismissToast,
