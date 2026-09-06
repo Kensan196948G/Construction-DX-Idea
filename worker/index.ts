@@ -2614,23 +2614,35 @@ app.put(
     const db = getDb(c.env);
     const id = c.req.param("id");
     const body = c.req.valid("json");
-    const rows = await db`select id, created_by from ideas where id = ${id} limit 1`;
+    const rows = await db`select id, created_by, stage, phase_no from ideas where id = ${id} limit 1`;
     if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
     const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
     const isOwner = String(rows[0].created_by).toLowerCase() === user.toLowerCase();
     if (!isAdmin && !isOwner) {
       throw new ApiError("FORBIDDEN", "フェーズチェックリストの更新は提出者本人または管理者のみ可能です。", 403);
     }
+    // クライアントが古いフェーズのテンプレートを保持したまま送信してくる可能性があるため、
+    // 項目名はサーバー側の現フェーズテンプレートから再構成し、doneフラグのみクライアント値を採用する。
+    const current = Number(rows[0].phase_no ?? defaultPhaseForStage(String(rows[0].stage) as IdeaStage) ?? 1);
+    const template = defaultPhaseChecklist(current);
+    if (body.checklist.length !== template.length) {
+      throw new ApiError(
+        "PHASE_CHECKLIST_STALE",
+        "フェーズが更新されているため画面を再読み込みしてください。",
+        409,
+      );
+    }
+    const finalChecklist = template.map((t, idx) => ({ item: t.item, done: !!body.checklist[idx]?.done }));
     await db`
       update ideas
-      set phase_checklist = ${JSON.stringify(body.checklist)}::jsonb, updated_at = now()
+      set phase_checklist = ${JSON.stringify(finalChecklist)}::jsonb, updated_at = now()
       where id = ${id}
     `;
     await audit(c.env, user, "idea.phase.checklist_updated", "idea", id, {
-      checklistCount: body.checklist.length,
-      doneCount: body.checklist.filter((item) => item.done).length,
+      checklistCount: finalChecklist.length,
+      doneCount: finalChecklist.filter((item) => item.done).length,
     });
-    return c.json({ checklist: body.checklist });
+    return c.json({ checklist: finalChecklist });
   },
 );
 

@@ -5,6 +5,7 @@ import type {
   Idea,
   IdeaStage,
   IssueInput,
+  PhaseChecklistItem,
   StructuredIdea,
 } from "./shared";
 
@@ -131,7 +132,7 @@ export type StandaloneState = {
     phaseNote?: string;
     // 次の必要Action提示・必須成果物チェックリスト（docs/29 §2.9残・migration 020）。
     nextActionHint?: string;
-    checklist?: Array<{ item: string; done: boolean }>;
+    checklist?: PhaseChecklistItem[];
     phases: Array<{ no: number; label: string; stage: string; state: "done" | "current" | "todo" }>;
   } | null;
   phaseBusy: boolean;

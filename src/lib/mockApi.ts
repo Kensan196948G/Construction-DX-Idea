@@ -549,7 +549,9 @@ export const mockApi = {
     idea.phaseNo = target;
     if (payload.note?.trim()) idea.phaseNote = payload.note.trim();
     phaseHistory.set(id, [...(phaseHistory.get(id) ?? []), entry]);
-    phaseChecklists.set(id, defaultPhaseChecklist(target));
+    if (target !== fromPhase) {
+      phaseChecklists.set(id, defaultPhaseChecklist(target));
+    }
     return {
       ideaId: id,
       phaseNo: target,
