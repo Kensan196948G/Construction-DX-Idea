@@ -18,6 +18,7 @@ import {
   type AppUserInput,
   type ApprovalDecision,
   type ApprovalRequest,
+  type Gate3Brief,
   type GateApprovalRequest,
   type GateDecisionInput,
   type AuditChainVerifyResult,
@@ -49,6 +50,7 @@ import {
   type UatFeedbackEntry,
   type UatFeedbackType,
   authorities,
+  buildGate3Brief,
   buildStructuredQueryText,
   classifyKnowledgeSource,
   computeStructureConfidence,
@@ -1489,6 +1491,28 @@ app.post("/api/ideas/:id/uat-feedback", zValidator("json", uatFeedbackInputSchem
     submittedAt: toIsoString(row.submitted_at),
   };
   return c.json(entry, 201);
+});
+
+// GET /api/ideas/:id/gate3-brief — PoC/UAT結果とGate3承認状況をGate3申請資料として
+// 自動整形する（docs/29 §2.19残）。実AI生成ではなく既存データの決定論的な組み立て。
+app.get("/api/ideas/:id/gate3-brief", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const idea = await loadIdeaForPocAccess(db, c.env, user, id);
+  const pocRows = await db`select * from idea_poc_plans where idea_id = ${id} limit 1`;
+  const pocPlan = pocRows[0] ? mapPocPlanRow(pocRows[0]) : defaultPocPlan(id);
+  const feedbackRows = await db`select rating, feedback_type from idea_uat_feedback where idea_id = ${id}`;
+  const feedbackSummary = summarizeUatFeedback(
+    feedbackRows.map((row) => ({
+      rating: Number(row.rating),
+      feedbackType: String(row.feedback_type) as UatFeedbackType,
+    })),
+  );
+  const { summary: gateSummaries } = await loadGateSummary(db, id);
+  const gate3 = gateSummaries.find((g) => g.gateNo === 3) ?? null;
+  const brief: Gate3Brief = buildGate3Brief({ idea, pocPlan, feedbackSummary, gate3 });
+  return c.json(brief);
 });
 
 app.get("/api/ideas/evaluation", async (c) => {

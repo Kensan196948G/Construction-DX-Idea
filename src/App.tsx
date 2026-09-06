@@ -19,6 +19,7 @@ import type { AiEvalSummary } from "./lib/aiEval";
 import type {
   AuditLogEntry,
   Authority,
+  Gate3Brief,
   GateNo,
   GateOverviewResult,
   GateReminderRunResult,
@@ -96,6 +97,7 @@ type StandaloneComponent = {
   __savePocPlanBridge?: (id: string, input: PocPlanInput) => Promise<PocPlan>;
   __saveUatChecklistBridge?: (id: string, input: UatChecklistInput) => Promise<PocPlan>;
   __submitUatFeedbackBridge?: (id: string, input: UatFeedbackInput) => Promise<UatFeedbackEntry>;
+  __getGate3BriefBridge?: (id: string) => Promise<Gate3Brief>;
   loadPocData?: () => Promise<void>;
   submitComment?: () => void;
   exportCsv?: () => void;
@@ -241,6 +243,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__savePocPlanBridge = (id, input) => api.updatePocPlan(id, input);
   component.__saveUatChecklistBridge = (id, input) => api.updateUatChecklist(id, input);
   component.__submitUatFeedbackBridge = (id, input) => api.submitUatFeedback(id, input);
+  component.__getGate3BriefBridge = (id) => api.getGate3Brief(id);
   // ポートフォリオ（docs/29 §2.5）: 専用画面の集計データ（管理者限定API）。
   component.__loadPortfolioBridge = () => api.getPortfolio();
   // Gate滞留分析・リマインダー（docs/29 §2.7・migration 014・システム管理者限定API）。
