@@ -1195,6 +1195,52 @@ a:hover { text-decoration: underline; }
           <button onClick="{{ loadGateOverview }}" disabled="{{ goLoading }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">{{ goReloadLabel }}</button>
           <button onClick="{{ runGateReminders }}" disabled="{{ goLoading }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">🔔 リマインダー/エスカレーション実行</button>
         </div>
+
+        <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden;">
+          <div style="padding:13px 18px;border-bottom:1px solid #EEF1F5;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="font-size:13.5px;font-weight:600;color:#1A2433;">⛔ Blocker一覧（承認待ち・情報待ちの横断集約）</div>
+            <div style="flex:1;"></div>
+            <button onClick="{{ loadBlockers }}" disabled="{{ blLoading }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:5px 11px;border-radius:7px;font-size:11.5px;font-weight:600;">{{ blReloadLabel }}</button>
+          </div>
+          <sc-if value="{{ blHasData }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:10px 18px;display:flex;gap:16px;flex-wrap:wrap;">
+              <sc-for list="{{ blSummaryCards }}" as="card" hint-placeholder-count="2">
+                <div style="font-size:11.5px;color:#8A97A8;">{{ card.label }}: <b style="font-size:14px;color:{{ card.accent }};">{{ card.value }}</b></div>
+              </sc-for>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:8px 14px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">案件</th>
+                  <th style="text-align:left;padding:8px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">種別</th>
+                  <th style="text-align:left;padding:8px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">理由</th>
+                  <th style="text-align:left;padding:8px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">経過</th>
+                  <th style="text-align:left;padding:8px 8px;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">緊急度</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ blRows }}" as="brow" hint-placeholder-count="3">
+                  <tr onClick="{{ brow.onClick }}" style="cursor:pointer;">
+                    <td style="padding:8px 14px;border-bottom:1px solid #EEF1F5;">
+                      <div style="font-weight:600;color:#1A2433;">{{ brow.title }}</div>
+                      <sc-if value="{{ brow.caseId }}" hint-placeholder-val="{{ false }}">
+                        <div style="font-size:10.5px;color:#B5701A;font-family:'IBM Plex Mono',monospace;">{{ brow.caseId }}</div>
+                      </sc-if>
+                    </td>
+                    <td style="padding:8px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ brow.kindLabel }}</td>
+                    <td style="padding:8px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ brow.reason }}</td>
+                    <td style="padding:8px 8px;border-bottom:1px solid #EEF1F5;color:#5A6678;">{{ brow.waitingText }}</td>
+                    <td style="padding:8px 8px;border-bottom:1px solid #EEF1F5;"><span style="{{ brow.severityStyle }}">{{ brow.severityLabel }}</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+          <sc-if value="{{ blLoading }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:20px;text-align:center;color:#8A97A8;font-size:12.5px;">Blocker一覧を読み込んでいます…</div>
+          </sc-if>
+        </div>
+
         <sc-if value="{{ goHasData }}" hint-placeholder-val="{{ false }}">
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">
             <sc-for list="{{ goSummaryCards }}" as="card" hint-placeholder-count="3">
@@ -1807,6 +1853,9 @@ class Component extends DCLogic {
     // Gate滞留分析（migration 014・docs/29 §2.7）: 専用画面のデータ（システム管理者）。
     gateOverview: null,
     gateOverviewBusy: false,
+    // Blocker一覧（docs/29 §2.9残P2）: Gate承認待ち＋情報待ちの横断集約データ（システム管理者）。
+    blockerData: null,
+    blockerBusy: false,
     // GitHub Engineering 連携（migration 015・docs/29 §2.12）: 詳細画面のカードデータ。
     repoData: { links: [], evidence: [], overview: null },
     repoBusy: false,
@@ -1867,6 +1916,7 @@ class Component extends DCLogic {
     // 実API接続時は App.tsx ブリッジが portfolioData / gateOverview / knowledgeData をロードする。
     if (view === 'portfolio' && this.loadPortfolio) void this.loadPortfolio();
     if (view === 'gateDashboard' && this.loadGateOverview) void this.loadGateOverview();
+    if (view === 'gateDashboard' && this.loadBlockers) void this.loadBlockers();
     if (view === 'knowledge' && this.loadKnowledge) void this.loadKnowledge();
     if (view === 'detail' && this.loadKpi) void this.loadKpi();
     if (view === 'adminSettings') void this.loadUsageGovernance();
@@ -2481,6 +2531,70 @@ class Component extends DCLogic {
       return;
     }
     this.setState({ toast: { message: 'リマインダーを送信しました（モック表示。本番はAPI経由）。' } });
+  };
+
+  // ---- Blocker一覧（docs/29 §2.9残P2）----
+  // 実API接続時は App.tsx ブリッジが loadBlockers を差し替える。
+  loadBlockers = async () => {
+    if (this.__loadBlockersBridge) {
+      this.setState({ blockerBusy: true });
+      try {
+        const data = await this.__loadBlockersBridge();
+        this.setState({ blockerData: data, blockerBusy: false });
+      } catch (e) {
+        this.setState({ blockerBusy: false, toast: { message: `Blocker一覧の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: Gate滞留分析（未取得なら先に読み込む）＋ ideas全体のopenQuestions未解消から集約。
+    if (!this.state.gateOverview) {
+      await this.loadGateOverview();
+    }
+    const go = this.state.gateOverview || { items: [] };
+    const now = Date.now();
+    const items = [];
+    for (const g of go.items) {
+      if (!g.overdue && !g.dueSoon) continue;
+      items.push({
+        ideaId: g.ideaId,
+        caseId: g.caseId || '',
+        title: g.ideaTitle,
+        kind: 'gate_pending',
+        reason: g.overdue
+          ? `Gate${g.gateNo}（${g.requiredAuthority}）承認が期限超過です`
+          : `Gate${g.gateNo}（${g.requiredAuthority}）承認の期限が近づいています`,
+        waitingDays: g.dwellDays,
+        severity: g.overdue ? 'critical' : 'warning',
+      });
+    }
+    for (const idea of (this.state.ideas || [])) {
+      const oq = idea.openQuestions || [];
+      if (oq.length === 0) continue;
+      const createdAt = idea.createdAt ? new Date(idea.createdAt).getTime() : now;
+      const waitingDays = Math.max(0, Math.floor((now - createdAt) / 864e5));
+      if (waitingDays < 3) continue;
+      items.push({
+        ideaId: String(idea.id),
+        caseId: idea.caseId || '',
+        title: idea.title,
+        kind: 'open_question',
+        reason: `未解決の確認事項が${oq.length}件残っています（${waitingDays}日経過）`,
+        waitingDays,
+        severity: waitingDays >= 7 ? 'critical' : 'warning',
+      });
+    }
+    items.sort((a, b) => {
+      if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+      return b.waitingDays - a.waitingDays;
+    });
+    this.setState({
+      blockerData: {
+        items,
+        total: items.length,
+        criticalCount: items.filter((i) => i.severity === 'critical').length,
+      },
+      blockerBusy: false,
+    });
   };
 
   // ---- GitHub Engineering 連携（docs/29 §2.12・migration 015）----
@@ -4350,6 +4464,32 @@ class Component extends DCLogic {
       };
     });
 
+    // ---- Blocker一覧 view-model（docs/29 §2.9残P2）----
+    const bl = s.blockerData || null;
+    const blItems = bl ? bl.items || [] : [];
+    const blLoading = !!s.blockerBusy;
+    const blReloadLabel = blLoading ? '読み込み中…' : '🔄 更新';
+    const blHasData = !!bl;
+    const blSummaryCards = bl
+      ? [
+          { label: 'Blocker合計', value: String(bl.total), accent: '#2E5AAC' },
+          { label: '緊急', value: String(bl.criticalCount), accent: bl.criticalCount > 0 ? '#C5392F' : '#1F8255' },
+        ]
+      : [];
+    const blRows = blItems.map((item) => ({
+      ideaId: item.ideaId,
+      caseId: item.caseId || '',
+      title: item.title,
+      kindLabel: item.kind === 'gate_pending' ? '🚪 承認待ち' : '❓ 情報待ち',
+      reason: item.reason,
+      waitingText: `${item.waitingDays}日`,
+      severityLabel: item.severity === 'critical' ? '緊急' : '注意',
+      severityStyle: item.severity === 'critical'
+        ? this.badgeStyle('#C5392F', '#FCE9E7')
+        : this.badgeStyle('#B5701A', '#FDEFE0'),
+      onClick: () => this.selectIdea(item.ideaId),
+    }));
+
     // ---- GitHub Engineering 連携 view-model（migration 015・docs/29 §2.12）----
     const repoData = selectedIdeaRaw ? s.repoData : { links: [], evidence: [], overview: null };
     const rdLinks = (repoData.links || []).map((link) => ({
@@ -4523,6 +4663,8 @@ class Component extends DCLogic {
       // Gate滞留分析
       goHasData, goLoading, goReloadLabel, goSummaryCards, goRows,
       loadGateOverview: this.loadGateOverview, runGateReminders: this.runGateReminders,
+      blHasData, blLoading, blReloadLabel, blSummaryCards, blRows,
+      loadBlockers: this.loadBlockers,
       // GitHub Engineering 連携（詳細カード）
       rdHasLinks, rdLinks, rdHasEvidence, rdEvidenceRows, rdOverviewRows, rdBusy,
       repoInput: s.repoInput, onRepoInputChange: this.onRepoInputChange,

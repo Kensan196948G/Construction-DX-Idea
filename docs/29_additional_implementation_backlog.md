@@ -149,7 +149,7 @@
 - 【P1】権限期限・一時権限・部署変更/人事異動時の権限見直し・Owner引継ぎ
 - 【P2】代理承認記録・Authority競合検知の拡充
 
-### 2.9 20フェーズの運用拡張（元#205〜224）※基本は実装済み、次の必要Action・チェックリストも実装済み（2026-09-06）
+### 2.9 20フェーズの運用拡張（元#205〜224）※実装済み（2026-09-06）
 
 - 【実装済】フェーズ別「次の必要Action」の自動提示（`phaseNextActionHints`。20フェーズ
   それぞれに固定テンプレートの次アクション文言を定義。既存の自由記述`phaseNote`とは
@@ -157,7 +157,13 @@
 - 【実装済】フェーズ別必須成果物・チェックリスト（`phaseDeliverableTemplates`+
   `ideas.phase_checklist`。フェーズ前進/後戻りのたびに新フェーズのテンプレートへ
   差し替え。`PUT /api/ideas/:id/phase/checklist`で完了状態を保存）
-- 【P2】Blocker（承認待ち/情報待ち）の明示と一覧化
+- 【実装済】Blocker（承認待ち/情報待ち）の明示と一覧化（2026-09-06。`GET /api/admin/blockers`。
+  Gate承認待ちは既存のGate滞留分析（`mapGateOverviewRow`のoverdue/dueSoon）をそのまま
+  再利用し二重実装を避ける。情報待ちは`openQuestions`が1件以上残るideaのうち、登録から
+  一定日数（既定3日・7日以上はcritical）経過したものを対象とする純関数`buildBlockerList`
+  で集約。待機日数の起点は`created_at`（`updated_at`は任意の更新で現在時刻へ書き換わる
+  BEFORE UPDATEトリガーがあり起点に使えないため）。「Gate滞留分析」画面内に⛔Blocker一覧
+  カードとして表示）
 
 ### 2.10 AI Agent 組織（元#225〜241）
 

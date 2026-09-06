@@ -24,6 +24,7 @@ import type {
   GateNo,
   GateOverviewResult,
   GateReminderRunResult,
+  BlockerListResult,
   HealthDashboard,
   Idea,
   IdeaKpi,
@@ -86,6 +87,7 @@ type StandaloneComponent = {
   }>;
   __loadGateOverviewBridge?: () => Promise<GateOverviewResult>;
   __runGateRemindersBridge?: () => Promise<GateReminderRunResult>;
+  __loadBlockersBridge?: () => Promise<BlockerListResult>;
   __recordKpiBridge?: (
     id: string,
     input: {
@@ -116,6 +118,7 @@ type StandaloneComponent = {
   decideGateApproval?: (decision: string) => () => Promise<void>;
   loadGateOverview?: () => Promise<void>;
   runGateReminders?: () => Promise<void>;
+  loadBlockers?: () => Promise<void>;
   loadReposForSelected?: () => Promise<void>;
   linkRepo?: () => Promise<void>;
   unlinkRepo?: (linkId: string) => Promise<void>;
@@ -264,6 +267,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   // Gate滞留分析・リマインダー（docs/29 §2.7・migration 014・システム管理者限定API）。
   component.__loadGateOverviewBridge = () => api.getGateOverview();
   component.__runGateRemindersBridge = () => api.runGateReminders();
+  component.__loadBlockersBridge = () => api.getBlockers();
   component.submitComment = () => {
     void submitCommentThroughApi(component);
   };
@@ -286,6 +290,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     decideGateApprovalThroughApi(component, decision);
   component.loadGateOverview = () => loadGateOverviewThroughBridge(component);
   component.runGateReminders = () => runGateRemindersThroughBridge(component);
+  component.loadBlockers = () => loadBlockersThroughBridge(component);
   // GitHub Engineering 連携（migration 015）とKnowledge Management（migration 016）。
   component.loadReposForSelected = () => loadReposThroughApi(component);
   component.linkRepo = () => linkRepoThroughApi(component);
@@ -370,6 +375,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     }
     if (view === "gateDashboard") {
       void loadGateOverviewThroughBridge(component);
+      void loadBlockersThroughBridge(component);
     }
     if (view === "knowledge") {
       void loadKnowledgeThroughApi(component);
@@ -1328,6 +1334,20 @@ async function runGateRemindersThroughBridge(component: StandaloneComponent) {
   } catch (error) {
     component.setState({ gateOverviewBusy: false });
     showToast(component, `リマインダーを実行できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// Blocker一覧（docs/29 §2.9残P2）: Gate承認待ち＋情報待ちの横断集約データ取得（システム管理者）。
+async function loadBlockersThroughBridge(component: StandaloneComponent) {
+  const bridge = component.__loadBlockersBridge;
+  if (!bridge) return;
+  component.setState({ blockerBusy: true });
+  try {
+    const data = await bridge();
+    component.setState({ blockerData: data, blockerBusy: false });
+  } catch (error) {
+    component.setState({ blockerBusy: false });
+    showToast(component, `Blocker一覧を取得できませんでした: ${toErrorMessage(error)}`);
   }
 }
 

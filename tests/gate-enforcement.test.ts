@@ -3,7 +3,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { workerSecurityTestHooks } from "../worker/index";
-import type { GateApprovalRequest, GateDecisionInput, IdeaGateApproval } from "../src/lib/shared";
+import { buildBlockerList } from "../src/lib/shared";
+import type {
+  GateApprovalRequest,
+  GateDecisionInput,
+  GateOverviewItem,
+  IdeaGateApproval,
+} from "../src/lib/shared";
 
 const { buildGateReminderTargets, formatGateReminderMessage } = workerSecurityTestHooks;
 
@@ -149,5 +155,115 @@ describe("Gate高度化の共有スキーマ（migration 014）", () => {
     ]) {
       assert.ok(sql.includes(column), `migration 014 must include ${column}`);
     }
+  });
+});
+
+describe("Blocker一覧: buildBlockerList（docs/29 §2.9残P2）", () => {
+  function gateOverviewItem(overrides: Partial<GateOverviewItem> = {}): GateOverviewItem {
+    return {
+      ideaId: "idea-1",
+      ideaTitle: "案件A",
+      gateNo: 2,
+      requiredAuthority: "business",
+      reminderCount: 0,
+      dwellDays: 3,
+      overdue: false,
+      dueSoon: false,
+      ...overrides,
+    };
+  }
+
+  it("Gate承認待ちのoverdue行をcriticalとして含める", () => {
+    const result = buildBlockerList([gateOverviewItem({ overdue: true, dwellDays: 6 })], [], now);
+    assert.equal(result.total, 1);
+    assert.equal(result.criticalCount, 1);
+    assert.equal(result.items[0].kind, "gate_pending");
+    assert.equal(result.items[0].severity, "critical");
+    assert.match(result.items[0].reason, /期限超過/);
+  });
+
+  it("Gate承認待ちのdueSoon行をwarningとして含める", () => {
+    const result = buildBlockerList([gateOverviewItem({ dueSoon: true })], [], now);
+    assert.equal(result.total, 1);
+    assert.equal(result.criticalCount, 0);
+    assert.equal(result.items[0].severity, "warning");
+    assert.match(result.items[0].reason, /期限が近づいて/);
+  });
+
+  it("overdueでもdueSoonでもないGate行は含めない", () => {
+    const result = buildBlockerList([gateOverviewItem()], [], now);
+    assert.equal(result.total, 0);
+  });
+
+  it("openQuestions未解消が閾値(3日)未満なら含めない", () => {
+    const result = buildBlockerList(
+      [],
+      [
+        {
+          ideaId: "idea-2",
+          title: "案件B",
+          openQuestionsCount: 2,
+          createdAt: new Date(now.getTime() - 2 * DAY_MS).toISOString(),
+        },
+      ],
+      now,
+    );
+    assert.equal(result.total, 0);
+  });
+
+  it("openQuestions未解消が閾値(3日)以上ならwarning、7日以上ならcritical", () => {
+    const warning = buildBlockerList(
+      [],
+      [
+        {
+          ideaId: "idea-3",
+          title: "案件C",
+          openQuestionsCount: 1,
+          createdAt: new Date(now.getTime() - 3 * DAY_MS).toISOString(),
+        },
+      ],
+      now,
+    );
+    assert.equal(warning.items[0].severity, "warning");
+
+    const critical = buildBlockerList(
+      [],
+      [
+        {
+          ideaId: "idea-4",
+          title: "案件D",
+          openQuestionsCount: 1,
+          createdAt: new Date(now.getTime() - 8 * DAY_MS).toISOString(),
+        },
+      ],
+      now,
+    );
+    assert.equal(critical.items[0].severity, "critical");
+    assert.equal(critical.items[0].kind, "open_question");
+  });
+
+  it("critical行を先頭にし、同severity内はwaitingDays降順で並べる", () => {
+    const result = buildBlockerList(
+      [gateOverviewItem({ ideaId: "idea-5", dueSoon: true, dwellDays: 1 })],
+      [
+        {
+          ideaId: "idea-6",
+          title: "案件F",
+          openQuestionsCount: 1,
+          createdAt: new Date(now.getTime() - 10 * DAY_MS).toISOString(),
+        },
+        {
+          ideaId: "idea-7",
+          title: "案件G",
+          openQuestionsCount: 1,
+          createdAt: new Date(now.getTime() - 4 * DAY_MS).toISOString(),
+        },
+      ],
+      now,
+    );
+    assert.equal(result.total, 3);
+    assert.equal(result.items[0].ideaId, "idea-6");
+    assert.equal(result.items[0].severity, "critical");
+    assert.equal(result.items[2].severity, "warning");
   });
 });

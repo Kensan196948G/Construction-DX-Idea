@@ -24,6 +24,7 @@ import type {
   GateNo,
   GateOverviewResult,
   GateReminderRunResult,
+  BlockerListResult,
   GitHubSyncResult,
   Idea,
   IdeaComment,
@@ -60,6 +61,7 @@ import type {
   UserProfile,
 } from "./shared";
 import {
+  buildBlockerList,
   buildGate3Brief,
   buildStructuredQueryText,
   classifyKnowledgeSource,
@@ -768,6 +770,20 @@ export const mockApi = {
       else if (item.dueSoon) reminded += 1;
     }
     return { reminded, escalated, skipped: 0 };
+  },
+
+  async getBlockers(): Promise<BlockerListResult> {
+    const overview = await mockApi.getGateOverview();
+    const openQuestionIdeas = ideas
+      .filter((idea) => idea.openQuestions.length > 0)
+      .map((idea) => ({
+        ideaId: String(idea.id),
+        caseId: idea.caseId,
+        title: idea.title,
+        openQuestionsCount: idea.openQuestions.length,
+        createdAt: idea.createdAt,
+      }));
+    return buildBlockerList(overview.items, openQuestionIdeas, new Date());
   },
 
   // ---- GitHub Engineering 連携（migration 015）モック ----

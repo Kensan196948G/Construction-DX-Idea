@@ -2,6 +2,7 @@ import type {
   AiQuestion,
   AiSettings,
   AiStructureMeta,
+  BlockerListResult,
   Idea,
   IdeaStage,
   IssueInput,
@@ -203,6 +204,9 @@ export type StandaloneState = {
     avgDwellDays: number;
   } | null;
   gateOverviewBusy: boolean;
+  // Blocker一覧（docs/29 §2.9残P2）: Gate承認待ち＋情報待ちの横断集約データ（システム管理者）。
+  blockerData: BlockerListResult | null;
+  blockerBusy: boolean;
   // GitHub Engineering 連携（docs/29 §2.12・migration 015）: 詳細画面のカードデータ。
   repoData: {
     links: Array<{
