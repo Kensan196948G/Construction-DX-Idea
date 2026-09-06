@@ -1221,7 +1221,13 @@ export const knowledgeCategoryLabels: Record<KnowledgeCategory, string> = {
   faq: "FAQ",
 };
 
-export type KnowledgeStatus = "candidate" | "approved" | "rejected" | "promoted";
+export type KnowledgeStatus =
+  | "candidate"
+  | "approved"
+  | "rejected"
+  | "promoted"
+  | "superseded"
+  | "archived";
 
 // Knowledge 候補1件（Review Queueの行）。
 export type KnowledgeCandidate = {
@@ -1237,9 +1243,26 @@ export type KnowledgeCandidate = {
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   promotionUrl?: string | null;
+  // Knowledge Owner・有効期限・重複統合・再利用回数（docs/29 §2.16残・migration 018）。
+  owner?: string | null;
+  expiresAt?: string | null;
+  supersededBy?: string | null;
+  reuseCount: number;
   createdAt: string;
   updatedAt: string;
 };
+
+// Knowledge候補の品質スコア自動評価（docs/29 §2.16残）。実AI評価ではなく、
+// 本文の充実度（長さ）とカテゴリの構造的価値から決定論的に1〜5を導く。
+// 手動レビューで上書きされるまでの初期値・抽出時の目安として使う。
+export function computeKnowledgeQualityScore(body: string, category: KnowledgeCategory): number {
+  const length = (body ?? "").trim().length;
+  let score = length >= 800 ? 5 : length >= 400 ? 4 : length >= 150 ? 3 : length >= 50 ? 2 : 1;
+  if (category === "adr" || category === "runbook" || category === "best_practice") {
+    score = Math.min(5, score + 1);
+  }
+  return score;
+}
 
 // Knowledge候補の抽出ルール（決定論的・workerとテストで共有）。
 // gate判定理由/コメント/効果測定レビューのテキストからカテゴリとタイトル候補を導く。

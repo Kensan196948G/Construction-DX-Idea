@@ -53,6 +53,7 @@ import {
   buildGate3Brief,
   buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeKnowledgeQualityScore,
   computeStructureConfidence,
   gateLabels,
   gateNumbers,
@@ -885,6 +886,10 @@ function mapKnowledgeRow(row: Record<string, unknown>): KnowledgeCandidate {
     reviewedBy: row.reviewed_by ? String(row.reviewed_by) : null,
     reviewedAt: row.reviewed_at ? toIsoString(row.reviewed_at) : null,
     promotionUrl: row.promotion_url ? String(row.promotion_url) : null,
+    owner: row.owner ? String(row.owner) : null,
+    expiresAt: row.expires_at ? toIsoString(row.expires_at) : null,
+    supersededBy: row.superseded_by ? String(row.superseded_by) : null,
+    reuseCount: Number(row.reuse_count ?? 0),
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
   };
@@ -915,7 +920,7 @@ app.post("/api/knowledge/extract", async (c) => {
     const title = `${String(row.idea_title)} — Gate${Number(row.gate_no)}判定（${String(row.required_authority)}）`.slice(0, 120);
     const rows = await db`
       insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
-      values ('gate_decision', ${String(row.idea_id)}, 'decision', ${title}, ${String(row.reason)}, 4, 'system:extract')
+      values ('gate_decision', ${String(row.idea_id)}, 'decision', ${title}, ${String(row.reason)}, ${computeKnowledgeQualityScore(String(row.reason), "decision")}, 'system:extract')
       on conflict (source_type, source_idea_id, title) do nothing
       returning id
     `;
@@ -938,7 +943,7 @@ app.post("/api/knowledge/extract", async (c) => {
     const title = `${String(row.idea_title)} — コメント: ${String(row.body).slice(0, 60)}`.slice(0, 120);
     const rows = await db`
       insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
-      values ('idea_comment', ${String(row.idea_id)}, ${classified.category}, ${title}, ${String(row.body)}, 3, 'system:extract')
+      values ('idea_comment', ${String(row.idea_id)}, ${classified.category}, ${title}, ${String(row.body)}, ${computeKnowledgeQualityScore(String(row.body), classified.category)}, 'system:extract')
       on conflict (source_type, source_idea_id, title) do nothing
       returning id
     `;
@@ -961,7 +966,7 @@ app.post("/api/knowledge/extract", async (c) => {
     const title = `${String(row.idea_title)} — 効果測定レビュー`.slice(0, 120);
     const rows = await db`
       insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
-      values ('kpi_review', ${String(row.idea_id)}, ${classified.category}, ${title}, ${String(row.review_note)}, 3, 'system:extract')
+      values ('kpi_review', ${String(row.idea_id)}, ${classified.category}, ${title}, ${String(row.review_note)}, ${computeKnowledgeQualityScore(String(row.review_note), classified.category)}, 'system:extract')
       on conflict (source_type, source_idea_id, title) do nothing
       returning id
     `;
@@ -1006,9 +1011,10 @@ app.post(
     const user = await getUser(c.req.raw, c.env);
     const db = getDb(c.env);
     const input = c.req.valid("json");
+    const body = (input.body ?? "").trim();
     const rows = await db`
       insert into knowledge_candidates (source_type, source_idea_id, category, title, body, quality_score, submitted_by)
-      values ('manual', ${input.sourceIdeaId ?? null}, ${input.category}, ${input.title.trim()}, ${(input.body ?? "").trim()}, 3, ${user})
+      values ('manual', ${input.sourceIdeaId ?? null}, ${input.category}, ${input.title.trim()}, ${body}, ${computeKnowledgeQualityScore(body, input.category)}, ${user})
       returning *
     `;
     await audit(c.env, user, "knowledge.submitted", "knowledge", String(rows[0].id), {
@@ -1081,6 +1087,103 @@ app.post(
     return c.json(mapKnowledgeRow(rows[0]));
   },
 );
+
+// Knowledge Owner・有効期限の設定（docs/29 §2.16残・migration 018・システム管理者）。
+app.patch(
+  "/api/knowledge/:id",
+  zValidator(
+    "json",
+    z.object({
+      owner: z.string().max(200).optional(),
+      expiresAt: z.string().datetime().nullable().optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const input = c.req.valid("json");
+    const rows = await db`
+      update knowledge_candidates
+      set owner = coalesce(${input.owner ?? null}, owner),
+          expires_at = case when ${input.expiresAt !== undefined} then ${input.expiresAt ?? null}::timestamptz else expires_at end,
+          updated_at = now()
+      where id = ${id}
+      returning *
+    `;
+    if (!rows[0]) throw new ApiError("NOT_FOUND", "Knowledge candidate not found.", 404);
+    await audit(c.env, user, "knowledge.updated", "knowledge", id, {
+      owner: input.owner ?? null,
+      expiresAt: input.expiresAt ?? null,
+    });
+    return c.json(mapKnowledgeRow(rows[0]));
+  },
+);
+
+// Knowledgeの統合（重複統合・Superseded）: 古い候補を後継へ統合済みとしてマークする
+// （docs/29 §2.16残・migration 018・システム管理者）。
+app.post(
+  "/api/knowledge/:id/supersede",
+  zValidator("json", z.object({ supersededBy: z.string().uuid() })),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    await requireSystemAdmin(c.env, user);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const { supersededBy } = c.req.valid("json");
+    if (supersededBy === id) {
+      throw new ApiError("INVALID_INPUT", "統合先には自分自身以外のKnowledgeを指定してください。", 400);
+    }
+    const successorRows = await db`select id from knowledge_candidates where id = ${supersededBy} limit 1`;
+    if (!successorRows[0]) throw new ApiError("NOT_FOUND", "統合先のKnowledgeが見つかりません。", 404);
+    const rows = await db`
+      update knowledge_candidates
+      set status = 'superseded', superseded_by = ${supersededBy}, updated_at = now()
+      where id = ${id}
+      returning *
+    `;
+    if (!rows[0]) throw new ApiError("NOT_FOUND", "Knowledge candidate not found.", 404);
+    await audit(c.env, user, "knowledge.superseded", "knowledge", id, { supersededBy });
+    return c.json(mapKnowledgeRow(rows[0]));
+  },
+);
+
+// Knowledgeのアーカイブ（有効期限切れ・陳腐化。docs/29 §2.16残・migration 018・
+// システム管理者）。
+app.post("/api/knowledge/:id/archive", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const rows = await db`
+    update knowledge_candidates
+    set status = 'archived', updated_at = now()
+    where id = ${id}
+    returning *
+  `;
+  if (!rows[0]) throw new ApiError("NOT_FOUND", "Knowledge candidate not found.", 404);
+  await audit(c.env, user, "knowledge.archived", "knowledge", id, {});
+  return c.json(mapKnowledgeRow(rows[0]));
+});
+
+// Knowledgeの再利用回数カウント（案件検討や資料作成で参照した際に記録。
+// docs/29 §2.16残・migration 018。認証済みユーザーなら誰でも記録できる
+// （閲覧に伴う軽量な操作であり、レビュー権限は不要）。
+app.post("/api/knowledge/:id/reuse", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const rows = await db`
+    update knowledge_candidates
+    set reuse_count = reuse_count + 1, updated_at = now()
+    where id = ${id}
+    returning *
+  `;
+  if (!rows[0]) throw new ApiError("NOT_FOUND", "Knowledge candidate not found.", 404);
+  await audit(c.env, user, "knowledge.reused", "knowledge", id, { reuseCount: Number(rows[0].reuse_count) });
+  return c.json(mapKnowledgeRow(rows[0]));
+});
 
 // KPI登録・実績入力（docs/29 §2.6・migration 013）: 案件の効果測定レコードを記録する。
 // 管理者または提出者本人が記録できる（実績の客観性は運用で担保）。

@@ -219,6 +219,20 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify({ url }),
         }),
+      updateKnowledge: (id: string, input: { owner?: string; expiresAt?: string | null }) =>
+        request<KnowledgeCandidate>(`/api/knowledge/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(input),
+        }),
+      supersedeKnowledge: (id: string, supersededBy: string) =>
+        request<KnowledgeCandidate>(`/api/knowledge/${id}/supersede`, {
+          method: "POST",
+          body: JSON.stringify({ supersededBy }),
+        }),
+      archiveKnowledge: (id: string) =>
+        request<KnowledgeCandidate>(`/api/knowledge/${id}/archive`, { method: "POST" }),
+      reuseKnowledge: (id: string) =>
+        request<KnowledgeCandidate>(`/api/knowledge/${id}/reuse`, { method: "POST" }),
       getEvaluationBoard: () => request<{ items: EvaluationItem[] }>("/api/ideas/evaluation"),
       getPortfolio: () => request<{ summary: PortfolioSummary; items: PortfolioSummaryRow[] }>("/api/portfolio"),
       recordKpi: (

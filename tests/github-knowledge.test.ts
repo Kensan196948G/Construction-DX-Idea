@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import { workerSecurityTestHooks } from "../worker/index";
 import {
   classifyKnowledgeSource,
+  computeKnowledgeQualityScore,
   knowledgeCategories,
   knowledgeCategoryLabels,
   type GitHubOverview,
@@ -109,6 +110,25 @@ describe("Knowledge Management: 抽出ルール（migration 016・docs/29 §2.16
     for (const category of knowledgeCategories) {
       assert.ok(knowledgeCategoryLabels[category]);
     }
+  });
+});
+
+describe("Knowledge Management: 品質スコア自動評価（docs/29 §2.16残・migration 018）", () => {
+  it("本文が短いほど低いスコアを返す", () => {
+    assert.equal(computeKnowledgeQualityScore("", "decision"), 1);
+    assert.equal(computeKnowledgeQualityScore("短い所感", "decision"), 1);
+  });
+
+  it("本文の長さに応じて段階的にスコアが上がる", () => {
+    assert.equal(computeKnowledgeQualityScore("あ".repeat(60), "decision"), 2);
+    assert.equal(computeKnowledgeQualityScore("あ".repeat(200), "decision"), 3);
+    assert.equal(computeKnowledgeQualityScore("あ".repeat(500), "decision"), 4);
+    assert.equal(computeKnowledgeQualityScore("あ".repeat(900), "decision"), 5);
+  });
+
+  it("ADR/runbook/best_practiceは構造的価値として+1され、5を上限とする", () => {
+    assert.equal(computeKnowledgeQualityScore("あ".repeat(60), "runbook"), 3);
+    assert.equal(computeKnowledgeQualityScore("あ".repeat(900), "adr"), 5);
   });
 });
 
