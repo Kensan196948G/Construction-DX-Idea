@@ -157,6 +157,12 @@ export const api = useMock
       deleteSavedFilter: (id: string) =>
         request<{ ok: boolean }>(`/api/saved-filters/${id}`, { method: "DELETE" }),
       getIdea: (id: string) => request<Idea>(`/api/ideas/${id}`),
+      // Owner Transfer（担当者引継ぎ・docs/29 §2.25残）。
+      transferIdeaOwner: (id: string, newOwnerEmail: string, reason?: string) =>
+        request<Idea>(`/api/ideas/${id}/transfer-owner`, {
+          method: "POST",
+          body: JSON.stringify({ newOwnerEmail, reason }),
+        }),
       updateIdea: (id: string, patch: Partial<StructuredIdea>) =>
         request<Idea>(`/api/ideas/${id}`, {
           method: "PATCH",

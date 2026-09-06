@@ -588,6 +588,14 @@ export const mockApi = {
     return idea;
   },
 
+  async transferIdeaOwner(id: string, newOwnerEmail: string): Promise<Idea> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    idea.createdBy = newOwnerEmail.trim().toLowerCase();
+    idea.updatedAt = now();
+    return idea;
+  },
+
   async listSavedFilters(listType?: SavedFilterListType): Promise<{ items: SavedFilter[] }> {
     const items = savedFilters
       .filter((f) => !listType || f.listType === listType)

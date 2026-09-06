@@ -70,6 +70,7 @@ import {
   summarizeUatFeedback,
   evaluateGateSoD,
   canChangeClassification,
+  canTransferIdeaOwner,
   isIdeaVisibleTo,
   buildBlockerList,
   computeCompositeScore,
@@ -2145,6 +2146,62 @@ app.patch(
       from: current.informationClassification,
       to: next,
       notes,
+    });
+    return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
+  },
+);
+
+// Owner Transfer（担当者引継ぎ・docs/29 §2.25残・migrationなし）。
+// 提出者本人（created_by）または管理者が、案件の担当者（created_by）を
+// 既存の有効な社内ユーザーへ引き継ぐ。created_byは各所の権限判定（isOwner）で
+// 使われる中核フィールドのため、引継ぎ後は旧担当者のアクセス権が失われ
+// 新担当者が獲得する（意図した挙動）。監査ログに旧・新担当者を記録する。
+app.post(
+  "/api/ideas/:id/transfer-owner",
+  zValidator(
+    "json",
+    z.object({
+      newOwnerEmail: z.string().email().max(320),
+      reason: z.string().max(500).optional(),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const newOwnerEmail = body.newOwnerEmail.trim().toLowerCase();
+    const locked = await db`select * from ideas where id = ${id} for update`;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const current = mapIdeaRow(locked[0]);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    const isOwner = current.createdBy.toLowerCase() === user.toLowerCase();
+    if (!canTransferIdeaOwner({ isAdmin, isOwner })) {
+      throw new ApiError("FORBIDDEN", "担当者引継ぎは提出者本人または管理者のみ可能です。", 403);
+    }
+    if (newOwnerEmail === current.createdBy.toLowerCase()) {
+      throw new ApiError("NO_OP", "既に同じ担当者です。", 422);
+    }
+    const newOwnerRows = await db`
+      select email, status from app_users where email = ${newOwnerEmail} limit 1
+    `;
+    if (!newOwnerRows[0]) {
+      throw new ApiError(
+        "OWNER_NOT_FOUND",
+        "引継ぎ先のメールアドレスはユーザー管理に登録されていません。",
+        422,
+      );
+    }
+    if (String(newOwnerRows[0].status) !== "active") {
+      throw new ApiError("OWNER_INACTIVE", "引継ぎ先のユーザーは無効化されています。", 422);
+    }
+    const rows = await db`
+      update ideas set created_by = ${newOwnerEmail}, updated_at = now() where id = ${id} returning *
+    `;
+    await audit(c.env, user, "idea.owner_transferred", "idea", id, {
+      fromOwner: current.createdBy,
+      toOwner: newOwnerEmail,
+      reason: body.reason ?? "",
     });
     return c.json(await redactIdeaForUser(mapIdeaRow(rows[0]), user, c.env));
   },

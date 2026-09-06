@@ -308,10 +308,19 @@
 
 ### 2.25 ユーザー・組織管理（元#538〜553）
 
-- 【P1】組織/部署/支店マスタ・Group/Team・Project Member
-- 【P1】Delegate・Effective/Expiration Date・Inactive User・Owner Transfer・Bulk Import
+- 【P1】組織/部署/支店マスタ・Group/Team・Project Member（既存department列は自由入力
+  文字列のまま。マスタ化は既存機能（Token Budget等）への影響確認が必要な中規模改修の
+  ため残課題）
+- 【P2】Delegate（Gate承認の代理承認`delegateTo`は実装済み。案件全体の代理設定は残）・
+  Effective/Expiration Date・Bulk Import
+- 【実装済】Inactive User（ユーザー管理画面の無効化=`status: suspended`で対応済み）
+- 【実装済】Owner Transfer（担当者引継ぎ。2026-09-06・migrationなし。`POST
+  /api/ideas/:id/transfer-owner`。提出者本人または管理者のみ実行可（`canTransferIdeaOwner`）。
+  引継ぎ先は`app_users`に登録済みの有効(active)なユーザーのみ許可（未登録/無効化は422）。
+  同一担当者への引継ぎはno-opとして422。監査ログに旧・新担当者を記録）
 - 【P2】Entra ID 連携（将来）
-- 【P1】運用: 管理者メールの会社ドメイン複数化（Issue #9）
+- 【P1】運用: 管理者メールの会社ドメイン複数化（Issue #9・実在の担当者名が必要な
+  人間の意思決定待ちのため対象外）
 
 ## 3. ローカルPostgreSQL移行で新たに可能/推奨になる技術事項（元カタログ外）
 

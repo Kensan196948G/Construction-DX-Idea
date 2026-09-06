@@ -91,6 +91,7 @@ type StandaloneComponent = {
   __loadGateOverviewBridge?: () => Promise<GateOverviewResult>;
   __runGateRemindersBridge?: () => Promise<GateReminderRunResult>;
   __loadBlockersBridge?: () => Promise<BlockerListResult>;
+  __transferOwnerBridge?: (id: string, newOwnerEmail: string, reason?: string) => Promise<Idea>;
   __loadSavedFiltersBridge?: (listType: SavedFilterListType) => Promise<SavedFilter[]>;
   __saveSavedFilterBridge?: (
     listType: SavedFilterListType,
@@ -129,6 +130,7 @@ type StandaloneComponent = {
   loadGateOverview?: () => Promise<void>;
   runGateReminders?: () => Promise<void>;
   loadBlockers?: () => Promise<void>;
+  transferOwner?: () => Promise<void>;
   loadSavedFilters?: (listType: SavedFilterListType) => Promise<void>;
   saveCurrentFilter?: (listType: SavedFilterListType) => Promise<void>;
   removeSavedFilter?: (listType: SavedFilterListType, id: string) => Promise<void>;
@@ -265,6 +267,9 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   // 情報区分・公開制御（migration 012）: 詳細画面からの区分更新。
   component.__saveClassificationBridge = (id, value, notes) =>
     api.updateClassification(id, value, notes, "WebUIから変更");
+  // 担当者引継ぎ（docs/29 §2.25残）: 詳細画面からの担当者変更。
+  component.__transferOwnerBridge = (id, newOwnerEmail, reason) =>
+    api.transferIdeaOwner(id, newOwnerEmail, reason);
   // KPI・ROI（migration 013）: 詳細画面の効果測定。
   component.__loadKpiBridge = (id) => api.getIdeaKpis(id);
   component.__recordKpiBridge = (id, input) => api.recordKpi(id, input);
