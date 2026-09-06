@@ -25,6 +25,7 @@ import type {
   GateOverviewResult,
   GateReminderRunResult,
   BlockerListResult,
+  EvaluationItem,
   GitHubSyncResult,
   Idea,
   IdeaComment,
@@ -65,7 +66,9 @@ import {
   buildGate3Brief,
   buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeCompositeScore,
   computeKnowledgeQualityScore,
+  computeScoreGateAlignment,
   computeStructureConfidence,
   defaultGateApprovalRows,
   defaultPhaseChecklist,
@@ -250,14 +253,19 @@ export const mockApi = {
     return filtered.slice(0, limit);
   },
 
-  async getEvaluationBoard(): Promise<{ items: Array<Idea & { priorityScore: number; reasons: string[] }> }> {
+  async getEvaluationBoard(): Promise<{ items: EvaluationItem[] }> {
     const items = ideas
       .filter((idea) => !["rejected", "archived"].includes(idea.stage))
-      .map((idea) => ({
-        ...idea,
-        priorityScore: Math.min(10, idea.securityNotes.length * 2 + (idea.mvpCandidate ? 2 : 0) + (idea.openQuestions.length === 0 ? 1 : 0)),
-        reasons: ["モック評価"],
-      }))
+      .map((idea) => {
+        const priorityScore = Math.min(
+          10,
+          idea.securityNotes.length * 2 + (idea.mvpCandidate ? 2 : 0) + (idea.openQuestions.length === 0 ? 1 : 0),
+        );
+        const gateSummaries = summarizeGateApprovals(gateApprovals.get(String(idea.id)) ?? []);
+        const compositeScore = computeCompositeScore(idea, gateSummaries);
+        const alignment = computeScoreGateAlignment(compositeScore.total, gateSummaries);
+        return { ...idea, priorityScore, reasons: ["モック評価"], compositeScore, alignment };
+      })
       .sort((a, b) => b.priorityScore - a.priorityScore);
     return { items };
   },

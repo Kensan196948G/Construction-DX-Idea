@@ -111,12 +111,20 @@
 - 【技術】pgvector（埋め込み類似）＋ pg_trgm（日本語部分一致）＋ tsvector（全文検索）を
   ローカルPGで利用。埋め込みAPI（Claude/DeepSeek エンベッディング or ローカルモデル）の選定が必要
 
-### 2.4 AI評価・スコアリング（元#66〜92）
+### 2.4 AI評価・スコアリング（元#66〜92）※実装済み（2026-09-06）
 
-- 【P1】Business/Domain/Engineering Value Score・Feasibility・ROI 等の複合スコア体系
-  （現状は evaluationScore（0-10）のみ）
-- 【P1】AI推奨順位と人間評価（3 Authority＋Gate）との差異表示
-- 【P1】スコア根拠の記録（どの入力から導いたか）
+- 【実装済】Business/Domain/Engineering Value Score・Feasibility・ROI 等の複合スコア体系
+  （`computeCompositeScore`。既存の単一合成スコア`evaluationScore`（0-10）はそのまま維持し、
+  独立した多軸版として追加。Business/Domain/Engineering軸はGate進捗（`gateAuthorityProgress`。
+  3 Authorityそれぞれが必要な全Gateにわたる承認済み比率）＋idea単体フィールドの補助材料、
+  Feasibility軸はMVP案の有無と未解決の確認事項・セキュリティ懸念の少なさ、ROI軸はKPIベース
+  ライン（工数・コスト）試算の有無。各軸に根拠（reasons）を記録）
+- 【実装済】AI推奨順位と人間評価（3 Authority＋Gate）との差異表示（`computeScoreGateAlignment`。
+  複合スコア比率とGate承認進捗比率を突き合わせ`matched`/`ai_ahead`/`gate_ahead`/
+  `rejected_by_gate`を判定。`GET /api/ideas/evaluation`のレスポンスに`compositeScore`/
+  `alignment`として追加し、評価ボード画面に軸別スコアバッジとAI×人間評価バッジを表示）
+- 【実装済】スコア根拠の記録（どの入力から導いたか）（各軸の`reasons`配列。永続化はせず
+  都度計算・都度表示。DB記録が必要な場合は別Issueで検討）
 
 ### 2.5 DX案件ポートフォリオ（元#93〜122）※実装済み（migration 013・PR #64/#65・2026-09-05）
 
