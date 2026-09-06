@@ -1633,12 +1633,28 @@ app.get("/api/ideas/evaluation", async (c) => {
     order by updated_at desc
     limit 200
   `;
+  // Gate承認行はidea毎に個別クエリを投げず、対象idea全件分を1クエリで取得してから
+  // idea_id別にグループ化する（N+1クエリ回避）。
+  const ideaIds = rows.map((row) => String(row.id));
+  const gateRows = ideaIds.length > 0
+    ? (await db`
+        select * from idea_gate_approvals
+        where idea_id = any(${ideaIds})
+        order by gate_no asc, required_authority asc
+      `).map(mapGateApprovalRow)
+    : [];
+  const gateRowsByIdea = new Map<string, IdeaGateApproval[]>();
+  for (const gateRow of gateRows) {
+    const list = gateRowsByIdea.get(gateRow.ideaId) ?? [];
+    list.push(gateRow);
+    gateRowsByIdea.set(gateRow.ideaId, list);
+  }
   const items = (
     await Promise.all(
       rows.map(async (row) => {
         const idea = await redactIdeaForUser(mapIdeaRow(row), user, c.env);
         const { score, reasons } = evaluationScore(idea);
-        const { summary: gateSummaries } = await loadGateSummary(db, String(idea.id));
+        const gateSummaries = summarizeGateApprovals(gateRowsByIdea.get(String(idea.id)) ?? []);
         const compositeScore = computeCompositeScore(idea, gateSummaries);
         const alignment = computeScoreGateAlignment(compositeScore.total, gateSummaries);
         return { ...idea, priorityScore: score, reasons, compositeScore, alignment };

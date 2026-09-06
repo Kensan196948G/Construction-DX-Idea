@@ -85,19 +85,23 @@ try {
   if (approvedCreated.status !== 201 && approvedCreated.status !== 200) throw new Error(`idea register failed: ${JSON.stringify(approvedCreated)}`);
   approvedIdeaId = String(approvedCreated.json.id);
   await sql`update ideas set created_by = 'demo.other@demo.example.com', kpi_baseline_hours = 40, kpi_baseline_cost = 100000 where id = ${approvedIdeaId}`;
-  await api(base, "POST", `/api/ideas/${approvedIdeaId}/gates/init`);
+  const initApproved = await api(base, "POST", `/api/ideas/${approvedIdeaId}/gates/init`);
+  results.push(["gates/init (approved idea)", initApproved.status]);
+  const approveDecisions = [];
   for (const authority of ["business", "domain", "engineering"]) {
-    await api(base, "POST", `/api/ideas/${approvedIdeaId}/gates/1/request-approval`, {
+    const request = await api(base, "POST", `/api/ideas/${approvedIdeaId}/gates/1/request-approval`, {
       authority,
       approverEmail: "demo.admin@demo.example.com",
       reason: "E2E複合スコア検証",
     });
+    results.push([`request gate1 ${authority}`, request.status]);
     const decision = await api(base, "POST", `/api/ideas/${approvedIdeaId}/gates/1/approval`, {
       authority,
       decision: "approve",
       reason: "E2E複合スコア検証承認",
     });
     results.push([`approve gate1 ${authority}`, decision.status, decision.json?.status ?? ""]);
+    approveDecisions.push({ request, decision });
   }
 
   // 2) Gate1のbusinessをrejectするidea（alignment=rejected_by_gate想定）
@@ -107,12 +111,14 @@ try {
   results.push(["rejected idea register", rejectedCreated.status]);
   rejectedIdeaId = String(rejectedCreated.json.id);
   await sql`update ideas set created_by = 'demo.other@demo.example.com' where id = ${rejectedIdeaId}`;
-  await api(base, "POST", `/api/ideas/${rejectedIdeaId}/gates/init`);
-  await api(base, "POST", `/api/ideas/${rejectedIdeaId}/gates/1/request-approval`, {
+  const initRejected = await api(base, "POST", `/api/ideas/${rejectedIdeaId}/gates/init`);
+  results.push(["gates/init (rejected idea)", initRejected.status]);
+  const requestRejected = await api(base, "POST", `/api/ideas/${rejectedIdeaId}/gates/1/request-approval`, {
     authority: "business",
     approverEmail: "demo.admin@demo.example.com",
     reason: "E2E複合スコア検証（却下）",
   });
+  results.push(["request gate1 business (rejected idea)", requestRejected.status]);
   const rejectDecision = await api(base, "POST", `/api/ideas/${rejectedIdeaId}/gates/1/approval`, {
     authority: "business",
     decision: "reject",
@@ -132,26 +138,36 @@ try {
   const businessAxis = approvedItem?.compositeScore?.axes?.find((a) => a.key === "business");
   const domainAxis = approvedItem?.compositeScore?.axes?.find((a) => a.key === "domain");
   const engineeringAxis = approvedItem?.compositeScore?.axes?.find((a) => a.key === "engineering");
+  const feasibilityAxis = approvedItem?.compositeScore?.axes?.find((a) => a.key === "feasibility");
   const roiAxis = approvedItem?.compositeScore?.axes?.find((a) => a.key === "roi");
   results.push(["approved business axis", JSON.stringify(businessAxis)]);
   results.push(["approved domain axis", JSON.stringify(domainAxis)]);
   results.push(["approved engineering axis", JSON.stringify(engineeringAxis)]);
+  results.push(["approved feasibility axis", JSON.stringify(feasibilityAxis)]);
   results.push(["approved roi axis", JSON.stringify(roiAxis)]);
   results.push(["approved alignment", approvedItem?.alignment]);
   results.push(["rejected alignment", rejectedItem?.alignment]);
 
   for (const r of results) console.log(r.join(" | "));
 
+  const allGateWritesOk =
+    [200, 201].includes(initApproved.status) &&
+    [200, 201].includes(initRejected.status) &&
+    approveDecisions.every((d) => d.request.status === 200 && d.decision.status === 200) &&
+    requestRejected.status === 200 &&
+    rejectDecision.status === 200;
+
   const pass =
     approvedCreated.status >= 200 &&
     rejectedCreated.status >= 200 &&
-    rejectDecision.status === 200 &&
+    allGateWritesOk &&
     evaluation.status === 200 &&
     !!approvedItem &&
     !!rejectedItem &&
     (businessAxis?.score ?? 0) > 0 &&
     (domainAxis?.score ?? 0) > 0 &&
     (engineeringAxis?.score ?? 0) > 0 &&
+    (feasibilityAxis?.score ?? -1) >= 0 &&
     (roiAxis?.score ?? 0) === 6 &&
     approvedItem.alignment !== "rejected_by_gate" &&
     rejectedItem.alignment === "rejected_by_gate";
