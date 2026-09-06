@@ -38,6 +38,7 @@ import {
   type IdeaRepoLink,
   type IdeaGitHubEvidence,
   type GitHubOverview,
+  type HealthDashboard,
   type KnowledgeCandidate,
   type InformationClassification,
   type IssueInput,
@@ -3518,6 +3519,54 @@ app.get("/api/admin/ai-usage/by-department", async (c) => {
   }));
   await audit(c.env, user, "ai_usage.by_department.read", "idea_ai_sessions", "monthly", { count: items.length });
   return c.json({ items });
+});
+
+// System Health Dashboard（docs/29 §2.21・Issue #7）。API/DB/AI/Slack通知キュー/
+// 監査チェーン/Gate滞留を1画面で確認できるよう集約する。しきい値は現状固定
+// （computeHealthSummaryの決定論的ヒューリスティック）。可変しきい値設定UIはP2で残存。
+app.get("/api/admin/health-dashboard", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  await requireSystemAdmin(c.env, user);
+  const db = getDb(c.env);
+  const rows = await db`
+    select
+      (select count(*) from idea_ai_sessions where created_at >= date_trunc('day', now()))::int as ai_calls_today,
+      (select count(*) from idea_ai_sessions
+        where created_at >= date_trunc('day', now()) and result <> 'success')::int as ai_failures_today,
+      (select coalesce(sum(usage_cost_estimate), 0) from idea_ai_sessions
+        where created_at >= date_trunc('month', now()))::float8 as ai_monthly_cost,
+      (select count(*) from notification_outbox where status = 'pending')::int as outbox_pending,
+      (select count(*) from notification_outbox
+        where status = 'failed' and updated_at >= now() - interval '24 hours')::int as outbox_failed_24h,
+      (select count(*) from idea_gate_approvals
+        where status = 'requested' and requested_due_at is not null and requested_due_at < now())::int as gate_overdue
+  `;
+  const chain = await verifyAuditChainFromDb(c.env);
+  const dashboard: HealthDashboard = {
+    generatedAt: new Date().toISOString(),
+    ai: {
+      callsToday: Number(rows[0]?.ai_calls_today ?? 0),
+      failuresToday: Number(rows[0]?.ai_failures_today ?? 0),
+      monthlyCostEstimate: Number(rows[0]?.ai_monthly_cost ?? 0),
+    },
+    notificationOutbox: {
+      pendingCount: Number(rows[0]?.outbox_pending ?? 0),
+      failedCount24h: Number(rows[0]?.outbox_failed_24h ?? 0),
+    },
+    auditChain: {
+      valid: chain.valid,
+      checked: chain.checked,
+      legacyRows: chain.legacyRows,
+      firstBrokenId: chain.firstBrokenId,
+    },
+    gate: {
+      overdueCount: Number(rows[0]?.gate_overdue ?? 0),
+    },
+  };
+  await audit(c.env, user, "health_dashboard.read", "system", "health", {
+    auditChainValid: dashboard.auditChain.valid,
+  });
+  return c.json(dashboard);
 });
 
 app.get("/api/admin/usage-limits", async (c) => {

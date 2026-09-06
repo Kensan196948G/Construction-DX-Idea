@@ -1239,6 +1239,46 @@ a:hover { text-decoration: underline; }
       </div>
       </sc-if>
 
+      <sc-if value="{{ isHealthDashboard }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="システムヘルス" style="display:flex;flex-direction:column;gap:14px;max-width:1100px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#8A97A8;">API/AI/通知キュー/監査チェーン/Gate滞留の状況を1画面で確認します。</div>
+          <div style="flex:1;"></div>
+          <button onClick="{{ loadHealthDashboard }}" disabled="{{ hdBusy }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:7px 13px;border-radius:8px;font-size:12px;font-weight:600;">🔄 更新</button>
+        </div>
+        <sc-if value="{{ hdHasData }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:14px 18px;box-shadow:0 1px 2px rgba(16,24,40,.04);display:flex;align-items:center;gap:10px;">
+            <span style="{{ hdOverallStyle }}">{{ hdOverallLabel }}</span>
+            <div style="font-size:11px;color:#8A97A8;">最終更新: {{ hdGeneratedAtText }}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+            <sc-for list="{{ hdSections }}" as="sec" hint-placeholder-count="4">
+              <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:14px 16px;box-shadow:0 1px 2px rgba(16,24,40,.04);display:flex;flex-direction:column;gap:6px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div style="font-size:12.5px;font-weight:600;color:#1A2433;">{{ sec.title }}</div>
+                  <span style="{{ sec.badgeStyle }}">{{ sec.badgeLabel }}</span>
+                </div>
+                <div style="font-size:11.5px;color:#5A6678;">{{ sec.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:16px 18px;display:flex;flex-direction:column;gap:8px;">
+            <div style="font-size:13px;font-weight:600;color:#1A2433;">詳細メトリクス</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:12px;color:#5A6678;">
+              <div>本日のAI呼び出し: <b style="color:#1A2433;">{{ healthDashboardData.ai.callsToday }}</b>件（失敗{{ healthDashboardData.ai.failuresToday }}件）</div>
+              <div>当月AI概算コスト: <b style="color:#1A2433;">${{ healthDashboardData.ai.monthlyCostEstimate }}</b></div>
+              <div>通知キュー: 保留{{ healthDashboardData.notificationOutbox.pendingCount }}件・失敗{{ healthDashboardData.notificationOutbox.failedCount24h }}件（24h）</div>
+              <div>監査チェーン検証行数: {{ healthDashboardData.auditChain.checked }}件（レガシー{{ healthDashboardData.auditChain.legacyRows }}件）</div>
+              <div>Gate承認期限超過: {{ healthDashboardData.gate.overdueCount }}件</div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ hdBusy }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:26px;text-align:center;color:#8A97A8;font-size:13px;">システムヘルスを読み込んでいます…</div>
+        </sc-if>
+      </div>
+      </sc-if>
+
       <sc-if value="{{ isKnowledge }}" hint-placeholder-val="{{ false }}">
       <div data-screen-label="知識管理" style="display:flex;flex-direction:column;gap:14px;max-width:1100px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1743,6 +1783,9 @@ class Component extends DCLogic {
     usageLimitsBusy: false,
     usageLimitDraft: { subjectType: 'department', subjectId: '', dailyLimit: '10', monthlyBudget: '0', enabled: true },
     aiDeptUsageData: null,
+    // Observability: System Health Dashboard（docs/29 §2.21・Issue #7）
+    healthDashboardData: null,
+    healthDashboardBusy: false,
     // ポートフォリオ（migration 013・docs/29 §2.5）: 専用画面の集計データ
     portfolioData: { summary: null, items: [] },
     portfolioBusy: false,
@@ -1812,6 +1855,7 @@ class Component extends DCLogic {
     if (view === 'knowledge' && this.loadKnowledge) void this.loadKnowledge();
     if (view === 'detail' && this.loadKpi) void this.loadKpi();
     if (view === 'adminSettings') void this.loadUsageGovernance();
+    if (view === 'healthDashboard') void this.loadHealthDashboard();
   };
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
@@ -2847,6 +2891,31 @@ class Component extends DCLogic {
     });
   };
 
+  // Observability: System Health Dashboard（docs/29 §2.21・Issue #7）。実API接続時は
+  // App.tsx ブリッジが __loadHealthDashboardBridge を差し替える。
+  loadHealthDashboard = async () => {
+    this.setState({ healthDashboardBusy: true });
+    if (this.__loadHealthDashboardBridge) {
+      try {
+        const data = await this.__loadHealthDashboardBridge();
+        this.setState({ healthDashboardData: data, healthDashboardBusy: false });
+      } catch (e) {
+        this.setState({ healthDashboardBusy: false, toast: { message: `システムヘルスの取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({
+      healthDashboardData: {
+        generatedAt: new Date().toISOString(),
+        ai: { callsToday: 4, failuresToday: 0, monthlyCostEstimate: 0.42 },
+        notificationOutbox: { pendingCount: 0, failedCount24h: 0 },
+        auditChain: { valid: true, checked: 12, legacyRows: 0 },
+        gate: { overdueCount: 0 },
+      },
+      healthDashboardBusy: false,
+    });
+  };
+
   requestApproval = () => {
     const { approverEmail, reason } = this.state.approvalDraft;
     const id = this.state.selectedIdeaId;
@@ -3531,6 +3600,7 @@ class Component extends DCLogic {
       { label: 'ITシステム管理', items: [
         { key: 'adminSettings', icon: '⚙️', label: 'AI設定' },
         { key: 'gateDashboard', icon: '🚦', label: 'Gate滞留分析' },
+        { key: 'healthDashboard', icon: '🩺', label: 'システムヘルス' },
         { key: 'userManagement', icon: '👤', label: 'ログインユーザー管理' },
         { key: 'integrations', icon: '🔗', label: '外部連携管理' },
         { key: 'auditLog', icon: '🧾', label: '監査ログ' },
@@ -3568,6 +3638,7 @@ class Component extends DCLogic {
       portfolio: { title: 'DX案件ポートフォリオ', sub: '価値・進捗・効果の全体俯瞰（管理者）' },
       knowledge: { title: '知識管理', sub: 'Knowledge候補の抽出・Review Queue・昇格（システム管理者）' },
       gateDashboard: { title: 'Gate滞留分析', sub: '承認期限・滞留・エスカレーションの一覧（システム管理者）' },
+      healthDashboard: { title: 'システムヘルス', sub: 'API/AI/通知キュー/監査チェーン/Gate滞留の統合状況（システム管理者）' },
       adminSettings: { title: 'AI設定', sub: 'モデル・利用上限・接続管理' },
       userManagement: { title: 'ログインユーザー管理', sub: `${s.users.length}名のアカウント` },
       integrations: { title: '外部連携管理', sub: 'Slack・Teams・メール通知の連携設定' },
@@ -4299,6 +4370,41 @@ class Component extends DCLogic {
     const usageLimitSaveLabel = s.usageLimitsBusy ? '保存中…' : '💾 Token Budgetを保存';
     const usageLimitSubjectIdVisible = s.usageLimitDraft.subjectType !== 'global';
 
+    // ---- Observability: System Health Dashboard view-model（docs/29 §2.21）----
+    // worker側 computeHealthSummary と同じ決定論的ヒューリスティックをその場で再現する。
+    const hd = s.healthDashboardData;
+    const hdHasData = !!hd;
+    const statusMetaHd = {
+      ok: { label: '正常', fg: '#1F8255', bg: '#E4F3EC' },
+      warning: { label: '注意', fg: '#B5701A', bg: '#FDEFE0' },
+      critical: { label: '重大', fg: '#C5392F', bg: '#FCE9E7' },
+    };
+    let hdOverall = 'ok';
+    let hdSections = [];
+    if (hd) {
+      const auditStatus = hd.auditChain.valid ? 'ok' : 'critical';
+      const aiStatus = hd.ai.failuresToday > 0 ? 'warning' : 'ok';
+      const outboxStatus = hd.notificationOutbox.failedCount24h > 0 ? 'warning' : 'ok';
+      const gateStatus = hd.gate.overdueCount > 0 ? 'warning' : 'ok';
+      hdSections = [
+        {
+          title: '監査チェーン', status: auditStatus,
+          label: hd.auditChain.valid ? '正常' : `不正検出（${hd.auditChain.firstBrokenId || '不明'}）`,
+        },
+        { title: 'AI呼び出し', status: aiStatus, label: hd.ai.failuresToday > 0 ? `本日${hd.ai.failuresToday}件失敗` : '正常' },
+        { title: '通知キュー', status: outboxStatus, label: hd.notificationOutbox.failedCount24h > 0 ? `失敗${hd.notificationOutbox.failedCount24h}件（24h）` : '正常' },
+        { title: 'Gate承認', status: gateStatus, label: hd.gate.overdueCount > 0 ? `期限超過${hd.gate.overdueCount}件` : '正常' },
+      ].map((sec) => ({
+        ...sec,
+        badgeLabel: statusMetaHd[sec.status].label,
+        badgeStyle: this.badgeStyle(statusMetaHd[sec.status].fg, statusMetaHd[sec.status].bg),
+      }));
+      hdOverall = hdSections.some((s2) => s2.status === 'critical') ? 'critical' : hdSections.some((s2) => s2.status === 'warning') ? 'warning' : 'ok';
+    }
+    const hdOverallLabel = hd ? `総合: ${statusMetaHd[hdOverall].label}` : '';
+    const hdOverallStyle = hd ? this.badgeStyle(statusMetaHd[hdOverall].fg, statusMetaHd[hdOverall].bg) : '';
+    const hdGeneratedAtText = hd ? String(hd.generatedAt).slice(0, 16).replace('T', ' ') : '';
+
     return {
       view: s.view,
       isDashboard: s.view === 'dashboard', isIntake: s.view === 'intake', isWizard: s.view === 'wizard',
@@ -4342,6 +4448,17 @@ class Component extends DCLogic {
       onUsageLimitEnabledChange: this.onUsageLimitDraftField('enabled'),
       saveUsageLimit: this.saveUsageLimit,
       usageLimitSaveLabel,
+      // Observability: System Health Dashboard（docs/29 §2.21）
+      isHealthDashboard: s.view === 'healthDashboard',
+      loadHealthDashboard: this.loadHealthDashboard,
+      hdBusy: !!s.healthDashboardBusy,
+      hdHasData, hdSections, hdOverallLabel, hdOverallStyle, hdGeneratedAtText,
+      healthDashboardData: hd || {
+        ai: { callsToday: 0, failuresToday: 0, monthlyCostEstimate: 0 },
+        notificationOutbox: { pendingCount: 0, failedCount24h: 0 },
+        auditChain: { checked: 0, legacyRows: 0 },
+        gate: { overdueCount: 0 },
+      },
       isUserManagement: s.view === 'userManagement', isIntegrations: s.view === 'integrations',
       navGroups, topbarTitle: topbarMeta.title, topbarSub: topbarMeta.sub, currentUserRole,
       toast: s.toast, dismissToast: this.dismissToast,

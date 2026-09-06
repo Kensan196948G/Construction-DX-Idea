@@ -17,6 +17,7 @@ import type {
   Authority,
   DashboardMetrics,
   Gate3Brief,
+  HealthDashboard,
   GateApprovalRequest,
   GateDecisionInput,
   GateListResult,
@@ -1248,6 +1249,16 @@ export const mockApi = {
         { department: "土木工事部", totalCalls: 5, totalCostEstimate: 0.31 },
         { department: "施工管理部", totalCalls: 2, totalCostEstimate: 0.11 },
       ],
+    };
+  },
+
+  async getHealthDashboard(): Promise<HealthDashboard> {
+    return {
+      generatedAt: now(),
+      ai: { callsToday: 4, failuresToday: 0, monthlyCostEstimate: 0.42 },
+      notificationOutbox: { pendingCount: 0, failedCount24h: 0 },
+      auditChain: { valid: true, checked: 12, legacyRows: 0 },
+      gate: { overdueCount: 0 },
     };
   },
 

@@ -24,6 +24,7 @@ import type {
   GateNo,
   GateOverviewResult,
   GateReminderRunResult,
+  HealthDashboard,
   Idea,
   IdeaKpi,
   IdeaStage,
@@ -131,6 +132,7 @@ type StandaloneComponent = {
   __loadUsageLimitsBridge?: () => Promise<{ items: UsageLimitItem[] }>;
   __saveUsageLimitBridge?: (patch: UsageLimitPatch) => Promise<UsageLimitItem>;
   __loadAiUsageByDepartmentBridge?: () => Promise<{ items: AiDepartmentUsageRow[] }>;
+  __loadHealthDashboardBridge?: () => Promise<HealthDashboard>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
   loadSimilarIdeas?: () => Promise<void>;
@@ -306,6 +308,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__loadUsageLimitsBridge = () => api.getUsageLimits();
   component.__saveUsageLimitBridge = (patch) => api.updateUsageLimit(patch);
   component.__loadAiUsageByDepartmentBridge = () => api.getAiUsageByDepartment();
+  component.__loadHealthDashboardBridge = () => api.getHealthDashboard();
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
   component.loadSimilarIdeas = () => loadSimilarIdeas(component);
