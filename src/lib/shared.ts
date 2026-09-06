@@ -307,6 +307,113 @@ export type IdeaKpiInput = {
   reviewNote?: string;
 };
 
+// ---- PoC・MVP・UAT管理（migration 017・docs/29 §2.19）----
+
+export const pocAcceptanceResults = ["pending", "go", "conditional_go", "no_go"] as const;
+export type PocAcceptanceResult = (typeof pocAcceptanceResults)[number];
+
+export const pocAcceptanceResultLabels: Record<PocAcceptanceResult, string> = {
+  pending: "未判定",
+  go: "Go",
+  conditional_go: "条件付きGo",
+  no_go: "No-Go",
+};
+
+export const uatFeedbackTypes = ["general", "defect", "improvement"] as const;
+export type UatFeedbackType = (typeof uatFeedbackTypes)[number];
+
+export const uatFeedbackTypeLabels: Record<UatFeedbackType, string> = {
+  general: "所感",
+  defect: "不具合",
+  improvement: "改善要望",
+};
+
+export type UatChecklistItem = {
+  item: string;
+  done: boolean;
+};
+
+// 案件ごとに1件。PoC仮説・成功基準・MVPスコープ(In/Out)・テスト対象者/シナリオと、
+// UATチェックリスト・受入判定(Go/No-Go/条件付きGo)を保持する。
+export type PocPlan = {
+  ideaId: string;
+  hypothesis: string;
+  successCriteria: string;
+  mvpScopeIn: string[];
+  mvpScopeOut: string[];
+  testUsers: string;
+  testScenarios: string[];
+  uatChecklist: UatChecklistItem[];
+  acceptanceResult: PocAcceptanceResult;
+  acceptanceNotes: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PocPlanInput = {
+  hypothesis?: string;
+  successCriteria?: string;
+  mvpScopeIn?: string[];
+  mvpScopeOut?: string[];
+  testUsers?: string;
+  testScenarios?: string[];
+};
+
+export type UatChecklistInput = {
+  uatChecklist: UatChecklistItem[];
+  acceptanceResult?: PocAcceptanceResult;
+  acceptanceNotes?: string;
+};
+
+// 案件ごとに複数件。UATに参加したテストユーザーからのフィードバック履歴。
+export type UatFeedbackEntry = {
+  id: string;
+  ideaId: string;
+  rating: number;
+  comment: string;
+  feedbackType: UatFeedbackType;
+  submittedBy: string;
+  submittedAt: string;
+};
+
+export type UatFeedbackInput = {
+  rating: number;
+  comment?: string;
+  feedbackType?: UatFeedbackType;
+};
+
+export type UatFeedbackSummary = {
+  count: number;
+  averageRating: number | null;
+  defectCount: number;
+  improvementCount: number;
+  // フィードバック集計から機械的に導いたGo/No-Go提案（docs/29「AI Feedback要約・
+  // Go/No-Go提案」）。人間の最終判定はacceptanceResultへ別途記録する。
+  recommendedVerdict: PocAcceptanceResult;
+};
+
+export type UatFeedbackResult = {
+  items: UatFeedbackEntry[];
+  summary: UatFeedbackSummary;
+};
+
+// フィードバック件数・平均評価・不具合件数から決定論的にGo/No-Go提案を導く。
+// 実AI呼び出しではなく、GoldenDataset同様に再現可能なヒューリスティック。
+export function summarizeUatFeedback(items: Array<Pick<UatFeedbackEntry, "rating" | "feedbackType">>): UatFeedbackSummary {
+  const count = items.length;
+  const defectCount = items.filter((item) => item.feedbackType === "defect").length;
+  const improvementCount = items.filter((item) => item.feedbackType === "improvement").length;
+  const averageRating = count > 0 ? Math.round((items.reduce((sum, item) => sum + item.rating, 0) / count) * 10) / 10 : null;
+  let recommendedVerdict: PocAcceptanceResult = "pending";
+  if (count > 0 && averageRating !== null) {
+    if (averageRating >= 4 && defectCount === 0) recommendedVerdict = "go";
+    else if (averageRating >= 3 && defectCount <= 1) recommendedVerdict = "conditional_go";
+    else recommendedVerdict = "no_go";
+  }
+  return { count, averageRating, defectCount, improvementCount, recommendedVerdict };
+}
+
 // ---- DX案件ポートフォリオ（docs/29 §2.5）----
 export type PortfolioSummary = {
   totalIdeas: number;

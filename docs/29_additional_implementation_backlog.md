@@ -218,11 +218,16 @@
 - 【P1】IndexedDB キュー・写真撮影・音声入力・通信/同期状態表示・再同期ボタン
 - 【P2】現場位置情報・QR案件呼出し・大型ボタンUI・添付圧縮・写真AI説明
 
-### 2.19 PoC・MVP・UAT 管理（元#436〜453）
+### 2.19 PoC・MVP・UAT 管理（元#436〜453）※基本機能は実装済み（migration 017・2026-09-06）
 
-- 【P1】PoC Hypothesis・Success Criteria・MVP Scope（In/Out）・Test User/Scenario
-- 【P1】Feedback収集（5段階+Free Comment）・Defect/Improvement Request・UAT Checklist・Acceptance Result
-- 【P1】AI Feedback要約・Go/No-Go提案・Gate3資料自動生成
+- 【実装済】PoC Hypothesis・Success Criteria・MVP Scope（In/Out）・Test User/Scenario
+  （`idea_poc_plans`。`PUT /api/ideas/:id/poc`）
+- 【実装済】Feedback収集（5段階+Free Comment）・Defect/Improvement Request・UAT Checklist・
+  Acceptance Result（`idea_uat_feedback`。`POST/GET /api/ideas/:id/uat-feedback`、
+  `PUT /api/ideas/:id/poc/checklist`）
+- 【実装済】Feedback要約・Go/No-Go提案（`summarizeUatFeedback`: 平均評価・不具合件数からgo/
+  conditional_go/no_goを決定論的に提案。実AI呼び出しではなく再現可能なヒューリスティック）
+- 【P1】Gate3資料自動生成（残: PoC/UAT結果をGate3申請資料として自動整形する機能）
 
 ### 2.20 本番・運用管理（元#454〜472）
 

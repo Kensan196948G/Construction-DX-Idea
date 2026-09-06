@@ -28,9 +28,15 @@ import type {
   InformationClassification,
   IssueInput,
   KpiOutcome,
+  PocPlan,
+  PocPlanInput,
   PortfolioSummary,
   PortfolioSummaryRow,
   StructuredIdea,
+  UatChecklistInput,
+  UatFeedbackEntry,
+  UatFeedbackInput,
+  UatFeedbackSummary,
 } from "./lib/shared";
 import { authorities } from "./lib/shared";
 
@@ -86,6 +92,11 @@ type StandaloneComponent = {
     id: string,
     baseline: { kpiBaselineHours?: number | null; kpiBaselineCost?: number | null; reason?: string },
   ) => Promise<Idea>;
+  __loadPocBridge?: (id: string) => Promise<{ plan: PocPlan; feedbackSummary: UatFeedbackSummary }>;
+  __savePocPlanBridge?: (id: string, input: PocPlanInput) => Promise<PocPlan>;
+  __saveUatChecklistBridge?: (id: string, input: UatChecklistInput) => Promise<PocPlan>;
+  __submitUatFeedbackBridge?: (id: string, input: UatFeedbackInput) => Promise<UatFeedbackEntry>;
+  loadPocData?: () => Promise<void>;
   submitComment?: () => void;
   exportCsv?: () => void;
   exportExcel?: () => void;
@@ -225,6 +236,11 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__loadKpiBridge = (id) => api.getIdeaKpis(id);
   component.__recordKpiBridge = (id, input) => api.recordKpi(id, input);
   component.__saveKpiBaselineBridge = (id, baseline) => api.updateKpiBaseline(id, baseline);
+  // PoC・MVP・UAT管理（docs/29 §2.19・migration 017）: 詳細画面のPoC計画・UAT。
+  component.__loadPocBridge = (id) => api.getPocPlan(id);
+  component.__savePocPlanBridge = (id, input) => api.updatePocPlan(id, input);
+  component.__saveUatChecklistBridge = (id, input) => api.updateUatChecklist(id, input);
+  component.__submitUatFeedbackBridge = (id, input) => api.submitUatFeedback(id, input);
   // ポートフォリオ（docs/29 §2.5）: 専用画面の集計データ（管理者限定API）。
   component.__loadPortfolioBridge = () => api.getPortfolio();
   // Gate滞留分析・リマインダー（docs/29 §2.7・migration 014・システム管理者限定API）。

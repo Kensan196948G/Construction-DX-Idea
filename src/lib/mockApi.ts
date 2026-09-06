@@ -37,6 +37,8 @@ import type {
   IssueInput,
   KnowledgeCandidate,
   KpiOutcome,
+  PocPlan,
+  PocPlanInput,
   PortfolioSummary,
   PortfolioSummaryRow,
   PrivacyFinding,
@@ -44,6 +46,11 @@ import type {
   RagSearchResult,
   SaveIdeaResult,
   StructuredIdea,
+  UatChecklistInput,
+  UatFeedbackEntry,
+  UatFeedbackInput,
+  UatFeedbackResult,
+  UatFeedbackSummary,
   UserProfile,
 } from "./shared";
 import {
@@ -60,6 +67,7 @@ import {
   ragOverallVerdict,
   ragSimilarityLevel,
   summarizeGateApprovals,
+  summarizeUatFeedback,
 } from "./shared";
 import { buildDemoQuestions, buildDemoStructure } from "./demoAi";
 import { runAiEval } from "./aiEval";
@@ -73,6 +81,27 @@ const phaseHistory = new Map<
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
 >();
 const kpiRecords = new Map<string, IdeaKpi[]>();
+const pocPlans = new Map<string, PocPlan>();
+const uatFeedbackByIdea = new Map<string, UatFeedbackEntry[]>();
+
+function defaultMockPocPlan(ideaId: string): PocPlan {
+  const nowIso = new Date().toISOString();
+  return {
+    ideaId,
+    hypothesis: "",
+    successCriteria: "",
+    mvpScopeIn: [],
+    mvpScopeOut: [],
+    testUsers: "",
+    testScenarios: [],
+    uatChecklist: [],
+    acceptanceResult: "pending",
+    acceptanceNotes: "",
+    updatedBy: "",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
 
 const now = () => new Date().toISOString();
 
@@ -359,6 +388,72 @@ export const mockApi = {
     }
     found.updatedAt = now();
     return found;
+  },
+
+  async getPocPlan(id: string): Promise<{ plan: PocPlan; feedbackSummary: UatFeedbackSummary }> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const plan = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const feedbackSummary = summarizeUatFeedback(uatFeedbackByIdea.get(id) ?? []);
+    return { plan, feedbackSummary };
+  },
+
+  async updatePocPlan(id: string, input: PocPlanInput): Promise<PocPlan> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const existing = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const next: PocPlan = {
+      ...existing,
+      hypothesis: input.hypothesis ?? existing.hypothesis,
+      successCriteria: input.successCriteria ?? existing.successCriteria,
+      mvpScopeIn: input.mvpScopeIn ?? existing.mvpScopeIn,
+      mvpScopeOut: input.mvpScopeOut ?? existing.mvpScopeOut,
+      testUsers: input.testUsers ?? existing.testUsers,
+      testScenarios: input.testScenarios ?? existing.testScenarios,
+      updatedBy: "demo.user@example.com",
+      updatedAt: now(),
+    };
+    pocPlans.set(id, next);
+    return next;
+  },
+
+  async updateUatChecklist(id: string, input: UatChecklistInput): Promise<PocPlan> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const existing = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const next: PocPlan = {
+      ...existing,
+      uatChecklist: input.uatChecklist,
+      acceptanceResult: input.acceptanceResult ?? existing.acceptanceResult,
+      acceptanceNotes: input.acceptanceNotes ?? existing.acceptanceNotes,
+      updatedBy: "demo.user@example.com",
+      updatedAt: now(),
+    };
+    pocPlans.set(id, next);
+    return next;
+  },
+
+  async getUatFeedback(id: string): Promise<UatFeedbackResult> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const items = uatFeedbackByIdea.get(id) ?? [];
+    return { items, summary: summarizeUatFeedback(items) };
+  },
+
+  async submitUatFeedback(id: string, input: UatFeedbackInput): Promise<UatFeedbackEntry> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const entry: UatFeedbackEntry = {
+      id: `uat-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+      ideaId: id,
+      rating: input.rating,
+      comment: input.comment ?? "",
+      feedbackType: input.feedbackType ?? "general",
+      submittedBy: "demo.user@example.com",
+      submittedAt: now(),
+    };
+    uatFeedbackByIdea.set(id, [entry, ...(uatFeedbackByIdea.get(id) ?? [])]);
+    return entry;
   },
 
   async getSimilarIdeas(id: string, limit = 5): Promise<RagSearchResult> {
