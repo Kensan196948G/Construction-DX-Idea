@@ -7,6 +7,7 @@ import type {
   IdeaStage,
   IssueInput,
   PhaseChecklistItem,
+  SavedFilter,
   ScoreGateAlignment,
   StructuredIdea,
 } from "./shared";
@@ -124,6 +125,10 @@ export type StandaloneState = {
   commentDraft: string;
   searchQueryIssue: string;
   searchQueryIdea: string;
+  // Saved Filter / My View（docs/29 §2.23残P2）: 一覧画面ごとの保存済みフィルタ。
+  savedFiltersIssue: SavedFilter[];
+  savedFiltersIdea: SavedFilter[];
+  savedFiltersBusy: boolean;
   approvalDraft: { approverEmail: string; reason: string };
   // Gate1-5（#50/#57）: 選択中アイデアの承認データ。実APIでは items+summary。
   gateDraft: StandaloneGateDraft;

@@ -1435,6 +1435,42 @@ export type IdeaListParams = {
   limit?: number;
 };
 
+// Saved Filter / My View（docs/29 §2.23残P2）。困りごと一覧・アイデア一覧画面の
+// ステージ絞り込み＋キーワード検索を、ユーザーごとに名前を付けて保存する。
+// 現時点では本人のみが参照・削除できる「My View」に限定し、他ユーザーへの
+// 共有（Shared View）は将来拡張とする。
+export const savedFilterListTypes = ["issue", "idea"] as const;
+export type SavedFilterListType = (typeof savedFilterListTypes)[number];
+
+export type SavedFilterParams = {
+  stage?: string;
+  q?: string;
+};
+
+export type SavedFilter = {
+  id: string;
+  listType: SavedFilterListType;
+  name: string;
+  params: SavedFilterParams;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedFilterInput = {
+  listType: SavedFilterListType;
+  name: string;
+  params: SavedFilterParams;
+};
+
+export const savedFilterInputSchema = z.object({
+  listType: z.enum(savedFilterListTypes),
+  name: z.string().trim().min(1).max(100),
+  params: z.object({
+    stage: z.string().max(50).optional(),
+    q: z.string().max(200).optional(),
+  }),
+});
+
 // ---- RAG / 類似アイデア検索（migration 011・Issue #13）----
 // 類似度は pg_trgm の word_similarity（クエリ内の連続trigramが対象テキストの
 // 部分列にどれだけ含まれるか、0..1）。日本語・長文では similarity より分離が

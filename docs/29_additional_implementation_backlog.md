@@ -291,8 +291,15 @@
 ### 2.23 検索・分析拡張（元#503〜523）
 
 - 【P1】Semantic Search（pgvector）・案件ID/タグ/部署/担当/Owner/Authority/Stage/Gate/
-  Status/Score/Risk/Date/ROI/Technology による複合フィルタ
-- 【P2】Saved Filter・My View・Shared View
+  Status/Score/Risk/Date/ROI/Technology による複合フィルタ（既存のpg_trgm word_similarity
+  検索（migration 011）は外部埋め込みAPI依存を避けるための第一段階として意図的に採用済み。
+  pgvector化は拡張機能有効化＋embeddings生成用の外部AI API呼び出し（新規Secret・コスト・
+  レイテンシ）を伴う大規模機能のため引き続き残課題とする）
+- 【実装済】Saved Filter・My View（2026-09-06。migration 021・`saved_filters`テーブル。
+  困りごと一覧・アイデア一覧のステージ絞り込み＋キーワード検索を名前を付けて保存し、
+  一覧画面のチップから呼び出し・削除できる「My View」。本人専用（他ユーザーからは
+  見えない・変更不可）。`GET/POST/PATCH/DELETE /api/saved-filters`）
+- 【P2】Shared View（他ユーザーへの共有。My Viewの上位拡張として今後検討）
 
 ### 2.24 ダッシュボード群（元#524〜537）
 

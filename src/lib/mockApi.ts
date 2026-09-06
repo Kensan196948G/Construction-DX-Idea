@@ -51,6 +51,10 @@ import type {
   RagSearchHit,
   RagSearchResult,
   SaveIdeaResult,
+  SavedFilter,
+  SavedFilterInput,
+  SavedFilterListType,
+  SavedFilterParams,
   StructuredIdea,
   UatChecklistInput,
   UatFeedbackEntry,
@@ -107,6 +111,7 @@ const phaseHistory = new Map<
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
 >();
 const phaseChecklists = new Map<string, PhaseChecklistItem[]>();
+const savedFilters: SavedFilter[] = [];
 const kpiRecords = new Map<string, IdeaKpi[]>();
 const pocPlans = new Map<string, PocPlan>();
 const uatFeedbackByIdea = new Map<string, UatFeedbackEntry[]>();
@@ -581,6 +586,44 @@ export const mockApi = {
     const idea = ideas.find((candidate) => candidate.id === id);
     if (!idea) throw new Error("Idea not found");
     return idea;
+  },
+
+  async listSavedFilters(listType?: SavedFilterListType): Promise<{ items: SavedFilter[] }> {
+    const items = savedFilters
+      .filter((f) => !listType || f.listType === listType)
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return { items };
+  },
+
+  async createSavedFilter(input: SavedFilterInput): Promise<SavedFilter> {
+    const nowIso = now();
+    const item: SavedFilter = {
+      id: `sf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      listType: input.listType,
+      name: input.name,
+      params: input.params,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+    savedFilters.push(item);
+    return item;
+  },
+
+  async updateSavedFilter(id: string, patch: { name?: string; params?: SavedFilterParams }): Promise<SavedFilter> {
+    const item = savedFilters.find((f) => f.id === id);
+    if (!item) throw new Error("Saved filter not found");
+    if (patch.name != null) item.name = patch.name;
+    if (patch.params != null) item.params = patch.params;
+    item.updatedAt = now();
+    return item;
+  },
+
+  async deleteSavedFilter(id: string): Promise<{ ok: boolean }> {
+    const index = savedFilters.findIndex((f) => f.id === id);
+    if (index === -1) throw new Error("Saved filter not found");
+    savedFilters.splice(index, 1);
+    return { ok: true };
   },
 
   async updateIdea(id: string, patch: Partial<StructuredIdea>): Promise<Idea> {
