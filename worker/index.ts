@@ -5464,6 +5464,7 @@ export const workerSecurityTestHooks = {
   selectDbDriver,
   serializeAudit,
   verifyAuditChain,
+  verifyAuditChainFromDb,
   verifyAccessJwt,
   stableStringify,
   toIsoString,

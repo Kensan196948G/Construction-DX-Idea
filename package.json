@@ -29,6 +29,8 @@
     "mvp:smoke": "node scripts/mvp-smoke.mjs",
     "db:migrate": "node scripts/migrate-local.mjs",
     "db:seed": "node scripts/mvp-seed.mjs",
+    "backup:run": "node scripts/backup-postgres.mjs",
+    "backup:drill": "tsx scripts/restore-drill.mjs",
     "release:prepare": "npm run build:production-api && npm run predeploy:check && npm run worker:deploy:dry-run",
     "release:smoke": "node scripts/release-smoke-test.mjs",
     "release:gate": "npm run release:monitor && npm run release:prepare && npm run release:smoke",
