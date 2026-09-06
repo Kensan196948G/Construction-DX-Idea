@@ -247,10 +247,16 @@
 - 【P1】SLA/SLO・Error Rate・Availability・AI Cost・Active User・Adoption Rate
 - 【P2】Incident/Problem/Change リンク・Maintenance/EOL・廃止フロー
 
-### 2.21 Observability（元#473〜490・Issue #7）
+### 2.21 Observability（元#473〜490・Issue #7）※基本実装済み（2026-09-06）
 
-- 【P1】System Health Dashboard（API/DB/AI/Slack/キュー深度/Token/コスト）としきい値設定UI
-- 【P2】Alert Rule 管理・Weekly Ops Report・Monthly Trend
+- 【実装済】System Health Dashboard（`GET /api/admin/health-dashboard`。AI呼び出し
+  当日件数/失敗数/当月コスト、通知キュー保留/失敗数（24h）、監査ハッシュチェーン
+  検証、Gate承認期限超過件数を集約。WebUI「🩺 システムヘルス」画面で総合状態
+  （正常/注意/重大）と各セクションのバッジ表示）
+- 【P2】しきい値設定UI（現状は`computeHealthSummary`の固定ヒューリスティック。
+  可変しきい値の管理画面は今後）
+- 【P2】Alert Rule 管理・Weekly Ops Report・Monthly Trend（週次ダイジェストは
+  既存のSlack送信で基本カバー。トレンドグラフ・アラートルールのカスタマイズは残存）
 
 ### 2.22 BCP・バックアップ（元#491〜502・Issue #8）※ローカルPG向けに実装済み（2026-09-06）
 

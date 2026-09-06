@@ -979,6 +979,88 @@ export type AiDepartmentUsageRow = {
   totalCostEstimate: number;
 };
 
+// ---- Observability: System Health Dashboard（docs/29 §2.21・GET /api/admin/health-dashboard）----
+
+export type HealthDashboard = {
+  generatedAt: string;
+  ai: {
+    callsToday: number;
+    failuresToday: number;
+    monthlyCostEstimate: number;
+  };
+  notificationOutbox: {
+    pendingCount: number;
+    failedCount24h: number;
+  };
+  auditChain: {
+    valid: boolean;
+    checked: number;
+    legacyRows: number;
+    firstBrokenId?: string;
+  };
+  gate: {
+    overdueCount: number;
+  };
+};
+
+export type HealthStatus = "ok" | "warning" | "critical";
+
+export type HealthSectionStatus = {
+  key: "auditChain" | "ai" | "notificationOutbox" | "gate";
+  status: HealthStatus;
+  label: string;
+};
+
+export type HealthSummary = {
+  overall: HealthStatus;
+  sections: HealthSectionStatus[];
+};
+
+// しきい値は現状固定（決定論的ヒューリスティック）。可変しきい値設定UIはP2として残存。
+// 監査チェーン不正のみcritical（データ完全性への直接の脅威）とし、他は運用上の
+// 注意喚起としてwarningに留める（既存の毎時Slackアラートと重大度観点を揃える）。
+export function computeHealthSummary(dashboard: HealthDashboard): HealthSummary {
+  const sections: HealthSectionStatus[] = [
+    {
+      key: "auditChain",
+      status: dashboard.auditChain.valid ? "ok" : "critical",
+      label: dashboard.auditChain.valid
+        ? "監査チェーン正常"
+        : `監査チェーン不正検出（firstBrokenId: ${dashboard.auditChain.firstBrokenId ?? "不明"}）`,
+    },
+    {
+      key: "ai",
+      status: dashboard.ai.failuresToday > 0 ? "warning" : "ok",
+      label:
+        dashboard.ai.failuresToday > 0
+          ? `本日のAI呼び出し失敗${dashboard.ai.failuresToday}件`
+          : "AI呼び出し正常",
+    },
+    {
+      key: "notificationOutbox",
+      status: dashboard.notificationOutbox.failedCount24h > 0 ? "warning" : "ok",
+      label:
+        dashboard.notificationOutbox.failedCount24h > 0
+          ? `通知失敗${dashboard.notificationOutbox.failedCount24h}件（過去24時間）`
+          : "通知キュー正常",
+    },
+    {
+      key: "gate",
+      status: dashboard.gate.overdueCount > 0 ? "warning" : "ok",
+      label:
+        dashboard.gate.overdueCount > 0
+          ? `Gate承認期限超過${dashboard.gate.overdueCount}件`
+          : "Gate承認正常",
+    },
+  ];
+  const overall: HealthStatus = sections.some((s) => s.status === "critical")
+    ? "critical"
+    : sections.some((s) => s.status === "warning")
+      ? "warning"
+      : "ok";
+  return { overall, sections };
+}
+
 export type EvaluationItem = Idea & {
   priorityScore: number;
   reasons: string[];

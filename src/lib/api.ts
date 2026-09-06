@@ -19,6 +19,7 @@ import type {
   DashboardMetrics,
   EvaluationItem,
   Gate3Brief,
+  HealthDashboard,
   GateApprovalRequest,
   GateDecisionInput,
   GateListResult,
@@ -357,6 +358,8 @@ export const api = useMock
       getAiUsage: () => request<AiUsageSummary>("/api/admin/ai-usage"),
       getAiUsageByDepartment: () =>
         request<{ items: AiDepartmentUsageRow[] }>("/api/admin/ai-usage/by-department"),
+      // System Health Dashboard（docs/29 §2.21・Issue #7）。
+      getHealthDashboard: () => request<HealthDashboard>("/api/admin/health-dashboard"),
       getUsageLimits: () => request<{ items: UsageLimitItem[] }>("/api/admin/usage-limits"),
       updateUsageLimit: (patch: UsageLimitPatch) =>
         request<UsageLimitItem>("/api/admin/usage-limits", {
