@@ -60,36 +60,64 @@ AI利用に情報漏えい、異常課金、誤設定の疑いがある場合:
 4. 影響範囲を整理する。
 5. 再開条件を管理者が承認する。
 
-## 6. バックアップ・復旧（2026-08-12追加 / 2026-08-31ローカルPostgreSQL移行で更新）
+## 6. バックアップ・復旧（2026-08-12追加 / 2026-09-06 pg_dump/pg_restore実装で更新）
 
-**【現行・2026-08-31以降】DBはローカルPostgreSQL**（Neonは廃止済み）。本番 `dx_idea` は
-ローカルPostgreSQL 16.14 上にあり、systemd（dx-idea-api.service）が postgres.js（TCP）で接続する。
+**DBはローカルPostgreSQL**（Neonは2026-08-31に廃止済み）。本番 `dx_idea` はローカル
+PostgreSQL 16.14 上にあり、systemd（dx-idea-api.service）が postgres.js（TCP）で接続する。
 
-```bash
-# ローカルPostgreSQLのスナップショット（バックアップ）
-pg_dump "postgresql://<user>@127.0.0.1:5432/dx_idea" -Fc -f /backup/dx_idea_$(date +%Y%m%d).dump
-# 整合性確認（監査チェーン等）
-psql "postgresql://<user>@127.0.0.1:5432/dx_idea" -c "select count(*) from ideas; select count(*) from audit_logs;"
-```
-
-- 復旧手順の検証（ダンプ→一時DB `dx_idea_restore` へリストア→監査チェーンverify→スモーク）を
-  四半期に1回以上実施する（`scripts/neon-backup-drill.sh` はNeon時代の演習スクリプト。ローカル用に
-  接続先を読み替えて利用可能）。
-- RTO目標: 4時間 / RPO目標: 5分（ローカルPostgreSQLのWAL/スナップショット前提。ユーザー承認で確定）。
-
-（旧・Neon時代の記録）Neonは自動バックアップ（PITR）を提供していた。復旧手順の検証は四半期に1回以上実施していた。
+### バックアップの取得
 
 ```bash
-# Neon CLI（旧・実行前に Neon プロジェクトIDを確認）
-neonctl branches create --name backup-YYYYMMDD --project-id twilight-cloud-06040828
-# バックアップブランチから一時接続URLを取得し、整合性SQLを実行
-neonctl connection-string --branch backup-YYYYMMDD --project-id twilight-cloud-06040828
-psql "$TEMPORARY_URL" -c "select count(*) from ideas; select count(*) from audit_logs;"
+DATABASE_URL="postgresql://<user>@127.0.0.1:5432/dx_idea" npm run backup:run
 ```
 
-- RTO目標: 4時間 / RPO目標: 5分（Neon PITR前提。運用開始前にユーザー承認で確定する）。
-- 復旧演習（リストア→スモーク→利用者確認）は本番を汚さないよう一時ブランチで行う。
+- `scripts/backup-postgres.mjs` が `DATABASE_URL` の指すDBを custom形式（`-Fc`）で
+  `backups/<dbname>/<dbname>-<timestamp>.dump` へ保存する。
+- サーバーのメジャーバージョンを問い合わせ、一致する `pg_dump` バイナリ
+  （`/usr/lib/postgresql/<major>/bin/pg_dump`）を自動選択する（重要: `PATH` 上の
+  `pg_dump` がサーバーより新しいバージョンだと、`pg_restore` で復元不能なダンプが
+  生成される。2026-09-06に実機で確認済みの既知の落とし穴）。
+- 既定で同一DB名の直近14世代を保持し、それより古いものは自動削除する（`--keep N`で変更可）。
+- `backups/` はgit管理外（`.gitignore`）。実データを含むため、Cloudflare等へ絶対に
+  アップロードしない。保管先は本番ホストのローカルディスク＋別ディスク/別ホストへの
+  コピー（オフサイト）を別途運用で確保すること。
+
+### 復元演習（Restore Drill）
+
+```bash
+DATABASE_URL="postgresql://<user>@127.0.0.1:5432/dx_idea" npm run backup:drill
+```
+
+- `scripts/restore-drill.mjs` が最新のバックアップファイルを一時DB
+  （`<dbname>_restore_drill_<timestamp>`）へ復元し、元DBとの主要テーブル行数比較、および
+  本番 `GET /api/admin/audit/verify` と同一ロジックによる監査ハッシュチェーン検証を
+  行ったうえで一時DBを削除する。結果は `backups/restore-drill-log.tsv` へ追記される。
+- 一時DBの作成・削除にはCREATEDB権限が必要なため、アプリ用ロール
+  （`DATABASE_URL`の接続ユーザー）ではなく、peer認証のローカル管理ユーザー
+  （既定: 実行OSユーザー。`PG_ADMIN_SUPERUSER`で上書き可）で行う。
+- 2026-09-06実機検証: `dx_idea_mvp`（23テーブル）で全テーブル行数一致・監査チェーン
+  valid:true を確認済み。
+- 四半期に1回以上、本番 `dx_idea` に対しても同じ手順で実施し、結果を本ファイルへ記録する。
+
+### RTO/RPO目標
+
+- RTO目標: 4時間 / RPO目標: 直近バックアップの取得間隔（日次実行を推奨。ユーザー承認で確定）。
+- 本番切替が必要な障害時は、最新バックアップを別DB（例: `dx_idea_recovered`）へ復元して
+  `backup:drill`相当の検証を行い、`DATABASE_URL`（systemdユニットのEnvironment）を
+  切り替えたうえでサービス再起動・`release:smoke`で確認する。
+
+### 定期実行（ホスト側cron/systemd timer・任意）
+
+`npm run backup:run` を日次で自動実行する場合は、対象ホストのcrontab等へ以下のように
+登録する（このリポジトリのgit管理下には置かない。ホストの運用設定として別途管理する）。
+
+```cron
+0 3 * * * cd /path/to/Construction-DX-Idea && DATABASE_URL="postgresql://..." npm run backup:run >> /var/log/dx-idea-backup.log 2>&1
+```
+
 - ロールバック手順は `docs/23_release_deploy_runbook.md` §ロールバックを参照。
+- 旧・Neon時代の演習スクリプト（`scripts/neon-backup-drill.sh`、`neonctl`ベース）は
+  廃止済みのNeon基盤を前提としており、現行のローカルPostgreSQL構成には対応しない。
 
 ## 7. 障害アラート（2026-08-12追加）
 

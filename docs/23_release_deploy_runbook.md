@@ -146,9 +146,11 @@ export SMOKE_REQUEST_TIMEOUT_MS=12000
 
 ## 5. バックアップ・復旧
 
-- 【現行・ローカルPostgreSQL】バックアップは `pg_dump` 等によるローカルPostgreSQLの
-  スナップショットと、`scripts/neon-backup-drill.sh` 相当の整合性確認演習を四半期に1回以上実施する。
-  復旧時は一時DB（例: `dx_idea_restore`）で整合性を確認後、`DATABASE_URL` を切り替え、
+- 【現行・ローカルPostgreSQL・2026-09-06実装】`npm run backup:run`（`scripts/backup-postgres.mjs`）
+  で `pg_dump`（custom形式）による定期バックアップを取得し、`npm run backup:drill`
+  （`scripts/restore-drill.mjs`）で一時DBへの復元・行数比較・監査ハッシュチェーン検証を
+  四半期に1回以上実施する（詳細手順は `docs/10_operations_runbook.md` §6）。
+  復旧時は最新バックアップを別DBへ復元して同様に検証したうえで `DATABASE_URL` を切り替え、
   `release:smoke` / 監査チェーンverify で確認する。
 - （旧・Neon時代の記録）Neonの自動バックアップ（PITR）を有効にし、`docs/10_operations_runbook.md` §6の
   ブランチ取得・整合性確認・復旧演習を四半期に1回以上実施していた。復旧時は一時ブランチで

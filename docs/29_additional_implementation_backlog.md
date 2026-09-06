@@ -230,7 +230,9 @@
   `PUT /api/ideas/:id/poc/checklist`）
 - 【実装済】Feedback要約・Go/No-Go提案（`summarizeUatFeedback`: 平均評価・不具合件数からgo/
   conditional_go/no_goを決定論的に提案。実AI呼び出しではなく再現可能なヒューリスティック）
-- 【P1】Gate3資料自動生成（残: PoC/UAT結果をGate3申請資料として自動整形する機能）
+- 【実装済】Gate3資料自動生成（PR #69・2026-09-06。`buildGate3Brief`がPoC計画・UATチェックリスト
+  完了率・受入判定・UATフィードバック集計・Gate3承認サマリから推奨コメントを決定論的に組み立て。
+  `GET /api/ideas/:id/gate3-brief`）
 
 ### 2.20 本番・運用管理（元#454〜472）
 
@@ -243,11 +245,17 @@
 - 【P1】System Health Dashboard（API/DB/AI/Slack/キュー深度/Token/コスト）としきい値設定UI
 - 【P2】Alert Rule 管理・Weekly Ops Report・Monthly Trend
 
-### 2.22 BCP・バックアップ（元#491〜502・Issue #8）※移行後ローカルPG前提で再設計が必要
+### 2.22 BCP・バックアップ（元#491〜502・Issue #8）※ローカルPG向けに実装済み（2026-09-06）
 
-- 【P1】pg_dump/pg_restore による定期バックアップ・RPO/RTO の定義と記録
-- 【P1】Restore Test・Restore Smoke・Quarterly Drill・Drill Evidence・Backup Alert
-- 【P2】Failover Procedure・Recovery Runbook（systemd＋Tunnel 構成向け）
+- 【実装済】pg_dump/pg_restore による定期バックアップ（`npm run backup:run`・
+  `scripts/backup-postgres.mjs`）・RPO/RTO の定義と記録（`docs/10_operations_runbook.md` §6。
+  RTO 4時間/RPO=バックアップ取得間隔）
+- 【実装済】Restore Drill（`npm run backup:drill`・`scripts/restore-drill.mjs`。一時DBへ復元し
+  行数比較＋監査ハッシュチェーン検証。結果は`backups/restore-drill-log.tsv`に記録。
+  `dx_idea_mvp`で23テーブル全件一致・監査チェーンvalid:trueを実機確認済み）
+- 【P2】Backup Alert（バックアップ失敗時のSlack通知。現状は手動/cron実行のログ確認のみ）
+- 【P2】Failover Procedure・Recovery Runbook（systemd＋Tunnel 構成向け。基本手順は
+  `docs/10_operations_runbook.md` §6「本番切替が必要な障害時」に記載、より詳細な手順化は今後）
 
 ### 2.23 検索・分析拡張（元#503〜523）
 

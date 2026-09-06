@@ -10,6 +10,9 @@ coverage/
 playwright-report/
 test-results/
 
+# ローカルPostgreSQLバックアップ（pg_dump出力。実データを含むためコミットしない）
+backups/
+
 # Local tool session artifacts (not project source)
 .omo/
 .opencode/
