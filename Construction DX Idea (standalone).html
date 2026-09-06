@@ -2155,8 +2155,11 @@ class Component extends DCLogic {
     if (this.__getGate3BriefBridge) {
       try {
         const brief = await this.__getGate3BriefBridge(String(id));
+        // 取得中に別の案件へ切り替えられていた場合、古い結果を今の画面へ反映しない。
+        if (this.state.selectedIdeaId !== id) return;
         this.setState({ gate3Brief: brief, gate3BriefBusy: false });
       } catch (e) {
+        if (this.state.selectedIdeaId !== id) return;
         this.setState({ gate3BriefBusy: false, toast: { message: `Gate3資料の生成に失敗しました: ${String(e)}` } });
       }
       return;
@@ -2195,7 +2198,6 @@ class Component extends DCLogic {
       generatedAt: new Date().toISOString(),
     };
     this.setState({ gate3Brief: brief, gate3BriefBusy: false, toast: { message: 'Gate3資料を生成しました（モック表示。本番はAPI経由）。' } });
-    this.pushAudit('AI利用', `Gate3資料を生成（${brief.title}）`);
   };
 
   // ---- ポートフォリオ（docs/29 §2.5）----
