@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import postgres from "postgres";
 import { workerSecurityTestHooks } from "../worker/index";
+import { findMatchingPgBinary } from "./pg-binary-version.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -80,9 +81,11 @@ async function main() {
     console.log(`creating drill database: ${drillDb}`);
     await psqlAdmin(`create database ${drillDb};`);
 
+    const { bin: pgRestoreBin } = await findMatchingPgBinary(databaseUrl, "pg_restore");
+    console.log(`using pg_restore: ${pgRestoreBin}`);
     const restoreConn = `dbname=${drillDb} host=/var/run/postgresql user=${adminUser}`;
     await execFileAsync(
-      "/usr/lib/postgresql/16/bin/pg_restore",
+      pgRestoreBin,
       ["-d", restoreConn, "--no-owner", "--no-privileges", dumpFile],
       { maxBuffer: 1024 * 1024 * 64 },
     ).catch(async (error) => {

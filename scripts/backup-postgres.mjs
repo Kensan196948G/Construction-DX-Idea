@@ -21,7 +21,7 @@ import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import postgres from "postgres";
+import { findMatchingPgBinary } from "./pg-binary-version.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -50,25 +50,8 @@ if (!Number.isInteger(keep) || keep < 1) {
   process.exit(1);
 }
 
-async function findMatchingPgDump() {
-  const sql = postgres(databaseUrl, { max: 1 });
-  try {
-    const [{ version_num: versionNum }] = await sql`select current_setting('server_version_num') as version_num`;
-    const major = Math.floor(Number(versionNum) / 10000);
-    const versionedPath = `/usr/lib/postgresql/${major}/bin/pg_dump`;
-    try {
-      await stat(versionedPath);
-      return { bin: versionedPath, major };
-    } catch {
-      return { bin: "pg_dump", major };
-    }
-  } finally {
-    await sql.end();
-  }
-}
-
 async function main() {
-  const { bin, major } = await findMatchingPgDump();
+  const { bin, major } = await findMatchingPgBinary(databaseUrl, "pg_dump");
   console.log(`server major version: ${major} / using pg_dump: ${bin}`);
 
   const backupDir = path.join(root, "backups", dbName);
