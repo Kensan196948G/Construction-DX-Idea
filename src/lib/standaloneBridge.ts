@@ -45,6 +45,8 @@ export type StandaloneIdea = {
   approverEmail?: string;
   informationClassification?: string;
   classificationNotes?: string;
+  // 担当者引継ぎ（docs/29 §2.25残）: 権限判定に使われる現在の担当者メール。
+  createdBy?: string;
 };
 
 export type StandaloneReviewDraft = {
@@ -517,6 +519,7 @@ export function mapApiIdeaToStandalone(idea: Idea): StandaloneIdea {
     approverEmail: idea.approverEmail ?? "",
     informationClassification: idea.informationClassification ?? "internal",
     classificationNotes: idea.classificationNotes ?? "",
+    createdBy: idea.createdBy ?? "",
   };
 }
 

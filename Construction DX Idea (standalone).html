@@ -663,6 +663,12 @@ a:hover { text-decoration: underline; }
                   <input value="{{ classificationDraft.notes }}" onChange="{{ onClassificationNotesDraftChange }}" placeholder="区分の補足（任意・例: 対象範囲）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
                   <div style="font-size:11px;color:#8A97A8;">現在: <span style="font-weight:600;color:#1A2433;">{{ classificationCurrentLabel }}</span><sc-if value="{{ classificationCurrentNotes }}" hint-placeholder-val="{{ false }}">（{{ classificationCurrentNotes }}）</sc-if></div>
                 </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:8px;">
+                  <div style="font-size:14px;font-weight:600;color:#1A2433;">🔁 担当者引継ぎ</div>
+                  <div style="font-size:11px;color:#8A97A8;">現在の担当者: <span style="font-weight:600;color:#1A2433;">{{ selectedIdeaView.ownerEmail }}</span></div>
+                  <button onClick="{{ transferOwner }}" disabled="{{ transferOwnerBusy }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;">引継ぎ先を指定</button>
+                  <div style="font-size:10.5px;color:#8A97A8;">提出者本人または管理者のみ可能。引継ぎ先は登録済みの有効なユーザーである必要があります。</div>
+                </div>
                 <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:12px;">
                   <div style="font-size:14px;font-weight:600;color:#1A2433;">📈 効果測定（KPI）</div>
                   <div style="font-size:11.5px;color:#8A97A8;">ベースライン: <span style="font-weight:600;color:#1A2433;">{{ kpiBaselineText }}</span></div>
@@ -1860,6 +1866,8 @@ class Component extends DCLogic {
     aiEvalState: { busy: false, result: null, provider: 'demo' },
     commentDraft: '',
     approvalDraft: { approverEmail: '', reason: '' },
+    // 担当者引継ぎ（docs/29 §2.25残）: 詳細画面の引継ぎ処理中フラグ。
+    transferOwnerBusy: false,
     // 情報区分・公開制御（migration 012）: 詳細画面の区分編集
     classificationDraft: { value: 'internal', notes: '' },
     classificationBusy: false,
@@ -2003,6 +2011,38 @@ class Component extends DCLogic {
   };
   setFilterStageIssue = (stage) => this.setState({ filterStageIssue: stage });
   setFilterStageIdea = (stage) => this.setState({ filterStageIdea: stage });
+
+  // ---- 担当者引継ぎ（docs/29 §2.25残）----
+  // 実API接続時は App.tsx ブリッジが __transferOwnerBridge を差し替える。
+  transferOwner = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const newOwnerEmail = typeof window !== 'undefined'
+      ? window.prompt('引継ぎ先のメールアドレスを入力してください', '')
+      : null;
+    if (!newOwnerEmail || !newOwnerEmail.trim()) return;
+    const reason = typeof window !== 'undefined' ? (window.prompt('引継ぎ理由（任意）', '') || '') : '';
+    if (this.__transferOwnerBridge) {
+      this.setState({ transferOwnerBusy: true });
+      try {
+        const updated = await this.__transferOwnerBridge(String(id), newOwnerEmail.trim(), reason);
+        this.setState((s) => ({
+          transferOwnerBusy: false,
+          ideas: s.ideas.map((i) => (i.id === id ? { ...i, createdBy: updated.createdBy || newOwnerEmail.trim() } : i)),
+          toast: { message: '担当者を引き継ぎました。' },
+        }));
+        this.pushAudit('設定変更', `「${id}」の担当者を${newOwnerEmail.trim()}へ引継ぎ`);
+      } catch (e) {
+        this.setState({ transferOwnerBusy: false, toast: { message: `担当者引継ぎに失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      ideas: s.ideas.map((i) => (i.id === id ? { ...i, createdBy: newOwnerEmail.trim() } : i)),
+      toast: { message: `担当者を${newOwnerEmail.trim()}へ引き継ぎました（モック表示。本番はAPI経由）。` },
+    }));
+    this.pushAudit('設定変更', `「${id}」の担当者を${newOwnerEmail.trim()}へ引継ぎ`);
+  };
 
   // ---- Saved Filter / My View（docs/29 §2.23残P2）----
   // 実API接続時は App.tsx ブリッジが loadSavedFilters/saveSavedFilter/deleteSavedFilter を差し替える。
@@ -4100,6 +4140,7 @@ class Component extends DCLogic {
         approverEmail: selectedIdeaRaw.approverEmail || '',
         approvalShowRequest: ['none', 'rejected', 'returned'].includes(selectedIdeaRaw.approvalStatus || 'none'),
         approvalShowDecision: (selectedIdeaRaw.approvalStatus || 'none') === 'requested',
+        ownerEmail: selectedIdeaRaw.createdBy || selectedIdeaRaw.email || '未設定',
       };
     }
     const noSelectedIdea = !selectedIdeaView;
@@ -4895,6 +4936,10 @@ class Component extends DCLogic {
       onClassificationDraftChange: this.onClassificationDraftChange,
       onClassificationNotesDraftChange: this.onClassificationNotesDraftChange,
       saveClassification: this.saveClassification,
+
+      // 担当者引継ぎ（docs/29 §2.25残）
+      transferOwner: this.transferOwner,
+      transferOwnerBusy: !!s.transferOwnerBusy,
 
       // KPI・ROI（migration 013）
       kpiRows, kpiHasRecords, kpiBaselineText, kpiSaveLabel, kpiBaselineSaveLabel,

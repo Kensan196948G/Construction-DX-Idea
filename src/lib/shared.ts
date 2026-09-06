@@ -79,6 +79,12 @@ export function isIdeaVisibleTo(params: {
   return value === "public" || value === "internal";
 }
 
+// 担当者引継ぎ（Owner Transfer）の可否判定（docs/29 §2.25残）。
+// 提出者本人または管理者のみ引継ぎを実行できる。
+export function canTransferIdeaOwner(params: { isAdmin: boolean; isOwner: boolean }): boolean {
+  return params.isAdmin || params.isOwner;
+}
+
 /**
  * "demo" is a deterministic, cost-free provider for the MVP/Prototype
  * environment only. It never calls an external AI API and is rejected by the

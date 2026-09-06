@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   authorities,
   authorityLabels,
+  canTransferIdeaOwner,
   gateLabels,
   gateNumbers,
   gateRequiredAuthority,
@@ -239,5 +240,23 @@ describe("Saved Filter / My View（docs/29 §2.23残P2）: savedFilterInputSchem
     assert.throws(() =>
       savedFilterInputSchema.parse({ listType: "idea", name: "あ".repeat(101), params: {} }),
     );
+  });
+});
+
+describe("Owner Transfer（担当者引継ぎ・docs/29 §2.25残）: canTransferIdeaOwner", () => {
+  it("管理者は自分の案件でなくても引継ぎできる", () => {
+    assert.equal(canTransferIdeaOwner({ isAdmin: true, isOwner: false }), true);
+  });
+
+  it("提出者本人は引継ぎできる", () => {
+    assert.equal(canTransferIdeaOwner({ isAdmin: false, isOwner: true }), true);
+  });
+
+  it("提出者でも管理者でもない場合は拒否される", () => {
+    assert.equal(canTransferIdeaOwner({ isAdmin: false, isOwner: false }), false);
+  });
+
+  it("管理者かつ提出者本人でも許可される", () => {
+    assert.equal(canTransferIdeaOwner({ isAdmin: true, isOwner: true }), true);
   });
 });
