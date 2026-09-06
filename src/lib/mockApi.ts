@@ -15,6 +15,7 @@ import type {
   AuditLogEntry,
   Authority,
   DashboardMetrics,
+  Gate3Brief,
   GateApprovalRequest,
   GateDecisionInput,
   GateListResult,
@@ -54,6 +55,7 @@ import type {
   UserProfile,
 } from "./shared";
 import {
+  buildGate3Brief,
   buildStructuredQueryText,
   classifyKnowledgeSource,
   computeStructureConfidence,
@@ -454,6 +456,16 @@ export const mockApi = {
     };
     uatFeedbackByIdea.set(id, [entry, ...(uatFeedbackByIdea.get(id) ?? [])]);
     return entry;
+  },
+
+  async getGate3Brief(id: string): Promise<Gate3Brief> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const pocPlan = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const feedbackSummary = summarizeUatFeedback(uatFeedbackByIdea.get(id) ?? []);
+    const gates = gateApprovals.get(id) ?? [];
+    const gate3 = summarizeGateApprovals(gates).find((g) => g.gateNo === 3) ?? null;
+    return buildGate3Brief({ idea, pocPlan, feedbackSummary, gate3 });
   },
 
   async getSimilarIdeas(id: string, limit = 5): Promise<RagSearchResult> {

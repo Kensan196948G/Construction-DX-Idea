@@ -1002,6 +1002,26 @@ a:hover { text-decoration: underline; }
                         <button onClick="{{ submitUatFeedback }}" disabled="{{ uatFeedbackBusy }}" style="cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ uatFeedbackSubmitLabel }}</button>
                       </div>
                     </div>
+                    <div style="height:1px;background:#EEF1F5;"></div>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                        <div style="font-size:12.5px;font-weight:600;color:#1A2433;">📄 Gate3資料自動生成</div>
+                        <button onClick="{{ generateGate3Brief }}" disabled="{{ gate3BriefBusy }}" style="cursor:pointer;border:1px solid #5B4FC7;background:#5B4FC7;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ gate3BriefButtonLabel }}</button>
+                      </div>
+                      <sc-if value="{{ hasGate3Brief }}" hint-placeholder-val="{{ false }}">
+                        <div style="background:#F7F9FC;border:1px solid #E3E8EF;border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;font-size:12px;color:#1A2433;">
+                          <div style="font-weight:700;">{{ gate3BriefTitle }}</div>
+                          <div><span style="font-weight:600;">仮説:</span> {{ gate3Brief.hypothesis }}</div>
+                          <div><span style="font-weight:600;">成功基準:</span> {{ gate3Brief.successCriteria }}</div>
+                          <div><span style="font-weight:600;">MVPスコープ(In):</span> {{ gate3BriefScopeInText }}</div>
+                          <div><span style="font-weight:600;">MVPスコープ(Out):</span> {{ gate3BriefScopeOutText }}</div>
+                          <div><span style="font-weight:600;">UATチェックリスト:</span> {{ gate3Brief.uatChecklistDoneCount }}/{{ gate3Brief.uatChecklistTotalCount }} 完了</div>
+                          <div><span style="font-weight:600;">受入判定:</span> {{ gate3BriefAcceptanceLabel }}</div>
+                          <div style="background:#EEF0FB;border-radius:6px;padding:8px;font-weight:600;color:#3B2F91;">{{ gate3Brief.recommendation }}</div>
+                          <div style="font-size:10.5px;color:#8A97A8;">生成日時: {{ gate3BriefGeneratedAtText }}</div>
+                        </div>
+                      </sc-if>
+                    </div>
                   </sc-if>
                   <sc-if value="{{ pocNotLoaded }}" hint-placeholder-val="{{ false }}">
                     <div style="font-size:12px;color:#8A97A8;">PoC/UAT情報を読み込んでいます…</div>
@@ -1614,6 +1634,8 @@ class Component extends DCLogic {
     pocBusy: false,
     uatFeedbackDraft: { rating: '5', comment: '', feedbackType: 'general' },
     uatFeedbackBusy: false,
+    gate3Brief: null,
+    gate3BriefBusy: false,
     // ポートフォリオ（migration 013・docs/29 §2.5）: 専用画面の集計データ
     portfolioData: { summary: null, items: [] },
     portfolioBusy: false,
@@ -2121,6 +2143,59 @@ class Component extends DCLogic {
       };
     });
     this.pushAudit('AI利用', `UATフィードバックを投稿（モック・評価${input.rating}）`);
+  };
+
+  // Gate3資料自動生成（docs/29 §2.19残）。実API接続時は App.tsx ブリッジが
+  // __getGate3BriefBridge を差し替える。モック時はpocData（画面に読み込み済み）から
+  // worker側 buildGate3Brief と同じロジック（決定論的な組み立て）をその場で再現する。
+  generateGate3Brief = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    this.setState({ gate3BriefBusy: true });
+    if (this.__getGate3BriefBridge) {
+      try {
+        const brief = await this.__getGate3BriefBridge(String(id));
+        this.setState({ gate3Brief: brief, gate3BriefBusy: false });
+      } catch (e) {
+        this.setState({ gate3BriefBusy: false, toast: { message: `Gate3資料の生成に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    const idea = this.state.ideas.find((it) => it.id === id) || {};
+    const plan = this.state.pocData.plan;
+    const feedbackSummary = this.state.pocData.feedbackSummary;
+    const acceptanceLabels = { pending: '未判定', go: 'Go', conditional_go: '条件付きGo', no_go: 'No-Go' };
+    const doneCount = (plan.uatChecklist || []).filter((it) => it.done).length;
+    const totalCount = (plan.uatChecklist || []).length;
+    const verdict = plan.acceptanceResult !== 'pending' ? plan.acceptanceResult : feedbackSummary.recommendedVerdict;
+    const parts = [`PoC/UAT結果に基づき、Gate3(MVP評価)は「${acceptanceLabels[verdict] || verdict}」を推奨します。`];
+    if (feedbackSummary.count > 0) {
+      parts.push(`UATフィードバック${feedbackSummary.count}件・平均評価${feedbackSummary.averageRating ?? '-'}・不具合${feedbackSummary.defectCount}件・改善要望${feedbackSummary.improvementCount}件。`);
+    } else {
+      parts.push('UATフィードバックはまだ投稿されていません。');
+    }
+    if (totalCount > 0) parts.push(`UATチェックリスト完了 ${doneCount}/${totalCount}件。`);
+    if (plan.acceptanceResult === 'pending' && feedbackSummary.recommendedVerdict !== 'pending') {
+      parts.push('受入判定は未確定のため、上記の機械集計提案を参考に人間の最終判定を記録してください。');
+    }
+    const brief = {
+      ideaId: String(id),
+      caseId: idea.caseId,
+      title: idea.title || plan.ideaId,
+      department: idea.department,
+      submitterName: idea.submitterName,
+      hypothesis: plan.hypothesis,
+      successCriteria: plan.successCriteria,
+      mvpScopeIn: plan.mvpScopeIn || [],
+      mvpScopeOut: plan.mvpScopeOut || [],
+      uatChecklistDoneCount: doneCount,
+      uatChecklistTotalCount: totalCount,
+      acceptanceResult: plan.acceptanceResult,
+      recommendation: parts.join(' '),
+      generatedAt: new Date().toISOString(),
+    };
+    this.setState({ gate3Brief: brief, gate3BriefBusy: false, toast: { message: 'Gate3資料を生成しました（モック表示。本番はAPI経由）。' } });
+    this.pushAudit('AI利用', `Gate3資料を生成（${brief.title}）`);
   };
 
   // ---- ポートフォリオ（docs/29 §2.5）----
@@ -3405,6 +3480,28 @@ class Component extends DCLogic {
     const uatChecklistSaveLabel = s.pocBusy ? '保存中…' : '💾 チェックリスト・受入判定を保存';
     const uatFeedbackSubmitLabel = s.uatFeedbackBusy ? '送信中…' : '📮 フィードバックを送信';
 
+    // ---- Gate3資料自動生成 view-model（docs/29 §2.19残）----
+    const gate3BriefRaw = s.gate3Brief;
+    const hasGate3Brief = !!gate3BriefRaw;
+    const gate3BriefButtonLabel = s.gate3BriefBusy ? '生成中…' : '📄 Gate3資料を生成';
+    const gate3BriefTitle = hasGate3Brief
+      ? `${gate3BriefRaw.caseId ? gate3BriefRaw.caseId + ' ' : ''}${gate3BriefRaw.title}`
+      : '';
+    const gate3BriefScopeInText = hasGate3Brief ? (gate3BriefRaw.mvpScopeIn || []).join('、') || '未設定' : '';
+    const gate3BriefScopeOutText = hasGate3Brief ? (gate3BriefRaw.mvpScopeOut || []).join('、') || '未設定' : '';
+    const gate3BriefAcceptanceLabel = hasGate3Brief
+      ? (acceptanceMeta[gate3BriefRaw.acceptanceResult] || acceptanceMeta.pending).label
+      : '';
+    const gate3BriefGeneratedAtText = hasGate3Brief
+      ? (() => {
+          const d = new Date(gate3BriefRaw.generatedAt);
+          const pad = (n) => String(n).padStart(2, '0');
+          return Number.isNaN(d.getTime())
+            ? gate3BriefRaw.generatedAt
+            : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        })()
+      : '';
+
     // ---- Gate1-5 view-model（#50/#57）----
     const gateLabelsMap = {
       1: 'Gate1 企画承認', 2: 'Gate2 開発承認', 3: 'Gate3 MVP承認',
@@ -3998,6 +4095,16 @@ class Component extends DCLogic {
       submitUatFeedback: this.submitUatFeedback,
       uatFeedbackSubmitLabel,
       uatFeedbackBusy: !!s.uatFeedbackBusy,
+      generateGate3Brief: this.generateGate3Brief,
+      gate3BriefBusy: !!s.gate3BriefBusy,
+      gate3BriefButtonLabel,
+      hasGate3Brief,
+      gate3Brief: gate3BriefRaw || {},
+      gate3BriefTitle,
+      gate3BriefScopeInText,
+      gate3BriefScopeOutText,
+      gate3BriefAcceptanceLabel,
+      gate3BriefGeneratedAtText,
 
       adminSettings: a, usagePercent, adminUsageBarStyle, adminToggleTrackStyle, adminToggleDotStyle,
       adminEnabledLabel, testButtonLabel, adminTestSuccess, adminApiKeySavedMsg: a.apiKeySavedMsg,

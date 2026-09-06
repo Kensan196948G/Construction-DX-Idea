@@ -414,6 +414,99 @@ export function summarizeUatFeedback(items: Array<Pick<UatFeedbackEntry, "rating
   return { count, averageRating, defectCount, improvementCount, recommendedVerdict };
 }
 
+// ---- Gate3資料自動生成（docs/29 §2.19残・migration 017データの整形）----
+// PoC/UAT結果とGate3承認状況をGate3申請資料として自動整形する。実AI生成ではなく、
+// 既存データ（PoC計画・UATフィードバック集計・Gate3承認行）を決定論的に組み立てるのみ。
+
+export type Gate3Brief = {
+  ideaId: string;
+  caseId?: string;
+  title: string;
+  department?: string;
+  submitterName?: string;
+  hypothesis: string;
+  successCriteria: string;
+  mvpScopeIn: string[];
+  mvpScopeOut: string[];
+  testUsers: string;
+  testScenarios: string[];
+  uatChecklist: UatChecklistItem[];
+  uatChecklistDoneCount: number;
+  uatChecklistTotalCount: number;
+  acceptanceResult: PocAcceptanceResult;
+  acceptanceNotes: string;
+  uatFeedbackSummary: UatFeedbackSummary;
+  gate3: GateSummary | null;
+  recommendation: string;
+  generatedAt: string;
+};
+
+// PoC/UATの受入判定とフィードバック集計からGate3申請向けの推奨コメントを組み立てる。
+function buildGate3Recommendation(params: {
+  acceptanceResult: PocAcceptanceResult;
+  feedbackSummary: UatFeedbackSummary;
+  doneCount: number;
+  totalCount: number;
+}): string {
+  const { acceptanceResult, feedbackSummary, doneCount, totalCount } = params;
+  const parts: string[] = [];
+  const verdict = acceptanceResult !== "pending" ? acceptanceResult : feedbackSummary.recommendedVerdict;
+  parts.push(`PoC/UAT結果に基づき、Gate3(MVP評価)は「${pocAcceptanceResultLabels[verdict]}」を推奨します。`);
+  if (feedbackSummary.count > 0) {
+    parts.push(
+      `UATフィードバック${feedbackSummary.count}件・平均評価${feedbackSummary.averageRating ?? "-"}・不具合${feedbackSummary.defectCount}件・改善要望${feedbackSummary.improvementCount}件。`,
+    );
+  } else {
+    parts.push("UATフィードバックはまだ投稿されていません。");
+  }
+  if (totalCount > 0) {
+    parts.push(`UATチェックリスト完了 ${doneCount}/${totalCount}件。`);
+  }
+  if (acceptanceResult === "pending" && feedbackSummary.recommendedVerdict !== "pending") {
+    parts.push("受入判定は未確定のため、上記の機械集計提案を参考に人間の最終判定を記録してください。");
+  }
+  return parts.join(" ");
+}
+
+export function buildGate3Brief(params: {
+  idea: Pick<Idea, "id" | "caseId" | "title" | "department" | "submitterName">;
+  pocPlan: PocPlan;
+  feedbackSummary: UatFeedbackSummary;
+  gate3: GateSummary | null;
+  generatedAt?: string;
+}): Gate3Brief {
+  const { idea, pocPlan, feedbackSummary, gate3 } = params;
+  const doneCount = pocPlan.uatChecklist.filter((item) => item.done).length;
+  const totalCount = pocPlan.uatChecklist.length;
+  return {
+    ideaId: idea.id,
+    caseId: idea.caseId,
+    title: idea.title,
+    department: idea.department,
+    submitterName: idea.submitterName,
+    hypothesis: pocPlan.hypothesis,
+    successCriteria: pocPlan.successCriteria,
+    mvpScopeIn: pocPlan.mvpScopeIn,
+    mvpScopeOut: pocPlan.mvpScopeOut,
+    testUsers: pocPlan.testUsers,
+    testScenarios: pocPlan.testScenarios,
+    uatChecklist: pocPlan.uatChecklist,
+    uatChecklistDoneCount: doneCount,
+    uatChecklistTotalCount: totalCount,
+    acceptanceResult: pocPlan.acceptanceResult,
+    acceptanceNotes: pocPlan.acceptanceNotes,
+    uatFeedbackSummary: feedbackSummary,
+    gate3,
+    recommendation: buildGate3Recommendation({
+      acceptanceResult: pocPlan.acceptanceResult,
+      feedbackSummary,
+      doneCount,
+      totalCount,
+    }),
+    generatedAt: params.generatedAt ?? new Date().toISOString(),
+  };
+}
+
 // ---- DX案件ポートフォリオ（docs/29 §2.5）----
 export type PortfolioSummary = {
   totalIdeas: number;

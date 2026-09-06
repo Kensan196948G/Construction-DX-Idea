@@ -132,6 +132,16 @@ try {
     `feedbackSummary.verdict=${final.json?.feedbackSummary?.recommendedVerdict}`,
   ]);
 
+  // 5) Gate3資料自動生成（docs/29 §2.19残）
+  const brief = await api(base, "GET", `/api/ideas/${createdIdeaId}/gate3-brief`);
+  results.push([
+    "gate3 brief",
+    brief.status,
+    `checklist=${brief.json?.uatChecklistDoneCount}/${brief.json?.uatChecklistTotalCount}`,
+    `acceptance=${brief.json?.acceptanceResult}`,
+    `hasRecommendation=${typeof brief.json?.recommendation === "string" && brief.json.recommendation.length > 0}`,
+  ]);
+
   for (const r of results) console.log(r.join(" | "));
 
   const pass =
@@ -144,7 +154,13 @@ try {
     feedbackList.json?.summary?.recommendedVerdict === "conditional_go" &&
     checklist.status === 200 && checklist.json?.acceptanceResult === "conditional_go" &&
     final.status === 200 && final.json?.plan?.uatChecklist?.length === 2 &&
-    final.json?.feedbackSummary?.recommendedVerdict === "conditional_go";
+    final.json?.feedbackSummary?.recommendedVerdict === "conditional_go" &&
+    brief.status === 200 &&
+    brief.json?.uatChecklistDoneCount === 1 &&
+    brief.json?.uatChecklistTotalCount === 2 &&
+    brief.json?.acceptanceResult === "conditional_go" &&
+    typeof brief.json?.recommendation === "string" &&
+    brief.json.recommendation.length > 0;
 
   console.log(pass ? "E2E RESULT: PASS" : "E2E RESULT: FAIL");
   process.exitCode = pass ? 0 : 1;
