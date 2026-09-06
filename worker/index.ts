@@ -1597,12 +1597,20 @@ async function logRagSearch(
 async function findSimilarIdeas(
   db: DbSql,
   query: string,
-  excludeIdeaId?: string,
-  limit: number = 5,
+  excludeIdeaId: string | undefined,
+  limit: number,
+  visibility: { user: string; isAdmin: boolean },
 ): Promise<Array<{ idea: Idea; similarity: number }>> {
   const capped = Math.min(Math.max(1, Math.trunc(limit)), ragMaxResults);
   const q = normalizeRagQuery(query);
   if (!q || q.length < 4) return [];
+  // 情報区分・公開制御（migration 012）: RAG候補も一覧APIと同じ可視性条件を
+  // 適用する（fail-closed）。admin は全区分、非adminは public/internal または
+  // 本人作成のみを候補にする。confidential/restricted の title/caseId が
+  // 引用として非対象ユーザーへ漏れることを防ぐ。
+  const visibilityAnd = visibility.isAdmin
+    ? db``
+    : db`and (information_classification in ('public','internal') or created_by = ${visibility.user})`;
   // word_similarity(a,b) は「a の連続trigramが b の最良の連続部分列にどれだけ
   // 一致するか」で、方向に依存する（クエリ短文→対象長文が本来の使い方）。
   // 案件同士（どちらも長文）を比較する場合は両方向の最大値を採用すると
@@ -1619,6 +1627,7 @@ async function findSimilarIdeas(
             word_similarity(${q}, search_text),
             word_similarity(search_text, ${q})
           ) >= ${ragMinSimilarity}
+          ${visibilityAnd}
         order by rag_sim desc
         limit ${capped}
       `
@@ -1632,6 +1641,7 @@ async function findSimilarIdeas(
           word_similarity(${q}, search_text),
           word_similarity(search_text, ${q})
         ) >= ${ragMinSimilarity}
+          ${visibilityAnd}
         order by rag_sim desc
         limit ${capped}
       `;
@@ -1670,7 +1680,11 @@ app.get("/api/ideas/:id/similar", async (c) => {
   `;
   if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
   const source = mapIdeaRow(rows[0]);
-  const hits = await findSimilarIdeas(db, buildIdeaQueryText(source), source.id, limit);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const hits = await findSimilarIdeas(db, buildIdeaQueryText(source), source.id, limit, {
+    user,
+    isAdmin,
+  });
   const items: RagSearchHit[] = await Promise.all(
     hits.map(async ({ idea, similarity }) => ({
       idea: await redactIdeaForUser(idea, user, c.env),
@@ -1697,7 +1711,8 @@ app.get("/api/rag/search", async (c) => {
   }
   const rawLimit = Number(c.req.query("limit") ?? 5);
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), ragMaxResults) : 5;
-  const hits = await findSimilarIdeas(db, q, undefined, limit);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const hits = await findSimilarIdeas(db, q, undefined, limit, { user, isAdmin });
   const items: RagSearchHit[] = await Promise.all(
     hits.map(async ({ idea, similarity }) => ({
       idea: await redactIdeaForUser(idea, user, c.env),
@@ -2551,7 +2566,11 @@ async function buildAiStructureResponse(
   structured: StructuredIdea,
 ): Promise<AiStructureResponse> {
   const queryText = buildStructuredQueryText(structured);
-  const hits = queryText.length >= 4 ? await findSimilarIdeas(db, queryText, undefined, 5) : [];
+  const isAdmin = (await resolveRoles(env, user)).includes("admin");
+  const hits =
+    queryText.length >= 4
+      ? await findSimilarIdeas(db, queryText, undefined, 5, { user, isAdmin })
+      : [];
   const citations: RagCitation[] = hits.map(({ idea, similarity }) => ({
     ideaId: idea.id,
     caseId: idea.caseId,
@@ -5294,6 +5313,8 @@ export const workerSecurityTestHooks = {
   formatGateReminderMessage,
   buildEvidenceRowsFromOverview,
   estimateAiCost,
+  findSimilarIdeas,
+  getDb,
   normalizeRagQuery,
   parseGateNo,
   formatCaseId,
