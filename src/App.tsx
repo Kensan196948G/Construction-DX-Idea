@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ApiClientError, api } from "./lib/api";
-import { drainQueue, enqueueDraft, normalizeQueue } from "./lib/offlineDrafts";
+import { drainQueue, enqueueDraft, normalizeQueue, type OfflineDraft } from "./lib/offlineDrafts";
 import {
   buildManualStructuredIdea,
   emptyIntakeForm,
@@ -215,6 +215,12 @@ export function App() {
   );
 }
 
+// 通信/同期状態表示（docs/29 §2.18残）: iframe再読み込みをまたいで最新の
+// componentだけがwindowのonline/offlineイベントを受け取るよう、直前の
+// リスナーをここで保持し bindStandaloneWorkflowBridge から差し替える。
+let offlineOnlineHandler: (() => void) | null = null;
+let offlineOfflineHandler: (() => void) | null = null;
+
 function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   const component = getStandaloneComponent(frame);
   if (!component || component.__hostWorkflowBound) return;
@@ -424,13 +430,20 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     offlineDraftCount: readOfflineDraftCount(),
   });
   if (typeof window !== "undefined") {
-    window.addEventListener("online", () => {
+    // iframeの再読み込みでbindStandaloneWorkflowBridgeが複数回呼ばれても、
+    // window（ホストページ）側のリスナーは常に最新のcomponentを指す1組だけに
+    // する（古いcomponentへの参照が残るメモリリーク・二重発火を防ぐ）。
+    if (offlineOnlineHandler) window.removeEventListener("online", offlineOnlineHandler);
+    if (offlineOfflineHandler) window.removeEventListener("offline", offlineOfflineHandler);
+    offlineOnlineHandler = () => {
       component.setState({ isOnline: true });
       void syncOfflineDrafts(component);
-    });
-    window.addEventListener("offline", () => {
+    };
+    offlineOfflineHandler = () => {
       component.setState({ isOnline: false });
-    });
+    };
+    window.addEventListener("online", offlineOnlineHandler);
+    window.addEventListener("offline", offlineOfflineHandler);
   }
 
   component.setState((state) => ({ ...state }));
@@ -1749,7 +1762,13 @@ function queueOfflineDraft(component: StandaloneComponent, structured: Structure
   }
 }
 
+// 起動時の自動同期・online復帰時の自動同期・手動「今すぐ同期」ボタンが
+// ほぼ同時に発火し得るため、同時に1本しか走らせない（多重drainによる
+// 二重送信自体はidempotencyKeyで防げるが、localStorageの読み書き競合を避ける）。
+let offlineSyncInFlight = false;
+
 async function syncOfflineDrafts(component: StandaloneComponent) {
+  if (offlineSyncInFlight) return;
   let raw: string | null = null;
   try {
     raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
@@ -1757,23 +1776,37 @@ async function syncOfflineDrafts(component: StandaloneComponent) {
     return;
   }
   if (!raw) return;
-  let queue = [];
+  let queue: OfflineDraft[] = [];
   try {
     queue = normalizeQueue(JSON.parse(raw));
   } catch {
     return;
   }
   if (queue.length === 0) return;
+  offlineSyncInFlight = true;
   component.setState({ offlineSyncBusy: true });
+  const processedKeys = new Set(queue.map((draft) => draft.idempotencyKey));
   const { remaining, synced } = await drainQueue(queue, async (draft) => {
     await api.saveIdea(draft.structured, draft.stage, draft.idempotencyKey);
   });
+  // 同期処理中（await api.saveIdea の間）にqueueOfflineDraftで新規追加された
+  // 下書きは、この関数開始時点のqueueスナップショットに含まれていない。
+  // remainingだけをそのまま書き戻すとその新規分を消してしまうため、書き戻し
+  // 直前に最新のlocalStorageを再読込し、未処理分（processedKeysに無い項目）を
+  // マージしてから書き戻す。
+  let finalCount = remaining.length;
   try {
-    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(remaining));
+    const latestRaw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
+    const latestQueue = latestRaw ? normalizeQueue(JSON.parse(latestRaw)) : [];
+    const arrivedDuringSync = latestQueue.filter((draft) => !processedKeys.has(draft.idempotencyKey));
+    const merged = [...remaining, ...arrivedDuringSync];
+    window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(merged));
+    finalCount = merged.length;
   } catch {
     // Keep the queue in memory for this session only.
   }
-  component.setState({ offlineSyncBusy: false, offlineDraftCount: remaining.length });
+  offlineSyncInFlight = false;
+  component.setState({ offlineSyncBusy: false, offlineDraftCount: finalCount });
   showToast(
     component,
     synced > 0
