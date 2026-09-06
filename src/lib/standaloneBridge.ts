@@ -218,6 +218,10 @@ export type StandaloneState = {
   // Blocker一覧（docs/29 §2.9残P2）: Gate承認待ち＋情報待ちの横断集約データ（システム管理者）。
   blockerData: BlockerListResult | null;
   blockerBusy: boolean;
+  // 通信/同期状態表示・手動再同期（docs/29 §2.18残・Issue #11）。
+  isOnline: boolean;
+  offlineDraftCount: number;
+  offlineSyncBusy: boolean;
   // GitHub Engineering 連携（docs/29 §2.12・migration 015）: 詳細画面のカードデータ。
   repoData: {
     links: Array<{

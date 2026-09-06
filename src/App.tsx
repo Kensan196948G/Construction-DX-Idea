@@ -131,6 +131,7 @@ type StandaloneComponent = {
   runGateReminders?: () => Promise<void>;
   loadBlockers?: () => Promise<void>;
   transferOwner?: () => Promise<void>;
+  syncOfflineDraftsNow?: () => Promise<void>;
   loadSavedFilters?: (listType: SavedFilterListType) => Promise<void>;
   saveCurrentFilter?: (listType: SavedFilterListType) => Promise<void>;
   removeSavedFilter?: (listType: SavedFilterListType, id: string) => Promise<void>;
@@ -415,6 +416,22 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       void loadSavedFiltersThroughBridge(component, "idea");
     }
   };
+
+  // 通信/同期状態表示・手動再同期（docs/29 §2.18残・Issue #11）。
+  component.syncOfflineDraftsNow = () => syncOfflineDrafts(component);
+  component.setState({
+    isOnline: typeof navigator === "undefined" || navigator.onLine,
+    offlineDraftCount: readOfflineDraftCount(),
+  });
+  if (typeof window !== "undefined") {
+    window.addEventListener("online", () => {
+      component.setState({ isOnline: true });
+      void syncOfflineDrafts(component);
+    });
+    window.addEventListener("offline", () => {
+      component.setState({ isOnline: false });
+    });
+  }
 
   component.setState((state) => ({ ...state }));
   void loadInitialData(component);
@@ -705,7 +722,7 @@ async function saveReviewDraftThroughApi(component: StandaloneComponent, stage: 
     component.pushAudit?.(stage === "draft" ? "下書き保存" : "新規登録", `「${savedIdea.title}」を保存`);
   } catch (error) {
     if (isNetworkLikeError(error)) {
-      queueOfflineDraft(structured, stage);
+      queueOfflineDraft(component, structured, stage);
       showToast(component, "サーバーに接続できないため、内容を端末のオフライン下書きへ保存しました。通信復旧後に自動同期します。");
       finishBridgeAction(component, actionKey);
       return;
@@ -1711,12 +1728,22 @@ function isNetworkLikeError(error: unknown): boolean {
   return true;
 }
 
-function queueOfflineDraft(structured: StructuredIdea, stage: IdeaStage) {
+function readOfflineDraftCount(): number {
+  try {
+    const raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
+    return raw ? normalizeQueue(JSON.parse(raw)).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function queueOfflineDraft(component: StandaloneComponent, structured: StructuredIdea, stage: IdeaStage) {
   try {
     const raw = window.localStorage.getItem(OFFLINE_DRAFTS_KEY);
     const queue = raw ? normalizeQueue(JSON.parse(raw)) : [];
     const next = enqueueDraft(queue, structured, stage);
     window.localStorage.setItem(OFFLINE_DRAFTS_KEY, JSON.stringify(next));
+    component.setState({ offlineDraftCount: next.length });
   } catch {
     // Storage unavailable — fall back to the regular error toast.
   }
@@ -1737,6 +1764,7 @@ async function syncOfflineDrafts(component: StandaloneComponent) {
     return;
   }
   if (queue.length === 0) return;
+  component.setState({ offlineSyncBusy: true });
   const { remaining, synced } = await drainQueue(queue, async (draft) => {
     await api.saveIdea(draft.structured, draft.stage, draft.idempotencyKey);
   });
@@ -1745,6 +1773,7 @@ async function syncOfflineDrafts(component: StandaloneComponent) {
   } catch {
     // Keep the queue in memory for this session only.
   }
+  component.setState({ offlineSyncBusy: false, offlineDraftCount: remaining.length });
   showToast(
     component,
     synced > 0
