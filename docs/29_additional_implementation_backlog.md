@@ -52,13 +52,25 @@
 
 ### 2.0 最優先（残る P0 群）
 
-- 【P0】RAG・類似アイデア検索・重複判定（元#46〜65、GitHub Issue #13）
-- 【P0】AI根拠・引用・信頼度表示（元#45/#63/#64）
-- 【P0】AI品質 Eval・ゴールデンデータセット（元#373〜375、Issue #13）
-- 【P0】DX案件ポートフォリオ（元#93〜122）
-- 【P0】KPI・ROI・Benefit Realization（元#123〜148）
-- 【P0】情報区分・公開制御（元#377〜381 ほか）
-- 【P0】Gate 高度化の残り（条件付き承認・期限/Reminder/Escalation・代理承認、元#155〜181）
+> 2026-09-06 時点の状況（コード確認済み）: 本セクション作成後の PR #63〜#67 および
+> 2026-09-06 分の追加実装により、当初 P0 として挙げた項目の大半は実装済み。
+> 詳細は各項目・各節の【実装済み】注記を参照。
+
+- 【実装済】RAG・類似アイデア検索・重複判定（migration 011 の pg_trgm word_similarity 検索
+  ＋ 2026-09-06 の `ragOverallVerdict` による統合候補/既存案件へ追加/新規案件の判定。
+  元#46〜65、GitHub Issue #13、§2.3参照）
+- 【実装済】AI根拠・引用・信頼度表示（2026-09-06。`/api/ai/structure` のRAG引用＋
+  信頼度ヒューリスティック。元#45/#63/#64、§2.2参照）
+- 【実装済】AI品質 Eval・ゴールデンデータセット（`src/lib/aiEval.ts` の Golden Dataset 5件超＋
+  `tests/ai-eval.test.ts` で `npm run verify`／CIに組込み済み。`/api/admin/ai-eval` で
+  実行可。元#373〜375、Issue #13）
+- 【実装済】DX案件ポートフォリオ（migration 013・`/api/portfolio`。元#93〜122、PR #64/#65。§2.5参照）
+- 【実装済】KPI・ROI・Benefit Realization（migration 013・3/6/12か月レビュー含む。
+  元#123〜148、PR #64/#65。§2.6参照）
+- 【実装済】情報区分・公開制御（migration 012。元#377〜381 ほか、PR #63。§2.17参照。
+  ただしAudit Timeline UI等の周辺拡張はP1として残存）
+- 【実装済】Gate 高度化の残り（条件付き承認・期限/Reminder/Escalation・代理承認。
+  migration 014、PR #66。元#155〜181。§2.7参照。承認順序・Checklist等の追加拡張はP1で残存）
 
 ### 2.1 アイデア受付・入力支援（元#1〜20）
 
@@ -81,14 +93,21 @@
 - 【P0】「そもそもシステム化不要」判定の明示
 - 【P1】MVP案・PoC案生成・必要データ整理・関係部署/想定利用者候補
 - 【P1】リスク候補・KPI候補・効果測定方法・概算工数/費用レンジ・実現難易度判定
-- 【P0】AI回答の信頼度表示・根拠・引用（RAG と一体）
+- 【実装済】AI回答の信頼度表示・根拠・引用（2026-09-06。`/api/ai/structure` が
+  `computeStructureConfidence`（必須項目充足度＋openQuestions残数のヒューリスティック）と
+  RAG類似検索（`buildStructuredQueryText`→`findSimilarIdeas`）による引用を返し、
+  構造化確認画面に信頼度バッジ・根拠一覧を表示）
 
 ### 2.3 RAG・既存資産・重複排除（元#46〜65・Issue #13）※ローカルPostgreSQLで本格実装可能
 
 - 【P0】過去アイデア/PoC/採用案件/却下案件＋却下理由の検索
 - 【P0】既存社内システム・過去Decision Log・類似業務/部署/技術の検索
-- 【P0】重複率算出・「統合候補」「既存案件へ追加」「新規案件」の判定
-- 【P0】根拠文書リンク・引用表示・RAG検索履歴
+- 【実装済】重複率算出・「統合候補」「既存案件へ追加」「新規案件」の判定（2026-09-06。
+  `ragOverallVerdict`が類似度からmerge_candidate/add_to_existing/new_caseを判定し、
+  `/api/rag/search`・`/api/ideas/:id/similar`・`/api/ai/structure`のレスポンスと
+  構造化確認画面のバナーに表示）
+- 【実装済】根拠文書リンク・引用表示・RAG検索履歴（RAG検索結果=引用として構造化確認画面に
+  表示。rag_search_logsへの履歴記録は migration 011 で実装済み）
 - 【技術】pgvector（埋め込み類似）＋ pg_trgm（日本語部分一致）＋ tsvector（全文検索）を
   ローカルPGで利用。埋め込みAPI（Claude/DeepSeek エンベッディング or ローカルモデル）の選定が必要
 
@@ -99,20 +118,20 @@
 - 【P1】AI推奨順位と人間評価（3 Authority＋Gate）との差異表示
 - 【P1】スコア根拠の記録（どの入力から導いたか）
 
-### 2.5 DX案件ポートフォリオ（元#93〜122）
+### 2.5 DX案件ポートフォリオ（元#93〜122）※実装済み（migration 013・PR #64/#65・2026-09-05）
 
-- 【P0】案件ポートフォリオ一覧（部署/工種/地域/担当者別・Stage/Gate別件数）
-- 【P0】Idea Funnel（アイデア→PoC→本番化の転換率）
-- 【P0】Value×Effort・Risk×Return・Bubble Chart・年間/四半期ロードマップ
-- 【P1】高ROI/Quick Win/Strategic/停滞/保留案件ビュー・開発キャパシティ表示
-- 【P1】投資額/見込削減額/削減時間・Portfolio ROI・本番化率
+- 【実装済】案件ポートフォリオ一覧（部署/工種/地域/担当者別・Stage/Gate別件数）・専用画面
+- 【実装済】Idea Funnel（アイデア→PoC→本番化の転換率）
+- 【実装済】Value×Effort・Risk×Return・Bubble Chart・年間/四半期ロードマップ
+- 【実装済】高ROI/Quick Win/Strategic/停滞/保留案件ビュー・開発キャパシティ表示
+- 【実装済】投資額/見込削減額/削減時間・Portfolio ROI・本番化率
 
-### 2.6 KPI・ROI・Benefit Realization（元#123〜148）
+### 2.6 KPI・ROI・Benefit Realization（元#123〜148）※実装済み（migration 013・PR #64/#65・2026-09-05）
 
-- 【P0】Baseline登録（現状工数/コスト/件数/品質）→ 目標値 → 本番後実績 → Before/After
-- 【P0】ROI・Payback Period・定量/定性効果・利用率・満足度
-- 【P1】未達理由・改善Action・継続/改善/停止判定
-- 【P1】3/6/12か月レビュー（リマインダー含む）
+- 【実装済】Baseline登録（現状工数/コスト/件数/品質）→ 目標値 → 本番後実績 → Before/After
+- 【実装済】ROI・Payback Period・定量/定性効果・利用率・満足度
+- 【P1】未達理由・改善Action・継続/改善/停止判定（残: 判定ワークフロー化）
+- 【実装済】3/6/12か月レビュー（リマインダー含む）
 
 ### 2.7 Gate 高度化（元#149〜181）※基本フロー+第1弾は実装済み（migration 014・2026-09-05）
 

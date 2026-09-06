@@ -313,6 +313,31 @@ a:hover { text-decoration: underline; }
         <sc-if value="{{ reviewDraft }}" hint-placeholder-val="{{ false }}">
           <div style="max-width:720px;display:flex;flex-direction:column;gap:14px;">
             <div style="font-size:12.5px;color:#8A97A8;">AIが整理した内容です。人の目で確認し、必要なら修正してから登録してください。</div>
+            <sc-if value="{{ reviewAiMeta }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#F7F9FC;border:1px solid #E3E8EF;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                  <div style="font-size:13px;font-weight:600;color:#1A2433;">🧭 AIの根拠・信頼度</div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:{{ reviewAiMeta.confidenceFg }};background:{{ reviewAiMeta.confidenceBg }};">信頼度 {{ reviewAiMeta.confidenceLabel }}（{{ reviewAiMeta.confidencePct }}%）</span>
+                    <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:{{ reviewAiMeta.verdictFg }};background:{{ reviewAiMeta.verdictBg }};">{{ reviewAiMeta.verdictLabel }}</span>
+                  </div>
+                </div>
+                <sc-if value="{{ reviewAiMeta.hasCitations }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:6px;">
+                    <div style="font-size:11.5px;color:#5A6678;">根拠・引用（類似する既存案件）:</div>
+                    <sc-for list="{{ reviewAiCitations }}" as="ct" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;background:#fff;border:1px solid #E3E8EF;border-radius:8px;padding:6px 10px;">
+                        <span style="color:#1A2433;">{{ ct.caseId }} {{ ct.title }}</span>
+                        <span style="font-size:11px;font-weight:600;color:{{ ct.fg }};background:{{ ct.bg }};padding:2px 8px;border-radius:999px;">類似度 {{ ct.simPct }}%</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ reviewAiMeta.noCitations }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:11.5px;color:#1F8255;">類似する既存案件は見つかりませんでした。</div>
+                </sc-if>
+              </div>
+            </sc-if>
             <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px 20px;display:flex;flex-direction:column;gap:14px;">
               <div style="display:flex;flex-direction:column;gap:5px;">
                 <label style="font-size:12px;font-weight:600;color:#5A6678;">タイトル</label>
@@ -2574,25 +2599,22 @@ class Component extends DCLogic {
   }
 
   buildStructuredDraft(intake, answers) {
-    if (intake.type === 'idea') {
-      return {
-        type: 'idea',
-        title: intake.work || intake.freeText.slice(0, 20),
-        category: intake.work || '未分類',
-        who: intake.who,
-        department: intake.department, submitterName: intake.submitterName, email: intake.email,
-        problem: intake.freeText + (answers[0] ? `(${answers[0]})` : ''),
-        currentProcess: intake.currentProcess || '未記入',
-        ideaProcess: intake.ideaProcess || answers[0] || '未記入',
-        isNewIdea: intake.isNewIdea || 'yes',
-        requiredResources: intake.requiredResources || answers[1] || '人員・機材等の追加調整が必要',
-        coordinationNeeded: intake.coordinationNeeded || answers[2] || '関連部署との調整要否は今後確認',
-        expectedEffect: intake.desiredState || '業務効率化・工数削減',
-        mvpProposal: '対象範囲を限定して試験導入する',
-        securityNotes: '関連データの取扱いに注意する',
-      };
-    }
-    return {
+    const draft = intake.type === 'idea' ? {
+      type: 'idea',
+      title: intake.work || intake.freeText.slice(0, 20),
+      category: intake.work || '未分類',
+      who: intake.who,
+      department: intake.department, submitterName: intake.submitterName, email: intake.email,
+      problem: intake.freeText + (answers[0] ? `(${answers[0]})` : ''),
+      currentProcess: intake.currentProcess || '未記入',
+      ideaProcess: intake.ideaProcess || answers[0] || '未記入',
+      isNewIdea: intake.isNewIdea || 'yes',
+      requiredResources: intake.requiredResources || answers[1] || '人員・機材等の追加調整が必要',
+      coordinationNeeded: intake.coordinationNeeded || answers[2] || '関連部署との調整要否は今後確認',
+      expectedEffect: intake.desiredState || '業務効率化・工数削減',
+      mvpProposal: '対象範囲を限定して試験導入する',
+      securityNotes: '関連データの取扱いに注意する',
+    } : {
       type: 'issue',
       title: intake.work || intake.freeText.slice(0, 20),
       category: intake.work || '未分類',
@@ -2606,6 +2628,35 @@ class Component extends DCLogic {
       mvpProposal: '対象工程を1現場に限定した簡易ツールで試験導入する',
       securityNotes: '現場写真・個人情報を含む場合はマスキング処理を徹底する',
     };
+    draft.aiMeta = this.computeAiStructureMeta(draft);
+    return draft;
+  }
+
+  // AI根拠・信頼度・重複判定（docs/29 §2.2/§2.3）のモック計算。
+  // 実API接続時は worker の buildAiStructureResponse（pg_trgm word_similarity +
+  // computeStructureConfidence）に置き換わる。ロジックは類似・重複候補カード
+  // （mockSimilarityOf）と同じ2-gram重なりベースの近似。
+  computeAiStructureMeta(draft) {
+    const queryText = this.mockIdeaSearchTextOf(draft);
+    const citations = this.state.ideas
+      .map((i) => ({ idea: i, similarity: this.mockSimilarityOf(queryText, this.mockIdeaSearchTextOf(i)) }))
+      .filter((hit) => hit.similarity >= 0.15)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5)
+      .map((hit) => ({
+        ideaId: hit.idea.id,
+        caseId: hit.idea.caseId || '',
+        title: hit.idea.title,
+        similarity: Math.round(hit.similarity * 1000) / 1000,
+        level: hit.similarity >= 0.5 ? 'high' : hit.similarity >= 0.25 ? 'medium' : 'low',
+      }));
+    const bestSim = citations.reduce((max, c) => Math.max(max, c.similarity), 0);
+    const duplicateVerdict = bestSim >= 0.5 ? 'merge_candidate' : bestSim >= 0.25 ? 'add_to_existing' : 'new_case';
+    const filledFields = [draft.title, draft.problem, draft.currentProcess, draft.expectedEffect, draft.mvpProposal, draft.who]
+      .filter((v) => v && String(v).trim()).length;
+    const confidence = Math.round((filledFields / 6) * 100) / 100;
+    const confidenceLevel = confidence >= 0.75 ? 'high' : confidence >= 0.5 ? 'medium' : 'low';
+    return { confidence, confidenceLevel, citations, duplicateVerdict };
   }
 
   submitAnswer = () => {
@@ -2906,6 +2957,43 @@ class Component extends DCLogic {
     reviewFieldKeys.forEach((k) => { reviewHandlers[k] = this.updateReviewField(k); });
     const reviewIsIssue = !!rd && rd.type === 'issue';
     const reviewIsIdea = !!rd && rd.type === 'idea';
+
+    // AI根拠・信頼度・重複判定（docs/29 §2.2/§2.3）の表示用マッピング。
+    const levelColors = {
+      high: { fg: '#B23B3B', bg: '#FBE7E7' },
+      medium: { fg: '#B5701A', bg: '#FDEFE0' },
+      low: { fg: '#5A6678', bg: '#EEF1F5' },
+    };
+    // 信頼度は高いほど良い（類似度levelColorsとは逆の意味づけ）ため専用の配色を使う。
+    const confidenceColors = {
+      high: { fg: '#1F8255', bg: '#E4F3EC' },
+      medium: { fg: '#B5701A', bg: '#FDEFE0' },
+      low: { fg: '#B23B3B', bg: '#FBE7E7' },
+    };
+    const verdictMeta = {
+      merge_candidate: { label: '⚠️ 統合候補あり', fg: '#B23B3B', bg: '#FBE7E7' },
+      add_to_existing: { label: '🔎 既存案件へ追加を検討', fg: '#B5701A', bg: '#FDEFE0' },
+      new_case: { label: '✅ 新規案件として進行可', fg: '#1F8255', bg: '#E4F3EC' },
+    };
+    const am = rd && rd.aiMeta;
+    const reviewAiMeta = am ? {
+      confidencePct: Math.round((am.confidence || 0) * 100),
+      confidenceLabel: am.confidenceLevel === 'high' ? '高' : am.confidenceLevel === 'medium' ? '中' : '低',
+      confidenceFg: (confidenceColors[am.confidenceLevel] || confidenceColors.low).fg,
+      confidenceBg: (confidenceColors[am.confidenceLevel] || confidenceColors.low).bg,
+      verdictLabel: (verdictMeta[am.duplicateVerdict] || verdictMeta.new_case).label,
+      verdictFg: (verdictMeta[am.duplicateVerdict] || verdictMeta.new_case).fg,
+      verdictBg: (verdictMeta[am.duplicateVerdict] || verdictMeta.new_case).bg,
+      hasCitations: !!(am.citations && am.citations.length),
+      noCitations: !(am.citations && am.citations.length),
+    } : null;
+    const reviewAiCitations = (am && am.citations ? am.citations : []).map((ct) => ({
+      caseId: ct.caseId || '',
+      title: ct.title,
+      simPct: Math.round((ct.similarity || 0) * 100),
+      fg: (levelColors[ct.level] || levelColors.low).fg,
+      bg: (levelColors[ct.level] || levelColors.low).bg,
+    }));
 
     const stageFilterChipsIssue = this.buildStageFilterChips(issues, s.filterStageIssue, this.setFilterStageIssue);
     const stageFilterChipsIdea = this.buildStageFilterChips(ideasOnly, s.filterStageIdea, this.setFilterStageIdea);
@@ -3525,6 +3613,7 @@ class Component extends DCLogic {
       submitAnswer: this.submitAnswer, wizardAnswerInvalid, submitAnswerStyle, goToIntake: this.goToIntake,
 
       reviewDraft: rd, noReviewDraft: !rd, reviewHandlers, reviewIsIssue, reviewIsIdea, registerIdea: this.registerIdea,
+      reviewAiMeta, reviewAiCitations,
 
       stageFilterChipsIssue, stageFilterChipsIdea,
       searchQueryIssue: s.searchQueryIssue, searchQueryIdea: s.searchQueryIdea,

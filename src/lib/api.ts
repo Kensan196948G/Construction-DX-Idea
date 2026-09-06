@@ -11,6 +11,7 @@ import type {
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiStructureResponse,
   AiUsageSummary,
   AuditLogEntry,
   Authority,
@@ -272,7 +273,7 @@ export const api = useMock
           body: JSON.stringify({ input }),
         }),
       structureIdea: (input: IssueInput, answers: Record<string, string>) =>
-        request<StructuredIdea>("/api/ai/structure", {
+        request<AiStructureResponse>("/api/ai/structure", {
           method: "POST",
           body: JSON.stringify({ input, answers }),
         }),

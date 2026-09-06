@@ -24,8 +24,10 @@ import {
   type AiConnectionTestResult,
   type AiQuestion,
   type AiSettings,
+  type AiStructureResponse,
   type Authority,
   type DashboardMetrics,
+  type DuplicateVerdict,
   type GateNo,
   type Idea,
   type IdeaComment,
@@ -38,10 +40,13 @@ import {
   type InformationClassification,
   type IssueInput,
   type KpiOutcome,
+  type RagCitation,
   type RagSearchHit,
   type StructuredIdea,
   authorities,
+  buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeStructureConfidence,
   gateLabels,
   gateNumbers,
   gateAuthorityPolicy,
@@ -57,6 +62,7 @@ import {
   issueInputSchema,
   kpiOutcomes,
   ragMinSimilarity,
+  ragOverallVerdict,
   ragSimilarityLevel,
   structuredIdeaSchema,
   userRoles,
@@ -1410,7 +1416,11 @@ app.get("/api/ideas/:id/similar", async (c) => {
     })),
   );
   await logRagSearch(db, c.env, user, buildIdeaQueryText(source), "idea", source.id, items);
-  return c.json({ query: buildIdeaQueryText(source).slice(0, 200), items });
+  return c.json({
+    query: buildIdeaQueryText(source).slice(0, 200),
+    items,
+    duplicateVerdict: ragOverallVerdict(items),
+  });
 });
 
 // GET /api/rag/search?q=... — 任意テキストに対する類似アイデア検索。
@@ -1433,7 +1443,7 @@ app.get("/api/rag/search", async (c) => {
     })),
   );
   await logRagSearch(db, c.env, user, q, "text", undefined, items);
-  return c.json({ query: q, items });
+  return c.json({ query: q, items, duplicateVerdict: ragOverallVerdict(items) });
 });
 
 
@@ -2269,6 +2279,43 @@ app.post(
   },
 );
 
+// AI構造化結果に対する根拠検索（RAG引用）と重複判定をまとめて算出する。
+// docs/29 §2.2「AI回答の信頼度表示・根拠・引用」・§2.3「重複率算出」に対応。
+async function buildAiStructureResponse(
+  db: DbSql,
+  user: string,
+  env: Env,
+  structured: StructuredIdea,
+): Promise<AiStructureResponse> {
+  const queryText = buildStructuredQueryText(structured);
+  const hits = queryText.length >= 4 ? await findSimilarIdeas(db, queryText, undefined, 5) : [];
+  const citations: RagCitation[] = hits.map(({ idea, similarity }) => ({
+    ideaId: idea.id,
+    caseId: idea.caseId,
+    title: idea.title,
+    similarity: Math.round(similarity * 1000) / 1000,
+    level: ragSimilarityLevel(similarity),
+  }));
+  const duplicateVerdict: DuplicateVerdict = ragOverallVerdict(citations);
+  if (citations.length > 0) {
+    await logRagSearch(
+      db,
+      env,
+      user,
+      queryText,
+      "text",
+      undefined,
+      citations.map((citation) => ({
+        idea: { id: citation.ideaId } as Idea,
+        similarity: citation.similarity,
+        level: citation.level,
+      })),
+    );
+  }
+  const { confidence, confidenceLevel } = computeStructureConfidence(structured);
+  return { structured, confidence, confidenceLevel, citations, duplicateVerdict };
+}
+
 app.post(
   "/api/ai/structure",
   zValidator("json", z.object({ input: issueInputSchema, answers: z.record(z.string(), z.string()) })),
@@ -2291,7 +2338,9 @@ app.post(
       }
       const cost = await auditAi(c.env, user, "structure", input, structured);
       await finalizeAiUsage(c.env, reservation, cost);
-      return c.json(structured);
+      const db = getDb(c.env);
+      const response = await buildAiStructureResponse(db, user, c.env, structured);
+      return c.json(response);
     } catch (error) {
       await releaseAiUsage(c.env, reservation);
       await auditAiFailure(c.env, user, "structure", input, error);

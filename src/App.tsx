@@ -547,12 +547,18 @@ async function submitAnswerThroughApi(component: StandaloneComponent) {
   }));
 
   try {
-    const structured = await api.structureIdea(input, answerRecord);
+    const response = await api.structureIdea(input, answerRecord);
+    const structured = response.structured;
     component.__bridgeStructuredDraft = structured;
     component.setState((state) => ({
       view: "review",
       wizard: { ...state.wizard, thinking: false },
-      reviewDraft: toReviewDraft(structured, wizard.sourceIntake ?? state.intakeForm),
+      reviewDraft: toReviewDraft(structured, wizard.sourceIntake ?? state.intakeForm, {
+        confidence: response.confidence,
+        confidenceLevel: response.confidenceLevel,
+        citations: response.citations,
+        duplicateVerdict: response.duplicateVerdict,
+      }),
     }));
     component.pushAudit?.("AI利用", `${input.affectedRole || "利用者"}が「${structured.title}」についてAI壁打ちを実施`);
   } catch (error) {

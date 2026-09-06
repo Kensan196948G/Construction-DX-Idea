@@ -10,6 +10,7 @@ import type {
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiStructureResponse,
   AiUsageSummary,
   AuditLogEntry,
   Authority,
@@ -46,7 +47,9 @@ import type {
   UserProfile,
 } from "./shared";
 import {
+  buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeStructureConfidence,
   defaultGateApprovalRows,
   defaultPhaseForStage,
   gateNumbers,
@@ -54,6 +57,7 @@ import {
   ideaValuePhaseLabel,
   ideaValuePhases,
   ragMinSimilarity,
+  ragOverallVerdict,
   ragSimilarityLevel,
   summarizeGateApprovals,
 } from "./shared";
@@ -362,14 +366,14 @@ export const mockApi = {
     if (!idea) throw new Error("Idea not found");
     const query = mockIdeaSearchText(idea);
     const items = mockRagSearch(query, { excludeIdeaId: id, limit });
-    return { query: query.slice(0, 200), items };
+    return { query: query.slice(0, 200), items, duplicateVerdict: ragOverallVerdict(items) };
   },
 
   async searchRag(q: string, limit = 5): Promise<RagSearchResult> {
     const query = q.trim();
     if (query.length < 4) throw new Error("検索クエリは4文字以上で指定してください。");
     const items = mockRagSearch(query, { excludeIdeaId: undefined, limit });
-    return { query, items };
+    return { query, items, duplicateVerdict: ragOverallVerdict(items) };
   },
 
   async getIdeaPhase(id: string): Promise<IdeaValuePhaseEntry> {
@@ -891,11 +895,11 @@ export const mockApi = {
     ];
   },
 
-  async structureIdea(input: IssueInput, answers: Record<string, string>): Promise<StructuredIdea> {
+  async structureIdea(input: IssueInput, answers: Record<string, string>): Promise<AiStructureResponse> {
     const frequency = answers["q-frequency"] ? `月${answers["q-frequency"]}回程度` : "頻度未確認";
     const time = answers["q-time"] ? `1回${answers["q-time"]}分程度` : "所要時間未確認";
 
-    return {
+    const structured: StructuredIdea = {
       title: `${input.workType.slice(0, 28)}の改善`,
       currentIssue: `${input.workType}\n\n現状: ${input.currentWorkflow}`,
       targetBusiness: input.workType,
@@ -917,6 +921,23 @@ export const mockApi = {
       submitterName: "デモ太郎",
       submitterEmail: "demo.user@example.com",
       coordinationNeeded: "調整必要",
+    };
+    const queryText = buildStructuredQueryText(structured);
+    const hits = queryText.length >= 4 ? mockRagSearch(queryText, { limit: 5 }) : [];
+    const citations = hits.map((hit) => ({
+      ideaId: hit.idea.id,
+      caseId: hit.idea.caseId,
+      title: hit.idea.title,
+      similarity: hit.similarity,
+      level: hit.level,
+    }));
+    const { confidence, confidenceLevel } = computeStructureConfidence(structured);
+    return {
+      structured,
+      confidence,
+      confidenceLevel,
+      citations,
+      duplicateVerdict: ragOverallVerdict(citations),
     };
   },
 
