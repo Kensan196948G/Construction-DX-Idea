@@ -1109,6 +1109,8 @@ a:hover { text-decoration: underline; }
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">タイトル</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">ステージ</th>
                 <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">評価理由</th>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">軸別スコア</th>
+                <th style="text-align:left;padding:11px 16px;border-bottom:1px solid #EEF1F5;font-size:11px;color:#8A97A8;font-weight:600;background:#FAFBFC;">AI×人間評価</th>
               </tr>
             </thead>
             <tbody>
@@ -1118,6 +1120,18 @@ a:hover { text-decoration: underline; }
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;font-weight:500;color:#1A2433;">{{ row.title }}</td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;"><span style="{{ row.badgeStyle }}">{{ row.stage }}</span></td>
                   <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;color:#5A6678;max-width:420px;">{{ row.reasons }}</td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;">
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;max-width:280px;">
+                      <sc-for list="{{ row.axisChips }}" as="chip" hint-placeholder-count="5">
+                        <span style="{{ chip.style }}">{{ chip.label }}</span>
+                      </sc-for>
+                    </div>
+                  </td>
+                  <td style="padding:12px 16px;border-bottom:1px solid #EEF1F5;">
+                    <sc-if value="{{ row.alignmentLabel }}" hint-placeholder-val="{{ false }}">
+                      <span style="{{ row.alignmentStyle }}">{{ row.alignmentLabel }}</span>
+                    </sc-if>
+                  </td>
                 </tr>
               </sc-for>
             </tbody>
@@ -4344,21 +4358,39 @@ class Component extends DCLogic {
       return { ...e, badgeStyle: this.badgeStyle(m.fg, m.bg) };
     });
 
+    const alignmentMeta = {
+      matched: { label: '🤝 一致', fg: '#5A6678', bg: '#F2F4F8' },
+      ai_ahead: { label: '🤖 AI先行', fg: '#2E5AAC', bg: '#E9F0FB' },
+      gate_ahead: { label: '🧑‍⚖️ 承認先行', fg: '#1F8255', bg: '#E4F3EC' },
+      rejected_by_gate: { label: '⛔ Gate却下', fg: '#C5392F', bg: '#FCE9E7' },
+    };
     const evaluationRows = (s.evaluationItems && s.evaluationItems.length
       ? s.evaluationItems
       : s.ideas.map((i) => ({ id: i.id, title: i.title, stage: i.stage, score: 0, reasons: '評価API未接続のため仮表示' }))
-    ).map((row) => ({
-      ...row,
-      scoreStyle: row.score >= 8
-        ? 'background:#E4F3EC;color:#1F8255;'
-        : row.score >= 5
-          ? 'background:#FDEFE0;color:#B5701A;'
-          : 'background:#F2F4F8;color:#5A6678;',
-      badgeStyle: this.badgeStyle(
-        (stageMeta[row.stage] || {}).fg || '#5A6678',
-        (stageMeta[row.stage] || {}).bg || '#F2F4F8',
-      ),
-    }));
+    ).map((row) => {
+      const am = row.alignment ? alignmentMeta[row.alignment] : null;
+      return {
+        ...row,
+        scoreStyle: row.score >= 8
+          ? 'background:#E4F3EC;color:#1F8255;'
+          : row.score >= 5
+            ? 'background:#FDEFE0;color:#B5701A;'
+            : 'background:#F2F4F8;color:#5A6678;',
+        badgeStyle: this.badgeStyle(
+          (stageMeta[row.stage] || {}).fg || '#5A6678',
+          (stageMeta[row.stage] || {}).bg || '#F2F4F8',
+        ),
+        axisChips: (row.compositeAxes || []).map((axis) => ({
+          label: `${axis.label} ${axis.score}`,
+          style: this.badgeStyle(
+            axis.score >= 7 ? '#1F8255' : axis.score >= 4 ? '#B5701A' : '#5A6678',
+            axis.score >= 7 ? '#E4F3EC' : axis.score >= 4 ? '#FDEFE0' : '#F2F4F8',
+          ),
+        })),
+        alignmentLabel: am ? am.label : '',
+        alignmentStyle: am ? this.badgeStyle(am.fg, am.bg) : '',
+      };
+    });
 
     // ---- ポートフォリオ view-model（docs/29 §2.5・migration 013）----
     const pf = s.portfolioData || { summary: null, items: [] };

@@ -1235,7 +1235,179 @@ export function computeHealthSummary(dashboard: HealthDashboard): HealthSummary 
 export type EvaluationItem = Idea & {
   priorityScore: number;
   reasons: string[];
+  compositeScore: CompositeScoreResult;
+  alignment: ScoreGateAlignment;
 };
+
+// 複合スコア体系（docs/29 §2.4残・Business/Domain/Engineering/Feasibility/ROIの5軸）。
+// 既存のevaluationScore（worker側の単一合成スコア0-10）とは独立した多軸版で、
+// 評価ボードで軸別の内訳を表示するために使う。KPI実績（本番後の実測値）は
+// 別テーブル（idea_kpi_records）のため本関数の対象外とし、Idea単体のフィールドと
+// Gate進捗（GateSummary[]）のみから決定論的に算出する（DB追加アクセス不要）。
+export type CompositeScoreAxisKey = "business" | "domain" | "engineering" | "feasibility" | "roi";
+
+export type CompositeScoreAxis = {
+  key: CompositeScoreAxisKey;
+  label: string;
+  score: number;
+  reasons: string[];
+};
+
+export type CompositeScoreResult = {
+  axes: CompositeScoreAxis[];
+  total: number;
+};
+
+const compositeAxisLabels: Record<CompositeScoreAxisKey, string> = {
+  business: "Business Value",
+  domain: "Domain Value",
+  engineering: "Engineering Value",
+  feasibility: "Feasibility",
+  roi: "ROI",
+};
+
+function gateAuthorityProgress(
+  gateSummaries: GateSummary[],
+  authority: Authority,
+): { approvedCount: number; requiredCount: number; rejected: boolean } {
+  let approvedCount = 0;
+  let requiredCount = 0;
+  let rejected = false;
+  for (const gate of gateSummaries) {
+    if (!gate.requiredAuthorities.includes(authority)) continue;
+    requiredCount += 1;
+    const row = gate.approvals.find((a) => a.requiredAuthority === authority);
+    if (row?.status === "approved") approvedCount += 1;
+    if (row?.status === "rejected") rejected = true;
+  }
+  return { approvedCount, requiredCount, rejected };
+}
+
+export function computeCompositeScore(idea: Idea, gateSummaries: GateSummary[]): CompositeScoreResult {
+  const axes: CompositeScoreAxis[] = [];
+
+  function authorityAxis(
+    key: CompositeScoreAxisKey,
+    authority: Authority,
+    extra: (reasons: string[]) => number,
+  ): void {
+    const progress = gateAuthorityProgress(gateSummaries, authority);
+    const reasons: string[] = [];
+    let score = 0;
+    if (progress.rejected) {
+      reasons.push(`${authorityLabels[authority]}判定でrejectedあり`);
+    } else if (progress.requiredCount > 0) {
+      const ratio = progress.approvedCount / progress.requiredCount;
+      score += Math.round(ratio * 6);
+      reasons.push(`${authorityLabels[authority]}承認進捗 ${progress.approvedCount}/${progress.requiredCount}`);
+    }
+    score += extra(reasons);
+    axes.push({ key, label: compositeAxisLabels[key], score: Math.max(0, Math.min(10, score)), reasons });
+  }
+
+  authorityAxis("business", "business", (reasons) => {
+    if (idea.kpiBaselineCost != null && idea.kpiBaselineCost > 0) {
+      reasons.push("ベースラインコスト試算あり");
+      return 2;
+    }
+    return 0;
+  });
+
+  authorityAxis("domain", "domain", (reasons) => {
+    let s = 0;
+    if (idea.relatedSystems.length > 0) {
+      s += 1;
+      reasons.push(`関連システム${idea.relatedSystems.length}件整理済み`);
+    }
+    if (idea.requiredData.length > 0) {
+      s += 1;
+      reasons.push(`必要データ${idea.requiredData.length}件整理済み`);
+    }
+    return s;
+  });
+
+  authorityAxis("engineering", "engineering", (reasons) => {
+    if (idea.implementationOptions.length > 0) {
+      reasons.push(`実装方式候補${idea.implementationOptions.length}件`);
+      return 2;
+    }
+    return 0;
+  });
+
+  // Feasibility軸はGate進捗を持たない独立軸: MVP案の有無と未解決の懸念事項の
+  // 少なさから実現可能性の確度を推定する（懸念事項が多いほど低評価。
+  // evaluationScoreでは「検討材料の多さ」として加点方向に使うのと対照的に、
+  // ここでは「未解決リスク」として減点方向で扱う）。
+  {
+    const reasons: string[] = [];
+    let score = 6;
+    if (idea.mvpCandidate.trim()) {
+      score += 2;
+      reasons.push("MVP案あり");
+    } else {
+      reasons.push("MVP案未定");
+    }
+    if (idea.openQuestions.length > 0) {
+      score -= Math.min(4, idea.openQuestions.length);
+      reasons.push(`未解決の確認事項${idea.openQuestions.length}件`);
+    }
+    if (idea.securityNotes.length > 2) {
+      score -= 1;
+      reasons.push(`セキュリティ懸念${idea.securityNotes.length}件`);
+    }
+    axes.push({
+      key: "feasibility",
+      label: compositeAxisLabels.feasibility,
+      score: Math.max(0, Math.min(10, score)),
+      reasons,
+    });
+  }
+
+  // ROI軸: 本番後実績（KPI実績・idea_kpi_records）は別テーブルのため本関数の対象外
+  // （将来拡張）。現時点ではベースライン試算（工数・コスト）の有無のみで
+  // 「ROIを試算できる材料が揃っているか」の確度を表す。
+  {
+    const reasons: string[] = [];
+    let score = 0;
+    if (idea.kpiBaselineHours != null && idea.kpiBaselineHours > 0) {
+      score += 3;
+      reasons.push(`ベースライン工数 ${idea.kpiBaselineHours}h/月`);
+    }
+    if (idea.kpiBaselineCost != null && idea.kpiBaselineCost > 0) {
+      score += 3;
+      reasons.push(`ベースラインコスト ¥${Math.round(idea.kpiBaselineCost)}/月`);
+    }
+    if (score === 0) reasons.push("ベースライン未登録（ROI未算出）");
+    axes.push({ key: "roi", label: compositeAxisLabels.roi, score: Math.max(0, Math.min(10, score)), reasons });
+  }
+
+  const total = Math.round((axes.reduce((sum, a) => sum + a.score, 0) / axes.length) * 10) / 10;
+  return { axes, total };
+}
+
+// AI推奨順位と人間評価（Gate通過状況）との差異表示（docs/29 §2.4残）。
+// - rejected_by_gate: いずれかのGateでrejectedがある（AIスコアに関わらず停止中）
+// - ai_ahead        : AIスコアの割合がGate承認進捗の割合より明確に高い
+//                     （AIは高評価だが人間承認がまだ追いついていない）
+// - gate_ahead      : Gate承認進捗の割合がAIスコアの割合より明確に高い
+//                     （人間承認は進んでいるが、AIスコアは相対的に低い＝AI過小評価の可能性）
+// - matched         : 概ね一致
+export type ScoreGateAlignment = "matched" | "ai_ahead" | "gate_ahead" | "rejected_by_gate";
+
+export function computeScoreGateAlignment(
+  compositeTotal: number,
+  gateSummaries: GateSummary[],
+): ScoreGateAlignment {
+  if (gateSummaries.some((g) => g.status === "rejected")) return "rejected_by_gate";
+  const totalGates = gateSummaries.length;
+  const approvedGates = gateSummaries.filter((g) => g.status === "approved").length;
+  const gateProgressRatio = totalGates > 0 ? approvedGates / totalGates : 0;
+  const scoreRatio = compositeTotal / 10;
+  const diff = scoreRatio - gateProgressRatio;
+  if (diff > 0.3) return "ai_ahead";
+  if (diff < -0.3) return "gate_ahead";
+  return "matched";
+}
 
 export type StageHistoryEntry = {
   fromStage?: string;

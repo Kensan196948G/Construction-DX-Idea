@@ -68,6 +68,8 @@ import {
   canChangeClassification,
   isIdeaVisibleTo,
   buildBlockerList,
+  computeCompositeScore,
+  computeScoreGateAlignment,
   defaultPhaseChecklist,
   defaultPhaseForStage,
   ideaStages,
@@ -1633,19 +1635,18 @@ app.get("/api/ideas/evaluation", async (c) => {
   `;
   const items = (
     await Promise.all(
-      rows.map(async (row) =>
-        redactIdeaForUser(mapIdeaRow(row), user, c.env),
-      ),
+      rows.map(async (row) => {
+        const idea = await redactIdeaForUser(mapIdeaRow(row), user, c.env);
+        const { score, reasons } = evaluationScore(idea);
+        const { summary: gateSummaries } = await loadGateSummary(db, String(idea.id));
+        const compositeScore = computeCompositeScore(idea, gateSummaries);
+        const alignment = computeScoreGateAlignment(compositeScore.total, gateSummaries);
+        return { ...idea, priorityScore: score, reasons, compositeScore, alignment };
+      }),
     )
-  )
-    .map((idea) => {
-      const { score, reasons } = evaluationScore(idea);
-      return { ...idea, priorityScore: score, reasons };
-    })
-    .sort(
-      (a, b) =>
-        b.priorityScore - a.priorityScore || b.updatedAt.localeCompare(a.updatedAt),
-    );
+  ).sort(
+    (a, b) => b.priorityScore - a.priorityScore || b.updatedAt.localeCompare(a.updatedAt),
+  );
   return c.json({ items });
 });
 

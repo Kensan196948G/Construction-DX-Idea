@@ -7,6 +7,7 @@ import type {
   IdeaStage,
   IssueInput,
   PhaseChecklistItem,
+  ScoreGateAlignment,
   StructuredIdea,
 } from "./shared";
 
@@ -105,6 +106,9 @@ export type StandaloneState = {
     stage: string;
     score: number;
     reasons: string;
+    // 複合スコア体系・AI推奨順位と人間評価の差異表示（docs/29 §2.4残）。
+    compositeAxes?: Array<{ label: string; score: number }>;
+    alignment?: ScoreGateAlignment;
   }>;
   auditLog: Array<{ time: string; actor: string; action: string; detail: string }>;
   toast: { message: string } | null;

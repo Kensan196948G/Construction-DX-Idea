@@ -468,6 +468,8 @@ async function loadInitialData(component: StandaloneComponent) {
           stage: toStandaloneStage(item.stage),
           score: item.priorityScore,
           reasons: item.reasons.join("、"),
+          compositeAxes: item.compositeScore.axes.map((axis) => ({ label: axis.label, score: axis.score })),
+          alignment: item.alignment,
         })),
       });
     } catch (error) {
