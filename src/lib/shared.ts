@@ -63,6 +63,22 @@ export function canChangeClassification(params: {
   return { allowed: true };
 }
 
+// 案件の情報区分に基づく可視性判定（docs/29 §2.17・fail-closed）。
+// GET /api/ideas 一覧と同じ条件: 管理者・本人は常に可視。それ以外は
+// public/internalのみ可視（confidential/restrictedは不可視）。
+// 過去に`!== "confidential"`のみで判定しrestrictedを除外し損ねる不具合が
+// 複数箇所（PoC/UAT・KPI）で見つかったため、判定ロジックを一本化する。
+export function isIdeaVisibleTo(params: {
+  classification: InformationClassification | null | undefined;
+  isAdmin: boolean;
+  isOwner: boolean;
+}): boolean {
+  const { classification, isAdmin, isOwner } = params;
+  if (isAdmin || isOwner) return true;
+  const value = classification ?? "internal";
+  return value === "public" || value === "internal";
+}
+
 /**
  * "demo" is a deterministic, cost-free provider for the MVP/Prototype
  * environment only. It never calls an external AI API and is rejected by the

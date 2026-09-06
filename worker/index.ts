@@ -66,6 +66,7 @@ import {
   summarizeUatFeedback,
   evaluateGateSoD,
   canChangeClassification,
+  isIdeaVisibleTo,
   defaultPhaseForStage,
   ideaStages,
   ideaValuePhaseLabel,
@@ -1261,7 +1262,7 @@ app.get("/api/ideas/:id/kpi", async (c) => {
   const idea = mapIdeaRow(ideaRows[0]);
   const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
   const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
-  const isVisible = isAdmin || isOwner || (idea.informationClassification ?? "internal") !== "confidential";
+  const isVisible = isIdeaVisibleTo({ classification: idea.informationClassification, isAdmin, isOwner });
   if (!isVisible) {
     throw new ApiError("FORBIDDEN", "この案件の効果測定は閲覧できません。", 403);
   }
@@ -1414,10 +1415,7 @@ async function loadIdeaForPocAccess(
   const idea = mapIdeaRow(rows[0]);
   const isAdmin = (await resolveRoles(env, user)).includes("admin");
   const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
-  // GET /api/ideas 一覧と同じ可視性条件（fail-closed）: 非admin・非本人は
-  // public/internal のみ。confidential・restricted はどちらも不可視とする。
-  const classification = idea.informationClassification ?? "internal";
-  const isVisible = isAdmin || isOwner || classification === "public" || classification === "internal";
+  const isVisible = isIdeaVisibleTo({ classification: idea.informationClassification, isAdmin, isOwner });
   if (!isVisible) throw new ApiError("FORBIDDEN", "この案件のPoC/UAT情報は閲覧できません。", 403);
   return idea;
 }
