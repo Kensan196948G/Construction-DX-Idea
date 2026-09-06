@@ -11,6 +11,7 @@ import type {
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiStructureResponse,
   AiUsageSummary,
   AuditLogEntry,
   Authority,
@@ -38,12 +39,19 @@ import type {
   IdeaKpi,
   KnowledgeCandidate,
   KpiOutcome,
+  PocPlan,
+  PocPlanInput,
   PortfolioSummary,
   PortfolioSummaryRow,
   PrivacyFinding,
   RagSearchResult,
   SaveIdeaResult,
   StructuredIdea,
+  UatChecklistInput,
+  UatFeedbackEntry,
+  UatFeedbackInput,
+  UatFeedbackResult,
+  UatFeedbackSummary,
   UserProfile,
 } from "./shared";
 
@@ -241,6 +249,18 @@ export const api = useMock
           method: "PATCH",
           body: JSON.stringify(baseline),
         }),
+      getPocPlan: (id: string) =>
+        request<{ plan: PocPlan; feedbackSummary: UatFeedbackSummary }>(`/api/ideas/${id}/poc`),
+      updatePocPlan: (id: string, input: PocPlanInput) =>
+        request<PocPlan>(`/api/ideas/${id}/poc`, { method: "PUT", body: JSON.stringify(input) }),
+      updateUatChecklist: (id: string, input: UatChecklistInput) =>
+        request<PocPlan>(`/api/ideas/${id}/poc/checklist`, { method: "PUT", body: JSON.stringify(input) }),
+      getUatFeedback: (id: string) => request<UatFeedbackResult>(`/api/ideas/${id}/uat-feedback`),
+      submitUatFeedback: (id: string, input: UatFeedbackInput) =>
+        request<UatFeedbackEntry>(`/api/ideas/${id}/uat-feedback`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
       exportIdeasCsv: () => fetch(`${apiBaseUrl}/api/ideas/export.csv`, { credentials: "include" }),
       exportIdeasXls: () => fetch(`${apiBaseUrl}/api/ideas/export.xls`, { credentials: "include" }),
       getIdeaHistory: (id: string) => request<IdeaHistory>(`/api/ideas/${id}/history`),
@@ -272,7 +292,7 @@ export const api = useMock
           body: JSON.stringify({ input }),
         }),
       structureIdea: (input: IssueInput, answers: Record<string, string>) =>
-        request<StructuredIdea>("/api/ai/structure", {
+        request<AiStructureResponse>("/api/ai/structure", {
           method: "POST",
           body: JSON.stringify({ input, answers }),
         }),

@@ -10,6 +10,7 @@ import type {
   AiQuestion,
   AiSettings,
   AiSettingsPatch,
+  AiStructureResponse,
   AiUsageSummary,
   AuditLogEntry,
   Authority,
@@ -36,6 +37,8 @@ import type {
   IssueInput,
   KnowledgeCandidate,
   KpiOutcome,
+  PocPlan,
+  PocPlanInput,
   PortfolioSummary,
   PortfolioSummaryRow,
   PrivacyFinding,
@@ -43,10 +46,17 @@ import type {
   RagSearchResult,
   SaveIdeaResult,
   StructuredIdea,
+  UatChecklistInput,
+  UatFeedbackEntry,
+  UatFeedbackInput,
+  UatFeedbackResult,
+  UatFeedbackSummary,
   UserProfile,
 } from "./shared";
 import {
+  buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeStructureConfidence,
   defaultGateApprovalRows,
   defaultPhaseForStage,
   gateNumbers,
@@ -54,8 +64,10 @@ import {
   ideaValuePhaseLabel,
   ideaValuePhases,
   ragMinSimilarity,
+  ragOverallVerdict,
   ragSimilarityLevel,
   summarizeGateApprovals,
+  summarizeUatFeedback,
 } from "./shared";
 import { buildDemoQuestions, buildDemoStructure } from "./demoAi";
 import { runAiEval } from "./aiEval";
@@ -69,6 +81,27 @@ const phaseHistory = new Map<
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
 >();
 const kpiRecords = new Map<string, IdeaKpi[]>();
+const pocPlans = new Map<string, PocPlan>();
+const uatFeedbackByIdea = new Map<string, UatFeedbackEntry[]>();
+
+function defaultMockPocPlan(ideaId: string): PocPlan {
+  const nowIso = new Date().toISOString();
+  return {
+    ideaId,
+    hypothesis: "",
+    successCriteria: "",
+    mvpScopeIn: [],
+    mvpScopeOut: [],
+    testUsers: "",
+    testScenarios: [],
+    uatChecklist: [],
+    acceptanceResult: "pending",
+    acceptanceNotes: "",
+    updatedBy: "",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
 
 const now = () => new Date().toISOString();
 
@@ -357,19 +390,85 @@ export const mockApi = {
     return found;
   },
 
+  async getPocPlan(id: string): Promise<{ plan: PocPlan; feedbackSummary: UatFeedbackSummary }> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const plan = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const feedbackSummary = summarizeUatFeedback(uatFeedbackByIdea.get(id) ?? []);
+    return { plan, feedbackSummary };
+  },
+
+  async updatePocPlan(id: string, input: PocPlanInput): Promise<PocPlan> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const existing = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const next: PocPlan = {
+      ...existing,
+      hypothesis: input.hypothesis ?? existing.hypothesis,
+      successCriteria: input.successCriteria ?? existing.successCriteria,
+      mvpScopeIn: input.mvpScopeIn ?? existing.mvpScopeIn,
+      mvpScopeOut: input.mvpScopeOut ?? existing.mvpScopeOut,
+      testUsers: input.testUsers ?? existing.testUsers,
+      testScenarios: input.testScenarios ?? existing.testScenarios,
+      updatedBy: "demo.user@example.com",
+      updatedAt: now(),
+    };
+    pocPlans.set(id, next);
+    return next;
+  },
+
+  async updateUatChecklist(id: string, input: UatChecklistInput): Promise<PocPlan> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const existing = pocPlans.get(id) ?? defaultMockPocPlan(id);
+    const next: PocPlan = {
+      ...existing,
+      uatChecklist: input.uatChecklist,
+      acceptanceResult: input.acceptanceResult ?? existing.acceptanceResult,
+      acceptanceNotes: input.acceptanceNotes ?? existing.acceptanceNotes,
+      updatedBy: "demo.user@example.com",
+      updatedAt: now(),
+    };
+    pocPlans.set(id, next);
+    return next;
+  },
+
+  async getUatFeedback(id: string): Promise<UatFeedbackResult> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const items = uatFeedbackByIdea.get(id) ?? [];
+    return { items, summary: summarizeUatFeedback(items) };
+  },
+
+  async submitUatFeedback(id: string, input: UatFeedbackInput): Promise<UatFeedbackEntry> {
+    const idea = ideas.find((candidate) => candidate.id === id);
+    if (!idea) throw new Error("Idea not found");
+    const entry: UatFeedbackEntry = {
+      id: `uat-${Date.now()}-${Math.round(Math.random() * 1000)}`,
+      ideaId: id,
+      rating: input.rating,
+      comment: input.comment ?? "",
+      feedbackType: input.feedbackType ?? "general",
+      submittedBy: "demo.user@example.com",
+      submittedAt: now(),
+    };
+    uatFeedbackByIdea.set(id, [entry, ...(uatFeedbackByIdea.get(id) ?? [])]);
+    return entry;
+  },
+
   async getSimilarIdeas(id: string, limit = 5): Promise<RagSearchResult> {
     const idea = ideas.find((candidate) => candidate.id === id);
     if (!idea) throw new Error("Idea not found");
     const query = mockIdeaSearchText(idea);
     const items = mockRagSearch(query, { excludeIdeaId: id, limit });
-    return { query: query.slice(0, 200), items };
+    return { query: query.slice(0, 200), items, duplicateVerdict: ragOverallVerdict(items) };
   },
 
   async searchRag(q: string, limit = 5): Promise<RagSearchResult> {
     const query = q.trim();
     if (query.length < 4) throw new Error("検索クエリは4文字以上で指定してください。");
     const items = mockRagSearch(query, { excludeIdeaId: undefined, limit });
-    return { query, items };
+    return { query, items, duplicateVerdict: ragOverallVerdict(items) };
   },
 
   async getIdeaPhase(id: string): Promise<IdeaValuePhaseEntry> {
@@ -891,11 +990,11 @@ export const mockApi = {
     ];
   },
 
-  async structureIdea(input: IssueInput, answers: Record<string, string>): Promise<StructuredIdea> {
+  async structureIdea(input: IssueInput, answers: Record<string, string>): Promise<AiStructureResponse> {
     const frequency = answers["q-frequency"] ? `月${answers["q-frequency"]}回程度` : "頻度未確認";
     const time = answers["q-time"] ? `1回${answers["q-time"]}分程度` : "所要時間未確認";
 
-    return {
+    const structured: StructuredIdea = {
       title: `${input.workType.slice(0, 28)}の改善`,
       currentIssue: `${input.workType}\n\n現状: ${input.currentWorkflow}`,
       targetBusiness: input.workType,
@@ -917,6 +1016,23 @@ export const mockApi = {
       submitterName: "デモ太郎",
       submitterEmail: "demo.user@example.com",
       coordinationNeeded: "調整必要",
+    };
+    const queryText = buildStructuredQueryText(structured);
+    const hits = queryText.length >= 4 ? mockRagSearch(queryText, { limit: 5 }) : [];
+    const citations = hits.map((hit) => ({
+      ideaId: hit.idea.id,
+      caseId: hit.idea.caseId,
+      title: hit.idea.title,
+      similarity: hit.similarity,
+      level: hit.level,
+    }));
+    const { confidence, confidenceLevel } = computeStructureConfidence(structured);
+    return {
+      structured,
+      confidence,
+      confidenceLevel,
+      citations,
+      duplicateVerdict: ragOverallVerdict(citations),
     };
   },
 

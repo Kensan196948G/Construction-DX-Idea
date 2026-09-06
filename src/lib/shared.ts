@@ -307,6 +307,113 @@ export type IdeaKpiInput = {
   reviewNote?: string;
 };
 
+// ---- PoC・MVP・UAT管理（migration 017・docs/29 §2.19）----
+
+export const pocAcceptanceResults = ["pending", "go", "conditional_go", "no_go"] as const;
+export type PocAcceptanceResult = (typeof pocAcceptanceResults)[number];
+
+export const pocAcceptanceResultLabels: Record<PocAcceptanceResult, string> = {
+  pending: "未判定",
+  go: "Go",
+  conditional_go: "条件付きGo",
+  no_go: "No-Go",
+};
+
+export const uatFeedbackTypes = ["general", "defect", "improvement"] as const;
+export type UatFeedbackType = (typeof uatFeedbackTypes)[number];
+
+export const uatFeedbackTypeLabels: Record<UatFeedbackType, string> = {
+  general: "所感",
+  defect: "不具合",
+  improvement: "改善要望",
+};
+
+export type UatChecklistItem = {
+  item: string;
+  done: boolean;
+};
+
+// 案件ごとに1件。PoC仮説・成功基準・MVPスコープ(In/Out)・テスト対象者/シナリオと、
+// UATチェックリスト・受入判定(Go/No-Go/条件付きGo)を保持する。
+export type PocPlan = {
+  ideaId: string;
+  hypothesis: string;
+  successCriteria: string;
+  mvpScopeIn: string[];
+  mvpScopeOut: string[];
+  testUsers: string;
+  testScenarios: string[];
+  uatChecklist: UatChecklistItem[];
+  acceptanceResult: PocAcceptanceResult;
+  acceptanceNotes: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PocPlanInput = {
+  hypothesis?: string;
+  successCriteria?: string;
+  mvpScopeIn?: string[];
+  mvpScopeOut?: string[];
+  testUsers?: string;
+  testScenarios?: string[];
+};
+
+export type UatChecklistInput = {
+  uatChecklist: UatChecklistItem[];
+  acceptanceResult?: PocAcceptanceResult;
+  acceptanceNotes?: string;
+};
+
+// 案件ごとに複数件。UATに参加したテストユーザーからのフィードバック履歴。
+export type UatFeedbackEntry = {
+  id: string;
+  ideaId: string;
+  rating: number;
+  comment: string;
+  feedbackType: UatFeedbackType;
+  submittedBy: string;
+  submittedAt: string;
+};
+
+export type UatFeedbackInput = {
+  rating: number;
+  comment?: string;
+  feedbackType?: UatFeedbackType;
+};
+
+export type UatFeedbackSummary = {
+  count: number;
+  averageRating: number | null;
+  defectCount: number;
+  improvementCount: number;
+  // フィードバック集計から機械的に導いたGo/No-Go提案（docs/29「AI Feedback要約・
+  // Go/No-Go提案」）。人間の最終判定はacceptanceResultへ別途記録する。
+  recommendedVerdict: PocAcceptanceResult;
+};
+
+export type UatFeedbackResult = {
+  items: UatFeedbackEntry[];
+  summary: UatFeedbackSummary;
+};
+
+// フィードバック件数・平均評価・不具合件数から決定論的にGo/No-Go提案を導く。
+// 実AI呼び出しではなく、GoldenDataset同様に再現可能なヒューリスティック。
+export function summarizeUatFeedback(items: Array<Pick<UatFeedbackEntry, "rating" | "feedbackType">>): UatFeedbackSummary {
+  const count = items.length;
+  const defectCount = items.filter((item) => item.feedbackType === "defect").length;
+  const improvementCount = items.filter((item) => item.feedbackType === "improvement").length;
+  const averageRating = count > 0 ? Math.round((items.reduce((sum, item) => sum + item.rating, 0) / count) * 10) / 10 : null;
+  let recommendedVerdict: PocAcceptanceResult = "pending";
+  if (count > 0 && averageRating !== null) {
+    if (averageRating >= 4 && defectCount === 0) recommendedVerdict = "go";
+    else if (averageRating >= 3 && defectCount <= 1) recommendedVerdict = "conditional_go";
+    else recommendedVerdict = "no_go";
+  }
+  return { count, averageRating, defectCount, improvementCount, recommendedVerdict };
+}
+
 // ---- DX案件ポートフォリオ（docs/29 §2.5）----
 export type PortfolioSummary = {
   totalIdeas: number;
@@ -795,12 +902,104 @@ export type RagSearchHit = {
 export type RagSearchResult = {
   query: string;
   items: RagSearchHit[];
+  /** 検索結果全体から見た重複判定（元#46〜65: 統合候補/既存案件へ追加/新規案件） */
+  duplicateVerdict: DuplicateVerdict;
 };
 
 export function ragSimilarityLevel(similarity: number): RagSearchHit["level"] {
   if (similarity >= 0.5) return "high";
   if (similarity >= 0.25) return "medium";
   return "low";
+}
+
+// ---- 重複判定・AI根拠/信頼度（docs/29 §2.2/§2.3・元#45〜65/#63〜64）----
+
+export type DuplicateVerdict = "merge_candidate" | "add_to_existing" | "new_case";
+
+// 類似検索結果の最高類似度から、登録前チェックの推奨アクションを判定する。
+// 閾値は ragSimilarityLevel と同一（high=統合候補 / medium=既存案件へ追加 / low=新規）。
+export function ragOverallVerdict(items: Array<{ similarity: number }>): DuplicateVerdict {
+  const best = items.reduce((max, item) => Math.max(max, item.similarity), 0);
+  if (best >= 0.5) return "merge_candidate";
+  if (best >= 0.25) return "add_to_existing";
+  return "new_case";
+}
+
+export function duplicateVerdictLabel(verdict: DuplicateVerdict): string {
+  switch (verdict) {
+    case "merge_candidate":
+      return "統合候補（既存案件と高い類似性）";
+    case "add_to_existing":
+      return "既存案件へ追加を検討";
+    default:
+      return "新規案件として進行可";
+  }
+}
+
+export type AiConfidenceLevel = "high" | "medium" | "low";
+
+export type RagCitation = {
+  ideaId: string;
+  caseId?: string;
+  title: string;
+  similarity: number;
+  level: RagSearchHit["level"];
+};
+
+export type AiStructureMeta = {
+  confidence: number;
+  confidenceLevel: AiConfidenceLevel;
+  citations: RagCitation[];
+  duplicateVerdict: DuplicateVerdict;
+};
+
+export type AiStructureResponse = AiStructureMeta & {
+  structured: StructuredIdea;
+};
+
+const structureConfidenceFields = [
+  "title",
+  "currentIssue",
+  "targetBusiness",
+  "targetUsers",
+  "currentWorkflow",
+  "improvementIdea",
+  "expectedEffects",
+  "mvpCandidate",
+  "mvpDoneDefinition",
+] as const satisfies ReadonlyArray<keyof StructuredIdea>;
+
+// AI構造化結果の信頼度を、必須項目の充足度とopenQuestionsの残存数から推定する
+// 決定論的ヒューリスティック（実モデルのlogprobsは使わない。AI根拠・信頼度表示、
+// docs/29 §2.2「AI回答の信頼度表示・根拠・引用」）。
+export function computeStructureConfidence(
+  structured: StructuredIdea,
+): { confidence: number; confidenceLevel: AiConfidenceLevel } {
+  const filled = structureConfidenceFields.filter((field) => {
+    const value = structured[field];
+    return typeof value === "string" && value.trim().length > 0;
+  }).length;
+  const completeness = filled / structureConfidenceFields.length;
+  const openQuestionPenalty = Math.min(structured.openQuestions.length * 0.05, 0.3);
+  const confidence = Math.round(Math.max(0, Math.min(1, completeness - openQuestionPenalty)) * 100) / 100;
+  const confidenceLevel: AiConfidenceLevel = confidence >= 0.75 ? "high" : confidence >= 0.5 ? "medium" : "low";
+  return { confidence, confidenceLevel };
+}
+
+// AI構造化結果に対する類似案件検索（根拠・引用）のクエリ文字列を組み立てる。
+export function buildStructuredQueryText(structured: StructuredIdea): string {
+  return [
+    structured.title,
+    structured.currentIssue,
+    structured.targetBusiness,
+    structured.targetUsers,
+    structured.currentWorkflow,
+    structured.improvementIdea,
+    structured.expectedEffects,
+    structured.mvpCandidate,
+  ]
+    .filter((part) => part && part.trim())
+    .join(" ");
 }
 
 // Request paths in the API client already carry the /api prefix, so the

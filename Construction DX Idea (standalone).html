@@ -313,6 +313,31 @@ a:hover { text-decoration: underline; }
         <sc-if value="{{ reviewDraft }}" hint-placeholder-val="{{ false }}">
           <div style="max-width:720px;display:flex;flex-direction:column;gap:14px;">
             <div style="font-size:12.5px;color:#8A97A8;">AIが整理した内容です。人の目で確認し、必要なら修正してから登録してください。</div>
+            <sc-if value="{{ reviewAiMeta }}" hint-placeholder-val="{{ false }}">
+              <div style="background:#F7F9FC;border:1px solid #E3E8EF;border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                  <div style="font-size:13px;font-weight:600;color:#1A2433;">🧭 AIの根拠・信頼度</div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:{{ reviewAiMeta.confidenceFg }};background:{{ reviewAiMeta.confidenceBg }};">信頼度 {{ reviewAiMeta.confidenceLabel }}（{{ reviewAiMeta.confidencePct }}%）</span>
+                    <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:{{ reviewAiMeta.verdictFg }};background:{{ reviewAiMeta.verdictBg }};">{{ reviewAiMeta.verdictLabel }}</span>
+                  </div>
+                </div>
+                <sc-if value="{{ reviewAiMeta.hasCitations }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:6px;">
+                    <div style="font-size:11.5px;color:#5A6678;">根拠・引用（類似する既存案件）:</div>
+                    <sc-for list="{{ reviewAiCitations }}" as="ct" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;background:#fff;border:1px solid #E3E8EF;border-radius:8px;padding:6px 10px;">
+                        <span style="color:#1A2433;">{{ ct.caseId }} {{ ct.title }}</span>
+                        <span style="font-size:11px;font-weight:600;color:{{ ct.fg }};background:{{ ct.bg }};padding:2px 8px;border-radius:999px;">類似度 {{ ct.simPct }}%</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ reviewAiMeta.noCitations }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:11.5px;color:#1F8255;">類似する既存案件は見つかりませんでした。</div>
+                </sc-if>
+              </div>
+            </sc-if>
             <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px 20px;display:flex;flex-direction:column;gap:14px;">
               <div style="display:flex;flex-direction:column;gap:5px;">
                 <label style="font-size:12px;font-weight:600;color:#5A6678;">タイトル</label>
@@ -888,6 +913,99 @@ a:hover { text-decoration: underline; }
                     </sc-if>
                   </sc-if>
                   <div style="font-size:11px;color:#8A97A8;">過去案件との重複・類似をAIが支援します。類似度は本文テキストの類似性に基づきます。</div>
+                </div>
+                <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:17px 18px;display:flex;flex-direction:column;gap:14px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                    <div style="font-size:14px;font-weight:600;color:#1A2433;">🧪 PoC・MVP・UAT管理</div>
+                    <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:{{ currentAcceptanceFg }};background:{{ currentAcceptanceBg }};">受入判定: {{ currentAcceptanceLabel }}</span>
+                  </div>
+                  <sc-if value="{{ pocLoaded }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                      <label style="font-size:11.5px;font-weight:600;color:#5A6678;">PoC仮説</label>
+                      <textarea value="{{ pocDraft.hypothesis }}" onChange="{{ onPocHypothesisChange }}" rows="2" placeholder="例: 写真の自動分類で確認時間を50%削減できる" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:vertical;box-sizing:border-box;width:100%;"></textarea>
+                      <label style="font-size:11.5px;font-weight:600;color:#5A6678;">成功基準</label>
+                      <textarea value="{{ pocDraft.successCriteria }}" onChange="{{ onPocSuccessCriteriaChange }}" rows="2" placeholder="例: 1現場で1週間試用し、確認時間が半減すること" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:vertical;box-sizing:border-box;width:100%;"></textarea>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div style="display:flex;flex-direction:column;gap:5px;">
+                          <label style="font-size:11.5px;font-weight:600;color:#5A6678;">MVPスコープ（In・カンマ区切り）</label>
+                          <input value="{{ pocDraft.mvpScopeIn }}" onChange="{{ onPocMvpScopeInChange }}" style="font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:5px;">
+                          <label style="font-size:11.5px;font-weight:600;color:#5A6678;">MVPスコープ（Out・カンマ区切り）</label>
+                          <input value="{{ pocDraft.mvpScopeOut }}" onChange="{{ onPocMvpScopeOutChange }}" style="font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                        </div>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div style="display:flex;flex-direction:column;gap:5px;">
+                          <label style="font-size:11.5px;font-weight:600;color:#5A6678;">テスト対象者</label>
+                          <input value="{{ pocDraft.testUsers }}" onChange="{{ onPocTestUsersChange }}" style="font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:5px;">
+                          <label style="font-size:11.5px;font-weight:600;color:#5A6678;">テストシナリオ（カンマ区切り）</label>
+                          <input value="{{ pocDraft.testScenarios }}" onChange="{{ onPocTestScenariosChange }}" style="font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;box-sizing:border-box;width:100%;"></input>
+                        </div>
+                      </div>
+                      <button onClick="{{ savePocPlan }}" disabled="{{ pocBusy }}" style="align-self:flex-start;display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ pocSaveLabel }}</button>
+                    </div>
+                    <div style="height:1px;background:#EEF1F5;"></div>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                      <div style="font-size:12.5px;font-weight:600;color:#1A2433;">UATチェックリスト</div>
+                      <sc-if value="{{ hasChecklistRows }}" hint-placeholder-val="{{ false }}">
+                        <sc-for list="{{ pocChecklistRows }}" as="ci" hint-placeholder-count="2">
+                          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+                            <input type="checkbox" checked="{{ ci.done }}" onChange="{{ ci.onToggle }}"></input>
+                            <span style="{{ ci.rowStyle }}">{{ ci.item }}</span>
+                          </label>
+                        </sc-for>
+                      </sc-if>
+                      <div style="display:flex;gap:6px;">
+                        <input value="{{ pocChecklistNewItem }}" onChange="{{ onChecklistNewItemChange }}" placeholder="チェック項目を追加" style="flex:1;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                        <button onClick="{{ addChecklistItem }}" style="cursor:pointer;border:1px solid #E3E8EF;background:#F7F9FC;color:#1A2433;padding:6px 11px;border-radius:7px;font-size:12px;font-weight:600;">追加</button>
+                      </div>
+                      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+                        <div style="display:flex;flex-direction:column;gap:5px;">
+                          <label style="font-size:11.5px;font-weight:600;color:#5A6678;">受入判定</label>
+                          <select value="{{ pocAcceptanceResultDraft }}" onChange="{{ onAcceptanceResultChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                            <option value="pending">未判定</option>
+                            <option value="go">Go</option>
+                            <option value="conditional_go">条件付きGo</option>
+                            <option value="no_go">No-Go</option>
+                          </select>
+                        </div>
+                        <button onClick="{{ saveUatChecklist }}" disabled="{{ pocBusy }}" style="cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ uatChecklistSaveLabel }}</button>
+                      </div>
+                      <textarea value="{{ pocAcceptanceNotesDraft }}" onChange="{{ onAcceptanceNotesChange }}" rows="2" placeholder="受入判定の所見（未達理由・条件等）" style="font-size:12px;padding:7px 10px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;resize:vertical;box-sizing:border-box;width:100%;"></textarea>
+                    </div>
+                    <div style="height:1px;background:#EEF1F5;"></div>
+                    <div style="display:flex;flex-direction:column;gap:8px;">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                        <div style="font-size:12.5px;font-weight:600;color:#1A2433;">UATフィードバック</div>
+                        <sc-if value="{{ hasFeedback }}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;color:{{ feedbackVerdictFg }};background:{{ feedbackVerdictBg }};">AI提案: {{ feedbackVerdictLabel }}</span>
+                        </sc-if>
+                      </div>
+                      <div style="font-size:11.5px;color:#5A6678;">{{ feedbackSummaryText }}</div>
+                      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                        <select value="{{ uatFeedbackDraft.rating }}" onChange="{{ onUatRatingChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                          <option value="5">★5</option>
+                          <option value="4">★4</option>
+                          <option value="3">★3</option>
+                          <option value="2">★2</option>
+                          <option value="1">★1</option>
+                        </select>
+                        <select value="{{ uatFeedbackDraft.feedbackType }}" onChange="{{ onUatFeedbackTypeChange }}" style="font-size:12px;padding:6px 8px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;">
+                          <option value="general">所感</option>
+                          <option value="defect">不具合</option>
+                          <option value="improvement">改善要望</option>
+                        </select>
+                        <input value="{{ uatFeedbackDraft.comment }}" onChange="{{ onUatCommentChange }}" placeholder="コメント（任意）" style="flex:1;min-width:140px;font-size:12px;padding:6px 9px;border:1px solid #E3E8EF;border-radius:7px;background:#fff;color:#1A2433;outline:none;"></input>
+                        <button onClick="{{ submitUatFeedback }}" disabled="{{ uatFeedbackBusy }}" style="cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:6px 13px;border-radius:7px;font-size:12px;font-weight:600;">{{ uatFeedbackSubmitLabel }}</button>
+                      </div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ pocNotLoaded }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size:12px;color:#8A97A8;">PoC/UAT情報を読み込んでいます…</div>
+                  </sc-if>
                 </div>
               </div>
             </div>
@@ -1486,6 +1604,16 @@ class Component extends DCLogic {
     kpiDraft: { actualReductionPct: '', outcome: 'pending', reviewNote: '', periodMonths: '3' },
     kpiBaselineDraft: { hours: '', cost: '' },
     kpiBusy: false,
+    // PoC・MVP・UAT管理（migration 017・docs/29 §2.19）: 詳細画面のPoC計画・UAT。
+    pocData: {
+      plan: { ideaId: '', hypothesis: '', successCriteria: '', mvpScopeIn: [], mvpScopeOut: [], testUsers: '', testScenarios: [], uatChecklist: [], acceptanceResult: 'pending', acceptanceNotes: '' },
+      feedbackSummary: { count: 0, defectCount: 0, improvementCount: 0, averageRating: null, recommendedVerdict: 'pending' },
+    },
+    pocDraft: { hypothesis: '', successCriteria: '', mvpScopeIn: '', mvpScopeOut: '', testUsers: '', testScenarios: '' },
+    pocChecklistDraft: { newItem: '', acceptanceResult: 'pending', acceptanceNotes: '' },
+    pocBusy: false,
+    uatFeedbackDraft: { rating: '5', comment: '', feedbackType: 'general' },
+    uatFeedbackBusy: false,
     // ポートフォリオ（migration 013・docs/29 §2.5）: 専用画面の集計データ
     portfolioData: { summary: null, items: [] },
     portfolioBusy: false,
@@ -1570,13 +1698,19 @@ class Component extends DCLogic {
       classificationBusy: false,
       kpiData: { kpiBaselineHours: null, kpiBaselineCost: null, records: [] },
       kpiBusy: false,
+      pocData: {
+      plan: { ideaId: '', hypothesis: '', successCriteria: '', mvpScopeIn: [], mvpScopeOut: [], testUsers: '', testScenarios: [], uatChecklist: [], acceptanceResult: 'pending', acceptanceNotes: '' },
+      feedbackSummary: { count: 0, defectCount: 0, improvementCount: 0, averageRating: null, recommendedVerdict: 'pending' },
+    },
+      pocBusy: false,
     });
-    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas / loadKpi / loadReposForSelected を差し替える。
+    // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas / loadKpi / loadReposForSelected / loadPocData を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
     if (this.loadIdeaPhase) void this.loadIdeaPhase();
     if (this.loadSimilarIdeas) void this.loadSimilarIdeas();
     if (this.loadKpi) void this.loadKpi();
     if (this.loadReposForSelected) void this.loadReposForSelected();
+    if (this.loadPocData) void this.loadPocData();
   };
   backToList = () => {
     const idea = this.state.ideas.find((i) => i.id === this.state.selectedIdeaId);
@@ -1816,6 +1950,177 @@ class Component extends DCLogic {
       toast: { message: 'ベースラインを設定しました（モック表示。本番はAPI経由）。' },
     }));
     this.pushAudit('設定変更', `KPIベースラインを設定（モック）`);
+  };
+
+  // ---- PoC・MVP・UAT管理（migration 017・docs/29 §2.19）----
+  // 実API接続時は App.tsx ブリッジが __loadPocBridge / __savePocPlanBridge /
+  // __saveUatChecklistBridge / __submitUatFeedbackBridge を差し替える。
+  splitCommaList = (value) => (value || '').split(/[,、\n]/).map((v) => v.trim()).filter(Boolean);
+
+  loadPocData = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    if (this.__loadPocBridge) {
+      try {
+        const data = await this.__loadPocBridge(String(id));
+        this.setState({
+          pocData: data,
+          pocDraft: {
+            hypothesis: data.plan.hypothesis || '',
+            successCriteria: data.plan.successCriteria || '',
+            mvpScopeIn: (data.plan.mvpScopeIn || []).join('、'),
+            mvpScopeOut: (data.plan.mvpScopeOut || []).join('、'),
+            testUsers: data.plan.testUsers || '',
+            testScenarios: (data.plan.testScenarios || []).join('、'),
+          },
+          pocChecklistDraft: {
+            newItem: '',
+            acceptanceResult: data.plan.acceptanceResult || 'pending',
+            acceptanceNotes: data.plan.acceptanceNotes || '',
+          },
+          pocBusy: false,
+        });
+      } catch (e) {
+        this.setState({ pocBusy: false, toast: { message: `PoC/UAT情報の取得に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ pocBusy: false });
+  };
+
+  onPocFieldChange = (key) => (e) => {
+    this.setState((s) => ({ pocDraft: { ...s.pocDraft, [key]: e.target.value } }));
+  };
+
+  savePocPlan = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const draft = this.state.pocDraft;
+    const input = {
+      hypothesis: draft.hypothesis,
+      successCriteria: draft.successCriteria,
+      mvpScopeIn: this.splitCommaList(draft.mvpScopeIn),
+      mvpScopeOut: this.splitCommaList(draft.mvpScopeOut),
+      testUsers: draft.testUsers,
+      testScenarios: this.splitCommaList(draft.testScenarios),
+    };
+    this.setState({ pocBusy: true });
+    if (this.__savePocPlanBridge) {
+      try {
+        const plan = await this.__savePocPlanBridge(String(id), input);
+        this.setState((s) => ({ pocBusy: false, pocData: { ...s.pocData, plan }, toast: { message: 'PoC計画を保存しました。' } }));
+        this.pushAudit('設定変更', 'PoC計画（仮説・成功基準・MVPスコープ）を更新');
+      } catch (e) {
+        this.setState({ pocBusy: false, toast: { message: `PoC計画の保存に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      pocBusy: false,
+      pocData: { ...s.pocData, plan: { ...(s.pocData.plan || {}), ideaId: String(id), ...input, acceptanceResult: s.pocData.plan?.acceptanceResult || 'pending', uatChecklist: s.pocData.plan?.uatChecklist || [] } },
+      toast: { message: 'PoC計画を保存しました（モック表示。本番はAPI経由）。' },
+    }));
+    this.pushAudit('設定変更', 'PoC計画（仮説・成功基準・MVPスコープ）を更新（モック）');
+  };
+
+  onChecklistNewItemChange = (e) => {
+    this.setState((s) => ({ pocChecklistDraft: { ...s.pocChecklistDraft, newItem: e.target.value } }));
+  };
+  onAcceptanceResultChange = (e) => {
+    this.setState((s) => ({ pocChecklistDraft: { ...s.pocChecklistDraft, acceptanceResult: e.target.value } }));
+  };
+  onAcceptanceNotesChange = (e) => {
+    this.setState((s) => ({ pocChecklistDraft: { ...s.pocChecklistDraft, acceptanceNotes: e.target.value } }));
+  };
+
+  currentChecklist = () => (this.state.pocData.plan && this.state.pocData.plan.uatChecklist) || [];
+
+  addChecklistItem = () => {
+    const text = this.state.pocChecklistDraft.newItem.trim();
+    if (!text) return;
+    const next = [...this.currentChecklist(), { item: text, done: false }];
+    this.setState((s) => ({
+      pocData: { ...s.pocData, plan: { ...s.pocData.plan, uatChecklist: next } },
+      pocChecklistDraft: { ...s.pocChecklistDraft, newItem: '' },
+    }));
+  };
+
+  toggleChecklistItem = (idx) => () => {
+    const next = this.currentChecklist().map((it, i) => (i === idx ? { ...it, done: !it.done } : it));
+    this.setState((s) => ({ pocData: { ...s.pocData, plan: { ...s.pocData.plan, uatChecklist: next } } }));
+  };
+
+  saveUatChecklist = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const input = {
+      uatChecklist: this.currentChecklist(),
+      acceptanceResult: this.state.pocChecklistDraft.acceptanceResult,
+      acceptanceNotes: this.state.pocChecklistDraft.acceptanceNotes,
+    };
+    this.setState({ pocBusy: true });
+    if (this.__saveUatChecklistBridge) {
+      try {
+        const plan = await this.__saveUatChecklistBridge(String(id), input);
+        this.setState((s) => ({ pocBusy: false, pocData: { ...s.pocData, plan }, toast: { message: 'UATチェックリスト・受入判定を保存しました。' } }));
+        this.pushAudit('設定変更', `UAT受入判定を${input.acceptanceResult}へ更新`);
+      } catch (e) {
+        this.setState({ pocBusy: false, toast: { message: `保存に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      pocBusy: false,
+      pocData: { ...s.pocData, plan: { ...s.pocData.plan, ...input } },
+      toast: { message: 'UATチェックリスト・受入判定を保存しました（モック表示。本番はAPI経由）。' },
+    }));
+    this.pushAudit('設定変更', `UAT受入判定を${input.acceptanceResult}へ更新（モック）`);
+  };
+
+  onUatRatingChange = (e) => {
+    this.setState((s) => ({ uatFeedbackDraft: { ...s.uatFeedbackDraft, rating: e.target.value } }));
+  };
+  onUatCommentChange = (e) => {
+    this.setState((s) => ({ uatFeedbackDraft: { ...s.uatFeedbackDraft, comment: e.target.value } }));
+  };
+  onUatFeedbackTypeChange = (e) => {
+    this.setState((s) => ({ uatFeedbackDraft: { ...s.uatFeedbackDraft, feedbackType: e.target.value } }));
+  };
+
+  submitUatFeedback = async () => {
+    const id = this.state.selectedIdeaId;
+    if (id == null) return;
+    const draft = this.state.uatFeedbackDraft;
+    const input = { rating: Number(draft.rating), comment: draft.comment, feedbackType: draft.feedbackType };
+    this.setState({ uatFeedbackBusy: true });
+    if (this.__submitUatFeedbackBridge) {
+      try {
+        await this.__submitUatFeedbackBridge(String(id), input);
+        if (this.loadPocData) await this.loadPocData();
+        this.setState((s) => ({ uatFeedbackBusy: false, uatFeedbackDraft: { ...s.uatFeedbackDraft, comment: '' }, toast: { message: 'UATフィードバックを送信しました。' } }));
+        this.pushAudit('AI利用', `UATフィードバックを投稿（評価${input.rating}）`);
+      } catch (e) {
+        this.setState({ uatFeedbackBusy: false, toast: { message: `フィードバック送信に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    // モック: フィードバック集計をその場で再計算する。
+    this.setState((s) => {
+      const items = [{ rating: input.rating, feedbackType: input.feedbackType }, ...(s.__mockUatItems || [])];
+      const count = items.length;
+      const defectCount = items.filter((it) => it.feedbackType === 'defect').length;
+      const improvementCount = items.filter((it) => it.feedbackType === 'improvement').length;
+      const averageRating = Math.round((items.reduce((sum, it) => sum + it.rating, 0) / count) * 10) / 10;
+      const recommendedVerdict = averageRating >= 4 && defectCount === 0 ? 'go' : averageRating >= 3 && defectCount <= 1 ? 'conditional_go' : 'no_go';
+      return {
+        __mockUatItems: items,
+        uatFeedbackBusy: false,
+        uatFeedbackDraft: { ...s.uatFeedbackDraft, comment: '' },
+        pocData: { ...s.pocData, feedbackSummary: { count, defectCount, improvementCount, averageRating, recommendedVerdict } },
+        toast: { message: 'UATフィードバックを送信しました（モック表示。本番はAPI経由）。' },
+      };
+    });
+    this.pushAudit('AI利用', `UATフィードバックを投稿（モック・評価${input.rating}）`);
   };
 
   // ---- ポートフォリオ（docs/29 §2.5）----
@@ -2574,25 +2879,22 @@ class Component extends DCLogic {
   }
 
   buildStructuredDraft(intake, answers) {
-    if (intake.type === 'idea') {
-      return {
-        type: 'idea',
-        title: intake.work || intake.freeText.slice(0, 20),
-        category: intake.work || '未分類',
-        who: intake.who,
-        department: intake.department, submitterName: intake.submitterName, email: intake.email,
-        problem: intake.freeText + (answers[0] ? `(${answers[0]})` : ''),
-        currentProcess: intake.currentProcess || '未記入',
-        ideaProcess: intake.ideaProcess || answers[0] || '未記入',
-        isNewIdea: intake.isNewIdea || 'yes',
-        requiredResources: intake.requiredResources || answers[1] || '人員・機材等の追加調整が必要',
-        coordinationNeeded: intake.coordinationNeeded || answers[2] || '関連部署との調整要否は今後確認',
-        expectedEffect: intake.desiredState || '業務効率化・工数削減',
-        mvpProposal: '対象範囲を限定して試験導入する',
-        securityNotes: '関連データの取扱いに注意する',
-      };
-    }
-    return {
+    const draft = intake.type === 'idea' ? {
+      type: 'idea',
+      title: intake.work || intake.freeText.slice(0, 20),
+      category: intake.work || '未分類',
+      who: intake.who,
+      department: intake.department, submitterName: intake.submitterName, email: intake.email,
+      problem: intake.freeText + (answers[0] ? `(${answers[0]})` : ''),
+      currentProcess: intake.currentProcess || '未記入',
+      ideaProcess: intake.ideaProcess || answers[0] || '未記入',
+      isNewIdea: intake.isNewIdea || 'yes',
+      requiredResources: intake.requiredResources || answers[1] || '人員・機材等の追加調整が必要',
+      coordinationNeeded: intake.coordinationNeeded || answers[2] || '関連部署との調整要否は今後確認',
+      expectedEffect: intake.desiredState || '業務効率化・工数削減',
+      mvpProposal: '対象範囲を限定して試験導入する',
+      securityNotes: '関連データの取扱いに注意する',
+    } : {
       type: 'issue',
       title: intake.work || intake.freeText.slice(0, 20),
       category: intake.work || '未分類',
@@ -2606,6 +2908,35 @@ class Component extends DCLogic {
       mvpProposal: '対象工程を1現場に限定した簡易ツールで試験導入する',
       securityNotes: '現場写真・個人情報を含む場合はマスキング処理を徹底する',
     };
+    draft.aiMeta = this.computeAiStructureMeta(draft);
+    return draft;
+  }
+
+  // AI根拠・信頼度・重複判定（docs/29 §2.2/§2.3）のモック計算。
+  // 実API接続時は worker の buildAiStructureResponse（pg_trgm word_similarity +
+  // computeStructureConfidence）に置き換わる。ロジックは類似・重複候補カード
+  // （mockSimilarityOf）と同じ2-gram重なりベースの近似。
+  computeAiStructureMeta(draft) {
+    const queryText = this.mockIdeaSearchTextOf(draft);
+    const citations = this.state.ideas
+      .map((i) => ({ idea: i, similarity: this.mockSimilarityOf(queryText, this.mockIdeaSearchTextOf(i)) }))
+      .filter((hit) => hit.similarity >= 0.15)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5)
+      .map((hit) => ({
+        ideaId: hit.idea.id,
+        caseId: hit.idea.caseId || '',
+        title: hit.idea.title,
+        similarity: Math.round(hit.similarity * 1000) / 1000,
+        level: hit.similarity >= 0.5 ? 'high' : hit.similarity >= 0.25 ? 'medium' : 'low',
+      }));
+    const bestSim = citations.reduce((max, c) => Math.max(max, c.similarity), 0);
+    const duplicateVerdict = bestSim >= 0.5 ? 'merge_candidate' : bestSim >= 0.25 ? 'add_to_existing' : 'new_case';
+    const filledFields = [draft.title, draft.problem, draft.currentProcess, draft.expectedEffect, draft.mvpProposal, draft.who]
+      .filter((v) => v && String(v).trim()).length;
+    const confidence = Math.round((filledFields / 6) * 100) / 100;
+    const confidenceLevel = confidence >= 0.75 ? 'high' : confidence >= 0.5 ? 'medium' : 'low';
+    return { confidence, confidenceLevel, citations, duplicateVerdict };
   }
 
   submitAnswer = () => {
@@ -2628,7 +2959,11 @@ class Component extends DCLogic {
 
   updateReviewField = (key) => (e) => {
     const v = e.target.value;
-    this.setState((s) => ({ reviewDraft: { ...s.reviewDraft, [key]: v } }));
+    this.setState((s) => {
+      const draft = { ...s.reviewDraft, [key]: v };
+      draft.aiMeta = this.computeAiStructureMeta(draft);
+      return { reviewDraft: draft };
+    });
   };
 
   pushAudit = (action, detail) => {
@@ -2907,6 +3242,43 @@ class Component extends DCLogic {
     const reviewIsIssue = !!rd && rd.type === 'issue';
     const reviewIsIdea = !!rd && rd.type === 'idea';
 
+    // AI根拠・信頼度・重複判定（docs/29 §2.2/§2.3）の表示用マッピング。
+    const levelColors = {
+      high: { fg: '#B23B3B', bg: '#FBE7E7' },
+      medium: { fg: '#B5701A', bg: '#FDEFE0' },
+      low: { fg: '#5A6678', bg: '#EEF1F5' },
+    };
+    // 信頼度は高いほど良い（類似度levelColorsとは逆の意味づけ）ため専用の配色を使う。
+    const confidenceColors = {
+      high: { fg: '#1F8255', bg: '#E4F3EC' },
+      medium: { fg: '#B5701A', bg: '#FDEFE0' },
+      low: { fg: '#B23B3B', bg: '#FBE7E7' },
+    };
+    const verdictMeta = {
+      merge_candidate: { label: '⚠️ 統合候補あり', fg: '#B23B3B', bg: '#FBE7E7' },
+      add_to_existing: { label: '🔎 既存案件へ追加を検討', fg: '#B5701A', bg: '#FDEFE0' },
+      new_case: { label: '✅ 新規案件として進行可', fg: '#1F8255', bg: '#E4F3EC' },
+    };
+    const am = rd && rd.aiMeta;
+    const reviewAiMeta = am ? {
+      confidencePct: Math.round((am.confidence || 0) * 100),
+      confidenceLabel: am.confidenceLevel === 'high' ? '高' : am.confidenceLevel === 'medium' ? '中' : '低',
+      confidenceFg: (confidenceColors[am.confidenceLevel] || confidenceColors.low).fg,
+      confidenceBg: (confidenceColors[am.confidenceLevel] || confidenceColors.low).bg,
+      verdictLabel: (verdictMeta[am.duplicateVerdict] || verdictMeta.new_case).label,
+      verdictFg: (verdictMeta[am.duplicateVerdict] || verdictMeta.new_case).fg,
+      verdictBg: (verdictMeta[am.duplicateVerdict] || verdictMeta.new_case).bg,
+      hasCitations: !!(am.citations && am.citations.length),
+      noCitations: !(am.citations && am.citations.length),
+    } : null;
+    const reviewAiCitations = (am && am.citations ? am.citations : []).map((ct) => ({
+      caseId: ct.caseId || '',
+      title: ct.title,
+      simPct: Math.round((ct.similarity || 0) * 100),
+      fg: (levelColors[ct.level] || levelColors.low).fg,
+      bg: (levelColors[ct.level] || levelColors.low).bg,
+    }));
+
     const stageFilterChipsIssue = this.buildStageFilterChips(issues, s.filterStageIssue, this.setFilterStageIssue);
     const stageFilterChipsIdea = this.buildStageFilterChips(ideasOnly, s.filterStageIdea, this.setFilterStageIdea);
 
@@ -3003,6 +3375,35 @@ class Component extends DCLogic {
     })();
     const kpiSaveLabel = s.kpiBusy ? '保存中…' : '💾 記録';
     const kpiBaselineSaveLabel = s.kpiBusy ? '保存中…' : '📐 基準設定';
+
+    // ---- PoC・MVP・UAT管理 view-model（migration 017・docs/29 §2.19）----
+    const pocPlanRaw = s.pocData && s.pocData.plan;
+    const pocLoaded = !!pocPlanRaw;
+    const pocNotLoaded = !pocLoaded;
+    const acceptanceMeta = {
+      pending: { label: '未判定', fg: '#8A97A8', bg: '#F2F4F8' },
+      go: { label: '✅ Go', fg: '#1F8255', bg: '#E4F3EC' },
+      conditional_go: { label: '🔶 条件付きGo', fg: '#B5701A', bg: '#FDEFE0' },
+      no_go: { label: '⛔ No-Go', fg: '#C5392F', bg: '#FCE9E7' },
+    };
+    const currentAcceptance = acceptanceMeta[(pocPlanRaw && pocPlanRaw.acceptanceResult) || 'pending'];
+    const pocChecklistRows = ((pocPlanRaw && pocPlanRaw.uatChecklist) || []).map((it, idx) => ({
+      idx,
+      item: it.item,
+      done: it.done,
+      onToggle: this.toggleChecklistItem(idx),
+      rowStyle: it.done ? 'text-decoration:line-through;color:#8A97A8;' : 'color:#1A2433;',
+    }));
+    const hasChecklistRows = pocChecklistRows.length > 0;
+    const feedbackSummaryRaw = s.pocData && s.pocData.feedbackSummary;
+    const feedbackVerdictMeta = acceptanceMeta[(feedbackSummaryRaw && feedbackSummaryRaw.recommendedVerdict) || 'pending'];
+    const hasFeedback = !!(feedbackSummaryRaw && feedbackSummaryRaw.count > 0);
+    const feedbackSummaryText = hasFeedback
+      ? `件数 ${feedbackSummaryRaw.count}・平均評価 ${feedbackSummaryRaw.averageRating}/5・不具合 ${feedbackSummaryRaw.defectCount}件・改善要望 ${feedbackSummaryRaw.improvementCount}件`
+      : 'フィードバックはまだありません。';
+    const pocSaveLabel = s.pocBusy ? '保存中…' : '💾 PoC計画を保存';
+    const uatChecklistSaveLabel = s.pocBusy ? '保存中…' : '💾 チェックリスト・受入判定を保存';
+    const uatFeedbackSubmitLabel = s.uatFeedbackBusy ? '送信中…' : '📮 フィードバックを送信';
 
     // ---- Gate1-5 view-model（#50/#57）----
     const gateLabelsMap = {
@@ -3525,6 +3926,7 @@ class Component extends DCLogic {
       submitAnswer: this.submitAnswer, wizardAnswerInvalid, submitAnswerStyle, goToIntake: this.goToIntake,
 
       reviewDraft: rd, noReviewDraft: !rd, reviewHandlers, reviewIsIssue, reviewIsIdea, registerIdea: this.registerIdea,
+      reviewAiMeta, reviewAiCitations,
 
       stageFilterChipsIssue, stageFilterChipsIdea,
       searchQueryIssue: s.searchQueryIssue, searchQueryIdea: s.searchQueryIdea,
@@ -3562,6 +3964,40 @@ class Component extends DCLogic {
       saveKpiBaseline: this.saveKpiBaseline,
       recordKpi: this.recordKpi,
       loadKpi: this.loadKpi,
+
+      // PoC・MVP・UAT管理（migration 017・docs/29 §2.19）
+      pocLoaded, pocNotLoaded, pocDraft: s.pocDraft, pocBusy: !!s.pocBusy, pocSaveLabel,
+      onPocHypothesisChange: this.onPocFieldChange('hypothesis'),
+      onPocSuccessCriteriaChange: this.onPocFieldChange('successCriteria'),
+      onPocMvpScopeInChange: this.onPocFieldChange('mvpScopeIn'),
+      onPocMvpScopeOutChange: this.onPocFieldChange('mvpScopeOut'),
+      onPocTestUsersChange: this.onPocFieldChange('testUsers'),
+      onPocTestScenariosChange: this.onPocFieldChange('testScenarios'),
+      savePocPlan: this.savePocPlan,
+      currentAcceptanceLabel: currentAcceptance.label,
+      currentAcceptanceFg: currentAcceptance.fg,
+      currentAcceptanceBg: currentAcceptance.bg,
+      pocChecklistRows, hasChecklistRows,
+      pocChecklistNewItem: s.pocChecklistDraft.newItem,
+      onChecklistNewItemChange: this.onChecklistNewItemChange,
+      addChecklistItem: this.addChecklistItem,
+      pocAcceptanceResultDraft: s.pocChecklistDraft.acceptanceResult,
+      onAcceptanceResultChange: this.onAcceptanceResultChange,
+      pocAcceptanceNotesDraft: s.pocChecklistDraft.acceptanceNotes,
+      onAcceptanceNotesChange: this.onAcceptanceNotesChange,
+      saveUatChecklist: this.saveUatChecklist,
+      uatChecklistSaveLabel,
+      hasFeedback, feedbackSummaryText,
+      feedbackVerdictLabel: feedbackVerdictMeta.label,
+      feedbackVerdictFg: feedbackVerdictMeta.fg,
+      feedbackVerdictBg: feedbackVerdictMeta.bg,
+      uatFeedbackDraft: s.uatFeedbackDraft,
+      onUatRatingChange: this.onUatRatingChange,
+      onUatCommentChange: this.onUatCommentChange,
+      onUatFeedbackTypeChange: this.onUatFeedbackTypeChange,
+      submitUatFeedback: this.submitUatFeedback,
+      uatFeedbackSubmitLabel,
+      uatFeedbackBusy: !!s.uatFeedbackBusy,
 
       adminSettings: a, usagePercent, adminUsageBarStyle, adminToggleTrackStyle, adminToggleDotStyle,
       adminEnabledLabel, testButtonLabel, adminTestSuccess, adminApiKeySavedMsg: a.apiKeySavedMsg,

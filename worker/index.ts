@@ -24,8 +24,10 @@ import {
   type AiConnectionTestResult,
   type AiQuestion,
   type AiSettings,
+  type AiStructureResponse,
   type Authority,
   type DashboardMetrics,
+  type DuplicateVerdict,
   type GateNo,
   type Idea,
   type IdeaComment,
@@ -38,15 +40,25 @@ import {
   type InformationClassification,
   type IssueInput,
   type KpiOutcome,
+  type PocAcceptanceResult,
+  type PocPlan,
+  type RagCitation,
   type RagSearchHit,
   type StructuredIdea,
+  type UatChecklistItem,
+  type UatFeedbackEntry,
+  type UatFeedbackType,
   authorities,
+  buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeStructureConfidence,
   gateLabels,
   gateNumbers,
   gateAuthorityPolicy,
   knowledgeCategories,
+  pocAcceptanceResults,
   summarizeGateApprovals,
+  summarizeUatFeedback,
   evaluateGateSoD,
   canChangeClassification,
   defaultPhaseForStage,
@@ -57,8 +69,10 @@ import {
   issueInputSchema,
   kpiOutcomes,
   ragMinSimilarity,
+  ragOverallVerdict,
   ragSimilarityLevel,
   structuredIdeaSchema,
+  uatFeedbackTypes,
   userRoles,
 } from "../src/lib/shared";
 
@@ -1219,6 +1233,264 @@ app.patch(
   },
 );
 
+// ---------------------------------------------------------------------------
+// PoC・MVP・UAT管理（docs/29 §2.19・migration 017）
+// PoC仮説・成功基準・MVPスコープ(In/Out)とUATチェックリスト/受入判定を記録し、
+// テストユーザーからのフィードバック（5段階評価+コメント、不具合/改善要望の別）を
+// 集計してGo/No-Go（条件付きGo含む）判定を支援する。
+// ---------------------------------------------------------------------------
+
+// jsonbのuat_checklist（{item,done}の配列）をパースする。postgres.js(TCP)は
+// jsonbをJSON文字列のまま返すのに対し、neonのHTTPドライバは配列を返すため両対応する
+// （arrayFromJsonと同じ理由。文字列配列ではなくオブジェクト配列なので専用関数にする）。
+function uatChecklistFromJson(value: unknown): UatChecklistItem[] {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map((entry) => {
+    const record = (entry ?? {}) as Record<string, unknown>;
+    return { item: String(record.item ?? ""), done: Boolean(record.done) };
+  });
+}
+
+function mapPocPlanRow(row: Record<string, unknown>): PocPlan {
+  return {
+    ideaId: String(row.idea_id),
+    hypothesis: String(row.hypothesis ?? ""),
+    successCriteria: String(row.success_criteria ?? ""),
+    mvpScopeIn: arrayFromJson(row.mvp_scope_in),
+    mvpScopeOut: arrayFromJson(row.mvp_scope_out),
+    testUsers: String(row.test_users ?? ""),
+    testScenarios: arrayFromJson(row.test_scenarios),
+    uatChecklist: uatChecklistFromJson(row.uat_checklist),
+    acceptanceResult: String(row.acceptance_result ?? "pending") as PocAcceptanceResult,
+    acceptanceNotes: String(row.acceptance_notes ?? ""),
+    updatedBy: String(row.updated_by),
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  };
+}
+
+function defaultPocPlan(ideaId: string): PocPlan {
+  const now = new Date().toISOString();
+  return {
+    ideaId,
+    hypothesis: "",
+    successCriteria: "",
+    mvpScopeIn: [],
+    mvpScopeOut: [],
+    testUsers: "",
+    testScenarios: [],
+    uatChecklist: [],
+    acceptanceResult: "pending",
+    acceptanceNotes: "",
+    updatedBy: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function loadIdeaForPocAccess(
+  db: DbSql,
+  env: Env,
+  user: string,
+  id: string,
+): Promise<Idea> {
+  const rows = await db`select * from ideas where id = ${id} limit 1`;
+  if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+  const idea = mapIdeaRow(rows[0]);
+  const isAdmin = (await resolveRoles(env, user)).includes("admin");
+  const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
+  // GET /api/ideas 一覧と同じ可視性条件（fail-closed）: 非admin・非本人は
+  // public/internal のみ。confidential・restricted はどちらも不可視とする。
+  const classification = idea.informationClassification ?? "internal";
+  const isVisible = isAdmin || isOwner || classification === "public" || classification === "internal";
+  if (!isVisible) throw new ApiError("FORBIDDEN", "この案件のPoC/UAT情報は閲覧できません。", 403);
+  return idea;
+}
+
+app.get("/api/ideas/:id/poc", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  await loadIdeaForPocAccess(db, c.env, user, id);
+  const rows = await db`select * from idea_poc_plans where idea_id = ${id} limit 1`;
+  const plan = rows[0] ? mapPocPlanRow(rows[0]) : defaultPocPlan(id);
+  const feedbackRows = await db`
+    select rating, feedback_type from idea_uat_feedback where idea_id = ${id}
+  `;
+  const summary = summarizeUatFeedback(
+    feedbackRows.map((row) => ({
+      rating: Number(row.rating),
+      feedbackType: String(row.feedback_type) as UatFeedbackType,
+    })),
+  );
+  return c.json({ plan, feedbackSummary: summary });
+});
+
+const pocPlanInputSchema = z.object({
+  hypothesis: z.string().max(2000).optional(),
+  successCriteria: z.string().max(2000).optional(),
+  mvpScopeIn: z.array(z.string().max(300)).max(50).optional(),
+  mvpScopeOut: z.array(z.string().max(300)).max(50).optional(),
+  testUsers: z.string().max(1000).optional(),
+  testScenarios: z.array(z.string().max(500)).max(50).optional(),
+});
+
+// PoC仮説・成功基準・MVPスコープ(In/Out)・テスト対象者/シナリオの登録・更新。
+// 提出者本人または管理者のみ（実装内容と乖離しないよう起票者が主導する）。
+app.put("/api/ideas/:id/poc", zValidator("json", pocPlanInputSchema), async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const body = c.req.valid("json");
+  const idea = await loadIdeaForPocAccess(db, c.env, user, id);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
+  if (!isAdmin && !isOwner) {
+    throw new ApiError("FORBIDDEN", "PoC計画の編集は提出者本人または管理者のみ可能です。", 403);
+  }
+  const existingRows = await db`select * from idea_poc_plans where idea_id = ${id} limit 1`;
+  const existing = existingRows[0] ? mapPocPlanRow(existingRows[0]) : defaultPocPlan(id);
+  const next = {
+    hypothesis: body.hypothesis ?? existing.hypothesis,
+    successCriteria: body.successCriteria ?? existing.successCriteria,
+    mvpScopeIn: body.mvpScopeIn ?? existing.mvpScopeIn,
+    mvpScopeOut: body.mvpScopeOut ?? existing.mvpScopeOut,
+    testUsers: body.testUsers ?? existing.testUsers,
+    testScenarios: body.testScenarios ?? existing.testScenarios,
+  };
+  const rows = await db`
+    insert into idea_poc_plans (
+      idea_id, hypothesis, success_criteria, mvp_scope_in, mvp_scope_out,
+      test_users, test_scenarios, updated_by
+    )
+    values (
+      ${id}, ${next.hypothesis}, ${next.successCriteria}, ${JSON.stringify(next.mvpScopeIn)}::jsonb,
+      ${JSON.stringify(next.mvpScopeOut)}::jsonb, ${next.testUsers}, ${JSON.stringify(next.testScenarios)}::jsonb,
+      ${user}
+    )
+    on conflict (idea_id) do update set
+      hypothesis = excluded.hypothesis,
+      success_criteria = excluded.success_criteria,
+      mvp_scope_in = excluded.mvp_scope_in,
+      mvp_scope_out = excluded.mvp_scope_out,
+      test_users = excluded.test_users,
+      test_scenarios = excluded.test_scenarios,
+      updated_by = excluded.updated_by,
+      updated_at = now()
+    returning *
+  `;
+  await audit(c.env, user, "idea.poc.updated", "idea", id, { hypothesis: next.hypothesis.slice(0, 200) });
+  return c.json(mapPocPlanRow(rows[0]));
+});
+
+const uatChecklistInputSchema = z.object({
+  uatChecklist: z
+    .array(z.object({ item: z.string().max(300), done: z.boolean() }))
+    .max(100),
+  acceptanceResult: z.enum(pocAcceptanceResults).optional(),
+  acceptanceNotes: z.string().max(2000).optional(),
+});
+
+// UATチェックリストの更新と受入判定(Go/条件付きGo/No-Go)の記録。
+// Gate3資料の下敷きとなるため、提出者本人または管理者のみ更新できる。
+app.put("/api/ideas/:id/poc/checklist", zValidator("json", uatChecklistInputSchema), async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const body = c.req.valid("json");
+  const idea = await loadIdeaForPocAccess(db, c.env, user, id);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const isOwner = idea.createdBy.toLowerCase() === user.toLowerCase();
+  if (!isAdmin && !isOwner) {
+    throw new ApiError("FORBIDDEN", "UATチェックリスト・受入判定の更新は提出者本人または管理者のみ可能です。", 403);
+  }
+  const existingRows = await db`select * from idea_poc_plans where idea_id = ${id} limit 1`;
+  const existing = existingRows[0] ? mapPocPlanRow(existingRows[0]) : defaultPocPlan(id);
+  const acceptanceResult = body.acceptanceResult ?? existing.acceptanceResult;
+  const acceptanceNotes = body.acceptanceNotes ?? existing.acceptanceNotes;
+  const rows = await db`
+    insert into idea_poc_plans (idea_id, uat_checklist, acceptance_result, acceptance_notes, updated_by)
+    values (${id}, ${JSON.stringify(body.uatChecklist)}::jsonb, ${acceptanceResult}, ${acceptanceNotes}, ${user})
+    on conflict (idea_id) do update set
+      uat_checklist = excluded.uat_checklist,
+      acceptance_result = excluded.acceptance_result,
+      acceptance_notes = excluded.acceptance_notes,
+      updated_by = excluded.updated_by,
+      updated_at = now()
+    returning *
+  `;
+  await audit(c.env, user, "idea.poc.checklist_updated", "idea", id, {
+    acceptanceResult,
+    checklistCount: body.uatChecklist.length,
+  });
+  return c.json(mapPocPlanRow(rows[0]));
+});
+
+app.get("/api/ideas/:id/uat-feedback", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  await loadIdeaForPocAccess(db, c.env, user, id);
+  const rows = await db`
+    select * from idea_uat_feedback where idea_id = ${id} order by submitted_at desc limit 200
+  `;
+  const items: UatFeedbackEntry[] = rows.map((row) => ({
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    rating: Number(row.rating),
+    comment: String(row.comment ?? ""),
+    feedbackType: String(row.feedback_type) as UatFeedbackType,
+    submittedBy: String(row.submitted_by),
+    submittedAt: toIsoString(row.submitted_at),
+  }));
+  const summary = summarizeUatFeedback(items);
+  return c.json({ items, summary });
+});
+
+const uatFeedbackInputSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().max(2000).optional(),
+  feedbackType: z.enum(uatFeedbackTypes).optional(),
+});
+
+// UATフィードバックの投稿。テストユーザーは案件の提出者・管理者と限らないため、
+// 認証済みユーザーであれば誰でも投稿できる（現場からの受入評価を広く集める）。
+app.post("/api/ideas/:id/uat-feedback", zValidator("json", uatFeedbackInputSchema), async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const body = c.req.valid("json");
+  await loadIdeaForPocAccess(db, c.env, user, id);
+  const rows = await db`
+    insert into idea_uat_feedback (idea_id, rating, comment, feedback_type, submitted_by)
+    values (${id}, ${body.rating}, ${body.comment ?? ""}, ${body.feedbackType ?? "general"}, ${user})
+    returning *
+  `;
+  await audit(c.env, user, "idea.uat_feedback.submitted", "idea", id, {
+    rating: body.rating,
+    feedbackType: body.feedbackType ?? "general",
+  });
+  const row = rows[0];
+  const entry: UatFeedbackEntry = {
+    id: String(row.id),
+    ideaId: String(row.idea_id),
+    rating: Number(row.rating),
+    comment: String(row.comment ?? ""),
+    feedbackType: String(row.feedback_type) as UatFeedbackType,
+    submittedBy: String(row.submitted_by),
+    submittedAt: toIsoString(row.submitted_at),
+  };
+  return c.json(entry, 201);
+});
+
 app.get("/api/ideas/evaluation", async (c) => {
   const user = await getUser(c.req.raw, c.env);
   await requireAdmin(c.env, user);
@@ -1328,12 +1600,20 @@ async function logRagSearch(
 async function findSimilarIdeas(
   db: DbSql,
   query: string,
-  excludeIdeaId?: string,
-  limit: number = 5,
+  excludeIdeaId: string | undefined,
+  limit: number,
+  visibility: { user: string; isAdmin: boolean },
 ): Promise<Array<{ idea: Idea; similarity: number }>> {
   const capped = Math.min(Math.max(1, Math.trunc(limit)), ragMaxResults);
   const q = normalizeRagQuery(query);
   if (!q || q.length < 4) return [];
+  // 情報区分・公開制御（migration 012）: RAG候補も一覧APIと同じ可視性条件を
+  // 適用する（fail-closed）。admin は全区分、非adminは public/internal または
+  // 本人作成のみを候補にする。confidential/restricted の title/caseId が
+  // 引用として非対象ユーザーへ漏れることを防ぐ。
+  const visibilityAnd = visibility.isAdmin
+    ? db``
+    : db`and (information_classification in ('public','internal') or created_by = ${visibility.user})`;
   // word_similarity(a,b) は「a の連続trigramが b の最良の連続部分列にどれだけ
   // 一致するか」で、方向に依存する（クエリ短文→対象長文が本来の使い方）。
   // 案件同士（どちらも長文）を比較する場合は両方向の最大値を採用すると
@@ -1350,6 +1630,7 @@ async function findSimilarIdeas(
             word_similarity(${q}, search_text),
             word_similarity(search_text, ${q})
           ) >= ${ragMinSimilarity}
+          ${visibilityAnd}
         order by rag_sim desc
         limit ${capped}
       `
@@ -1363,6 +1644,7 @@ async function findSimilarIdeas(
           word_similarity(${q}, search_text),
           word_similarity(search_text, ${q})
         ) >= ${ragMinSimilarity}
+          ${visibilityAnd}
         order by rag_sim desc
         limit ${capped}
       `;
@@ -1401,7 +1683,11 @@ app.get("/api/ideas/:id/similar", async (c) => {
   `;
   if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
   const source = mapIdeaRow(rows[0]);
-  const hits = await findSimilarIdeas(db, buildIdeaQueryText(source), source.id, limit);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const hits = await findSimilarIdeas(db, buildIdeaQueryText(source), source.id, limit, {
+    user,
+    isAdmin,
+  });
   const items: RagSearchHit[] = await Promise.all(
     hits.map(async ({ idea, similarity }) => ({
       idea: await redactIdeaForUser(idea, user, c.env),
@@ -1410,7 +1696,11 @@ app.get("/api/ideas/:id/similar", async (c) => {
     })),
   );
   await logRagSearch(db, c.env, user, buildIdeaQueryText(source), "idea", source.id, items);
-  return c.json({ query: buildIdeaQueryText(source).slice(0, 200), items });
+  return c.json({
+    query: buildIdeaQueryText(source).slice(0, 200),
+    items,
+    duplicateVerdict: ragOverallVerdict(items),
+  });
 });
 
 // GET /api/rag/search?q=... — 任意テキストに対する類似アイデア検索。
@@ -1424,7 +1714,8 @@ app.get("/api/rag/search", async (c) => {
   }
   const rawLimit = Number(c.req.query("limit") ?? 5);
   const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.trunc(rawLimit)), ragMaxResults) : 5;
-  const hits = await findSimilarIdeas(db, q, undefined, limit);
+  const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+  const hits = await findSimilarIdeas(db, q, undefined, limit, { user, isAdmin });
   const items: RagSearchHit[] = await Promise.all(
     hits.map(async ({ idea, similarity }) => ({
       idea: await redactIdeaForUser(idea, user, c.env),
@@ -1433,7 +1724,7 @@ app.get("/api/rag/search", async (c) => {
     })),
   );
   await logRagSearch(db, c.env, user, q, "text", undefined, items);
-  return c.json({ query: q, items });
+  return c.json({ query: q, items, duplicateVerdict: ragOverallVerdict(items) });
 });
 
 
@@ -2269,6 +2560,47 @@ app.post(
   },
 );
 
+// AI構造化結果に対する根拠検索（RAG引用）と重複判定をまとめて算出する。
+// docs/29 §2.2「AI回答の信頼度表示・根拠・引用」・§2.3「重複率算出」に対応。
+async function buildAiStructureResponse(
+  db: DbSql,
+  user: string,
+  env: Env,
+  structured: StructuredIdea,
+): Promise<AiStructureResponse> {
+  const queryText = buildStructuredQueryText(structured);
+  const isAdmin = (await resolveRoles(env, user)).includes("admin");
+  const hits =
+    queryText.length >= 4
+      ? await findSimilarIdeas(db, queryText, undefined, 5, { user, isAdmin })
+      : [];
+  const citations: RagCitation[] = hits.map(({ idea, similarity }) => ({
+    ideaId: idea.id,
+    caseId: idea.caseId,
+    title: idea.title,
+    similarity: Math.round(similarity * 1000) / 1000,
+    level: ragSimilarityLevel(similarity),
+  }));
+  const duplicateVerdict: DuplicateVerdict = ragOverallVerdict(citations);
+  if (citations.length > 0) {
+    await logRagSearch(
+      db,
+      env,
+      user,
+      queryText,
+      "text",
+      undefined,
+      citations.map((citation) => ({
+        idea: { id: citation.ideaId } as Idea,
+        similarity: citation.similarity,
+        level: citation.level,
+      })),
+    );
+  }
+  const { confidence, confidenceLevel } = computeStructureConfidence(structured);
+  return { structured, confidence, confidenceLevel, citations, duplicateVerdict };
+}
+
 app.post(
   "/api/ai/structure",
   zValidator("json", z.object({ input: issueInputSchema, answers: z.record(z.string(), z.string()) })),
@@ -2291,7 +2623,9 @@ app.post(
       }
       const cost = await auditAi(c.env, user, "structure", input, structured);
       await finalizeAiUsage(c.env, reservation, cost);
-      return c.json(structured);
+      const db = getDb(c.env);
+      const response = await buildAiStructureResponse(db, user, c.env, structured);
+      return c.json(response);
     } catch (error) {
       await releaseAiUsage(c.env, reservation);
       await auditAiFailure(c.env, user, "structure", input, error);
@@ -4982,6 +5316,9 @@ export const workerSecurityTestHooks = {
   formatGateReminderMessage,
   buildEvidenceRowsFromOverview,
   estimateAiCost,
+  findSimilarIdeas,
+  getDb,
+  loadIdeaForPocAccess,
   normalizeRagQuery,
   parseGateNo,
   formatCaseId,

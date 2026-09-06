@@ -1,6 +1,7 @@
 import type {
   AiQuestion,
   AiSettings,
+  AiStructureMeta,
   Idea,
   IdeaStage,
   IssueInput,
@@ -61,6 +62,8 @@ export type StandaloneReviewDraft = {
   expectedEffect: string;
   mvpProposal: string;
   securityNotes: string;
+  // AI根拠・信頼度・重複判定（docs/29 §2.2/§2.3）。手動下書き作成時はnull。
+  aiMeta?: AiStructureMeta | null;
 };
 
 export type StandaloneIntakeForm = {
@@ -406,6 +409,7 @@ export function buildManualStructuredIdea(input: IssueInput, answers: Record<str
 export function toReviewDraft(
   structured: StructuredIdea,
   source?: StandaloneIntakeForm,
+  aiMeta?: AiStructureMeta | null,
 ): StandaloneReviewDraft {
   return {
     type: "issue",
@@ -426,6 +430,7 @@ export function toReviewDraft(
     expectedEffect: structured.expectedEffects,
     mvpProposal: structured.mvpCandidate,
     securityNotes: structured.securityNotes.join("、"),
+    aiMeta: aiMeta ?? null,
   };
 }
 
