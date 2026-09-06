@@ -1725,6 +1725,8 @@ class Component extends DCLogic {
       feedbackSummary: { count: 0, defectCount: 0, improvementCount: 0, averageRating: null, recommendedVerdict: 'pending' },
     },
       pocBusy: false,
+      gate3Brief: null,
+      gate3BriefBusy: false,
     });
     // 実API接続時はブリッジが loadGatesForSelected / loadIdeaPhase / loadSimilarIdeas / loadKpi / loadReposForSelected / loadPocData を差し替える。
     if (this.loadGatesForSelected) void this.loadGatesForSelected();
