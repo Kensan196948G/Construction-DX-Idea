@@ -1028,7 +1028,7 @@ export const mockApi = {
     return inspectIssueInput(input);
   },
 
-  async generateQuestions(input: IssueInput, _department?: string): Promise<AiQuestion[]> {
+  async generateQuestions(input: IssueInput): Promise<AiQuestion[]> {
     const base = [
       {
         id: "q-frequency",
@@ -1065,11 +1065,7 @@ export const mockApi = {
     ];
   },
 
-  async structureIdea(
-    input: IssueInput,
-    answers: Record<string, string>,
-    _department?: string,
-  ): Promise<AiStructureResponse> {
+  async structureIdea(input: IssueInput, answers: Record<string, string>): Promise<AiStructureResponse> {
     const frequency = answers["q-frequency"] ? `月${answers["q-frequency"]}回程度` : "頻度未確認";
     const time = answers["q-time"] ? `1回${answers["q-time"]}分程度` : "所要時間未確認";
 

@@ -305,15 +305,15 @@ export const api = useMock
           method: "POST",
           body: JSON.stringify(input),
         }),
-      generateQuestions: (input: IssueInput, department?: string) =>
+      generateQuestions: (input: IssueInput) =>
         request<AiQuestion[]>("/api/ai/questions", {
           method: "POST",
-          body: JSON.stringify({ input, department: department || undefined }),
+          body: JSON.stringify({ input }),
         }),
-      structureIdea: (input: IssueInput, answers: Record<string, string>, department?: string) =>
+      structureIdea: (input: IssueInput, answers: Record<string, string>) =>
         request<AiStructureResponse>("/api/ai/structure", {
           method: "POST",
-          body: JSON.stringify({ input, answers, department: department || undefined }),
+          body: JSON.stringify({ input, answers }),
         }),
       saveIdea: (structured: StructuredIdea, stage: IdeaStage, idempotencyKey?: string) =>
         request<SaveIdeaResult>(stage === "draft" ? "/api/ideas/drafts" : "/api/ideas", {

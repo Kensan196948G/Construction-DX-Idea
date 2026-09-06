@@ -2670,10 +2670,13 @@ app.post(
 
 app.post(
   "/api/ai/questions",
-  zValidator("json", z.object({ input: issueInputSchema, department: z.string().max(200).optional() })),
+  zValidator("json", z.object({ input: issueInputSchema })),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
-    const { input, department } = c.req.valid("json");
+    const { input } = c.req.valid("json");
+    // 部署帰属はクライアント指定を信用せず、常にapp_users.departmentから解決する
+    // （CodeRabbit指摘: 自己申告だと部署別予算の回避・他部署への付け替えが可能）。
+    const department = await resolveUserDepartment(c.env, user);
     const reservation = await reserveAiUsage(c.env, user, input, department);
     try {
       const questions = await generateQuestions(c.env, input);
@@ -2736,12 +2739,14 @@ app.post(
     z.object({
       input: issueInputSchema,
       answers: z.record(z.string(), z.string()),
-      department: z.string().max(200).optional(),
     }),
   ),
   async (c) => {
     const user = await getUser(c.req.raw, c.env);
-    const { input, answers, department } = c.req.valid("json");
+    const { input, answers } = c.req.valid("json");
+    // 部署帰属はクライアント指定を信用せず、常にapp_users.departmentから解決する
+    // （CodeRabbit指摘: 自己申告だと部署別予算の回避・他部署への付け替えが可能）。
+    const department = await resolveUserDepartment(c.env, user);
     const reservation = await reserveAiUsage(c.env, user, input, department);
     try {
       const structured = await structureIdea(c.env, input, answers);
@@ -4053,6 +4058,29 @@ async function resolveAuthority(env: Env, user: string): Promise<Authority | und
   } catch (error) {
     console.error("resolveAuthority failed", sanitizeLog(error));
     return undefined;
+  }
+}
+
+// AI Governance: 部署別Token Budget（docs/29 §2.14残・migration 019）の部署帰属は、
+// クライアントが自己申告するdepartmentを信用せず、認証済みユーザーに対応する
+// app_users.departmentをサーバー側で解決する（CodeRabbit指摘: クライアント指定を
+// そのまま使うと、部署別予算の回避や他部署へのコスト付け替えが可能だった）。
+async function resolveUserDepartment(env: Env, user: string): Promise<string> {
+  if (!env.DATABASE_URL) return "";
+  try {
+    const db = getDb(env);
+    const rows = await db`
+      select department, status
+      from app_users
+      where lower(email) = ${user.toLowerCase()}
+      limit 1
+    `;
+    const row = rows[0];
+    if (!row || String(row.status) !== "active") return "";
+    return row.department ? String(row.department) : "";
+  } catch (error) {
+    console.error("resolveUserDepartment failed", sanitizeLog(error));
+    return "";
   }
 }
 

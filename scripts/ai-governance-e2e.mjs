@@ -6,9 +6,16 @@
  *    （ALLOW_LOCAL_AUTH_BYPASSのdemoプロバイダ経路は日次/月次予算チェック自体を
  *    スキップするため、予算判定ロジックそのものはHTTP経由では検証できない）。
  * 2) dev-server（bypass・demoプロバイダ）を起動し、PUT /api/admin/usage-limits
- *    （department）→ POST /api/ai/questions（department付き）→
- *    GET /api/admin/ai-usage/by-department で部署別コスト実績への反映を確認する
- *    （auditAiはdemoプロバイダでも実行されるため、departmentの記録自体は検証可能）。
+ *    （department）→ POST /api/ai/questions → GET /api/admin/ai-usage/by-department
+ *    で部署別コスト実績への反映を確認する（auditAiはdemoプロバイダでも実行される
+ *    ため、departmentの記録自体は検証可能）。
+ *
+ *    CodeRabbit指摘（PR #72）を受けた修正: departmentはリクエストボディの
+ *    自己申告を信用せず、認証済みユーザーのapp_users.departmentをサーバー側で
+ *    解決するよう修正した（自己申告だと部署別予算の回避・他部署への付け替えが
+ *    可能だった）。このE2Eでは、リクエストボディに実際の部署と異なるdepartment
+ *    （spoofedDepartment）を送っても無視され、app_usersの実際の部署へ正しく
+ *    帰属することを確認する。
  */
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
@@ -68,8 +75,9 @@ try {
   await db`delete from usage_limits where subject_type = 'department' and subject_id = ${department}`.catch(() => {});
 }
 
-// 2) HTTP経由: PUT usage-limits → POST /api/ai/questions(department) → by-department集計。
+// 2) HTTP経由: PUT usage-limits → POST /api/ai/questions → by-department集計。
 let child;
+let resolvedDept;
 try {
   const port = await new Promise((resolve, reject) => {
     const server = createServer();
@@ -105,10 +113,15 @@ try {
   }
   check("dev-server health", healthy);
 
-  const httpDept = `E2E部署テストHTTP-${Date.now()}`;
+  // bypassユーザー（local.dev@example.com）の実際の所属部署をapp_usersから取得する。
+  // サーバーはこの値を使い、リクエストボディのdepartmentは無視するはずである。
+  const meRows = await db`select department from app_users where lower(email) = 'local.dev@example.com' limit 1`;
+  resolvedDept = meRows[0]?.department ? String(meRows[0].department) : "";
+  check("bypass user has a department in app_users (test precondition)", !!resolvedDept, JSON.stringify(meRows[0]));
+
   const put = await api("PUT", "/api/admin/usage-limits", {
     subjectType: "department",
-    subjectId: httpDept,
+    subjectId: resolvedDept,
     dailyLimit: 50,
     monthlyBudget: 1000,
     enabled: true,
@@ -127,10 +140,18 @@ try {
   const listLimits = await api("GET", "/api/admin/usage-limits");
   check(
     "usage-limits GET includes the new department row",
-    (listLimits.json?.items ?? []).some((it) => it.subjectType === "department" && it.subjectId === httpDept),
+    (listLimits.json?.items ?? []).some((it) => it.subjectType === "department" && it.subjectId === resolvedDept),
     JSON.stringify(listLimits.json),
   );
 
+  const beforeRows = await db`
+    select coalesce(sum(1), 0)::int as calls from idea_ai_sessions where department = ${resolvedDept}
+  `;
+  const callsBefore = Number(beforeRows[0]?.calls ?? 0);
+
+  // department欄に実際の所属と異なる部署名を送っても、サーバーはこれを無視し
+  // app_users.departmentへ帰属させるはずである（CodeRabbit指摘のセキュリティ修正）。
+  const spoofedDepartment = `E2Eなりすまし部署-${Date.now()}`;
   const question = await api("POST", "/api/ai/questions", {
     input: {
       workType: "E2Eテスト用の困りごと入力です。",
@@ -138,21 +159,35 @@ try {
       desiredState: "改善後の理想状態テキスト。",
       confidentiality: "none",
     },
-    department: httpDept,
+    department: spoofedDepartment,
   });
-  check("ai/questions with department (demo provider)", question.status === 200, `status=${question.status} body=${JSON.stringify(question.json).slice(0, 200)}`);
+  check("ai/questions (demo provider)", question.status === 200, `status=${question.status} body=${JSON.stringify(question.json).slice(0, 200)}`);
 
   const byDept = await api("GET", "/api/admin/ai-usage/by-department");
-  const row = (byDept.json?.items ?? []).find((it) => it.department === httpDept);
-  check("ai-usage/by-department reflects the recorded call", !!row && row.totalCalls >= 1, JSON.stringify(row));
+  const spoofedRow = (byDept.json?.items ?? []).find((it) => it.department === spoofedDepartment);
+  check("spoofed department in request body is NOT used for attribution", !spoofedRow, JSON.stringify(spoofedRow));
 
-  // cleanup（HTTP側で作った部署のusage_limits/ai_usage_countersを削除）
-  await db`delete from usage_limits where subject_type = 'department' and subject_id in (${httpDept}, ${otherDepartment})`.catch(() => {});
-  await db`delete from idea_ai_sessions where department in (${httpDept}, ${otherDepartment})`.catch(() => {});
+  const afterRows = await db`
+    select coalesce(sum(1), 0)::int as calls from idea_ai_sessions where department = ${resolvedDept}
+  `;
+  const callsAfter = Number(afterRows[0]?.calls ?? 0);
+  check(
+    "call is instead attributed to the resolved (real) department",
+    callsAfter === callsBefore + 1,
+    `before=${callsBefore} after=${callsAfter}`,
+  );
+
+  const realRow = (byDept.json?.items ?? []).find((it) => it.department === resolvedDept);
+  check("ai-usage/by-department reflects the resolved department's call", !!realRow && realRow.totalCalls >= 1, JSON.stringify(realRow));
 } catch (error) {
   console.error("HTTP E2E error:", error);
   failures++;
 } finally {
+  // cleanup（HTTP側で作ったusage_limits行のみ削除。app_users/idea_ai_sessionsは
+  // 実運用の部署"resolvedDept"に紐づくため他の記録を壊さないよう削除しない）。
+  if (resolvedDept) {
+    await db`delete from usage_limits where subject_type = 'department' and subject_id = ${resolvedDept}`.catch(() => {});
+  }
   await db.end?.({ timeout: 1 }).catch(() => {});
   if (child && child.pid) {
     try { process.kill(-child.pid, "SIGTERM"); } catch { /* already dead */ }

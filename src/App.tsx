@@ -525,7 +525,7 @@ async function submitIntakeThroughApi(component: StandaloneComponent) {
       return;
     }
 
-    const questions = await api.generateQuestions(input, component.state.intakeForm.department);
+    const questions = await api.generateQuestions(input);
     component.__bridgeQuestionIds = questions.map((question) => question.id);
     component.setState((state) => ({
       view: "wizard",
@@ -584,11 +584,7 @@ async function submitAnswerThroughApi(component: StandaloneComponent) {
   }));
 
   try {
-    const response = await api.structureIdea(
-      input,
-      answerRecord,
-      (wizard.sourceIntake ?? component.state.intakeForm).department,
-    );
+    const response = await api.structureIdea(input, answerRecord);
     const structured = response.structured;
     component.__bridgeStructuredDraft = structured;
     component.setState((state) => ({
