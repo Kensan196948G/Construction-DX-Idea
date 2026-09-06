@@ -185,6 +185,9 @@ export type IdeaValuePhaseEntry = {
     stage: string;
     state: IdeaValuePhaseState;
   }>;
+  // 現在フェーズの「次の必要Action」提示・必須成果物チェックリスト（docs/29 §2.9残）。
+  nextActionHint?: string;
+  checklist?: PhaseChecklistItem[];
 };
 
 // stage（既存の運用区分）から20フェーズの初期値への後方互換マッピング。
@@ -204,6 +207,74 @@ export function defaultPhaseForStage(stage: IdeaStage): number | null {
 export function ideaValuePhaseLabel(phaseNo: number | null | undefined): string {
   if (phaseNo == null) return "未設定";
   return ideaValuePhaseLabels[phaseNo] ?? `フェーズ${phaseNo}`;
+}
+
+// ---- フェーズ別「次の必要Action」・必須成果物チェックリスト（docs/29 §2.9残・migration 020）----
+// 20フェーズそれぞれで次に何をすべきか、何を揃えるべきかの目安を決定論的に提示する
+// （実AI生成ではなく固定テンプレート）。既存の`phaseNote`（自由記述メモ）と併用し、
+// テンプレートを上書きする形にはしない。
+
+export type PhaseChecklistItem = {
+  item: string;
+  done: boolean;
+};
+
+export const phaseNextActionHints: Record<number, string> = {
+  1: "困りごと・改善アイデアの内容を整理し、AI壁打ちで課題を明確化する。",
+  2: "現状の業務フロー・ボトルネック・関係者を整理し、真因を明確化する。",
+  3: "AI構造化結果をレビューし、企画候補として登録できる粒度に整える。",
+  4: "案件担当・Authorityを割り当て、企画候補として正式に登録する。",
+  5: "案件ID（DX-YYYY-NNNN）が発番されていることを確認し、関係者へ共有する。",
+  6: "MVP案・概算工数・リスク・KPI候補を整理し、Gate1申請の準備をする。",
+  7: "Gate1（企画審査）の必要Authority全員から承認を得る。",
+  8: "要件定義書（機能/非機能/データ/セキュリティ要件）を作成する。",
+  9: "Gate2（要件承認）の必要Authority全員から承認を得る。",
+  10: "開発体制・スケジュール・環境を確定し、開発案件として着手する。",
+  11: "MVPの実装を進め、PoC仮説・成功基準をPoC/UAT管理カードへ記録する。",
+  12: "単体・結合・回帰テストを実施し、不具合を解消する。",
+  13: "UATフィードバックを収集し、Go/No-Go判定のうえGate3（MVP評価）の承認を得る。",
+  14: "Staging環境で本番相当の動作確認を行う。",
+  15: "業務受入試験（UAT）を実施し、Gate4の承認を得る。",
+  16: "本番リリース計画・ロールバック手順を確認し、Gate5（本番承認）の承認を得る。",
+  17: "本番環境へデプロイし、デプロイ後スモークテストを実施する。",
+  18: "監視・ログ・アラート・セキュリティ運用（DevSecOps）を整備する。",
+  19: "KPI/ROIの実績を記録し、Baselineとの比較で効果を測定する。",
+  20: "得られた知見をナレッジ管理へ登録し、継続/改善/停止を判断する。",
+};
+
+export const phaseDeliverableTemplates: Record<number, string[]> = {
+  1: ["困りごと入力内容", "AI壁打ち質問への回答"],
+  2: ["現状業務フロー図（簡易）", "関係者一覧"],
+  3: ["AI構造化結果のレビュー結果"],
+  4: ["企画候補登録内容", "担当Authorityの割当"],
+  5: ["案件ID（DX-YYYY-NNNN）"],
+  6: ["MVP案", "概算工数/費用レンジ", "リスク候補", "KPI候補"],
+  7: ["Gate1申請資料", "Gate1全Authority承認"],
+  8: ["要件定義書", "非機能要件", "セキュリティ要件"],
+  9: ["Gate2申請資料", "Gate2全Authority承認"],
+  10: ["開発体制", "開発スケジュール"],
+  11: ["PoC仮説・成功基準", "MVPスコープ(In/Out)"],
+  12: ["テスト結果（単体/結合/回帰）"],
+  13: ["UATフィードバック集計", "Gate3申請資料（自動生成可）", "Gate3全Authority承認"],
+  14: ["Staging動作確認結果"],
+  15: ["業務受入試験(UAT)結果", "Gate4全Authority承認"],
+  16: ["本番リリース計画", "ロールバック手順", "Gate5全Authority承認"],
+  17: ["デプロイ結果", "デプロイ後スモークテスト結果"],
+  18: ["監視/ログ/アラート設定", "セキュリティ運用手順"],
+  19: ["KPI/ROI実績", "Baseline比較結果"],
+  20: ["ナレッジ登録内容", "継続/改善/停止判定"],
+};
+
+export function phaseNextActionHint(phaseNo: number | null | undefined): string {
+  if (phaseNo == null) return "";
+  return phaseNextActionHints[phaseNo] ?? "";
+}
+
+// 指定フェーズの既定チェックリスト（未着手状態）を生成する。
+export function defaultPhaseChecklist(phaseNo: number | null | undefined): PhaseChecklistItem[] {
+  if (phaseNo == null) return [];
+  const items = phaseDeliverableTemplates[phaseNo] ?? [];
+  return items.map((item) => ({ item, done: false }));
 }
 
 const structuredListItemSchema = z.string().min(1).max(500);

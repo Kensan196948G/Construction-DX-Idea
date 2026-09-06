@@ -40,6 +40,7 @@ import type {
   IssueInput,
   KnowledgeCandidate,
   KpiOutcome,
+  PhaseChecklistItem,
   PocPlan,
   PocPlanInput,
   PortfolioSummary,
@@ -65,11 +66,13 @@ import {
   computeKnowledgeQualityScore,
   computeStructureConfidence,
   defaultGateApprovalRows,
+  defaultPhaseChecklist,
   defaultPhaseForStage,
   gateNumbers,
   gateAuthorityPolicy,
   ideaValuePhaseLabel,
   ideaValuePhases,
+  phaseNextActionHint,
   ragMinSimilarity,
   ragOverallVerdict,
   ragSimilarityLevel,
@@ -98,6 +101,7 @@ const phaseHistory = new Map<
   string,
   Array<{ id: string; toPhase: number; reason?: string; changedBy?: string; createdAt: string }>
 >();
+const phaseChecklists = new Map<string, PhaseChecklistItem[]>();
 const kpiRecords = new Map<string, IdeaKpi[]>();
 const pocPlans = new Map<string, PocPlan>();
 const uatFeedbackByIdea = new Map<string, UatFeedbackEntry[]>();
@@ -506,11 +510,14 @@ export const mockApi = {
     const history = phaseHistory.get(id) ?? [
       { id: `ph-${id}-0`, toPhase: current, reason: "初期化", changedBy: idea.createdBy, createdAt: idea.updatedAt },
     ];
+    const checklist = phaseChecklists.get(id) ?? defaultPhaseChecklist(current);
     return {
       ideaId: id,
       phaseNo: current,
       phaseLabel: ideaValuePhaseLabel(current),
       phaseNote: idea.phaseNote,
+      nextActionHint: phaseNextActionHint(current),
+      checklist,
       history,
       phases: ideaValuePhases.map((p) => ({
         no: p.no,
@@ -542,6 +549,9 @@ export const mockApi = {
     idea.phaseNo = target;
     if (payload.note?.trim()) idea.phaseNote = payload.note.trim();
     phaseHistory.set(id, [...(phaseHistory.get(id) ?? []), entry]);
+    if (target !== fromPhase) {
+      phaseChecklists.set(id, defaultPhaseChecklist(target));
+    }
     return {
       ideaId: id,
       phaseNo: target,
@@ -549,6 +559,12 @@ export const mockApi = {
       fromPhase,
       reason: entry.reason,
     };
+  },
+
+  async updatePhaseChecklist(id: string, checklist: PhaseChecklistItem[]): Promise<{ checklist: PhaseChecklistItem[] }> {
+    if (!ideas.some((idea) => idea.id === id)) throw new Error("Idea not found");
+    phaseChecklists.set(id, checklist);
+    return { checklist };
   },
 
   async getIdea(id: string): Promise<Idea> {

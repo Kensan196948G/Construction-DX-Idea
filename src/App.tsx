@@ -33,6 +33,7 @@ import type {
   KnowledgeCandidate,
   KpiOutcome,
   PocPlan,
+  PhaseChecklistItem,
   PocPlanInput,
   PortfolioSummary,
   PortfolioSummaryRow,
@@ -135,6 +136,7 @@ type StandaloneComponent = {
   __loadHealthDashboardBridge?: () => Promise<HealthDashboard>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
+  __savePhaseChecklistBridge?: (id: string, checklist: PhaseChecklistItem[]) => Promise<void>;
   loadSimilarIdeas?: () => Promise<void>;
   saveUser?: () => void;
   deleteUser?: (id: string | number) => void;
@@ -311,6 +313,7 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__loadHealthDashboardBridge = () => api.getHealthDashboard();
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
+  component.__savePhaseChecklistBridge = (_id, checklist) => updatePhaseChecklist(component, checklist);
   component.loadSimilarIdeas = () => loadSimilarIdeas(component);
   component.saveUser = () => {
     void saveUserThroughApi(component);
@@ -1223,12 +1226,27 @@ async function loadIdeaPhase(component: StandaloneComponent) {
         phaseNo: data.phaseNo,
         phaseLabel: data.phaseLabel,
         phaseNote: data.phaseNote,
+        nextActionHint: data.nextActionHint,
+        checklist: data.checklist,
         phases: data.phases,
       },
       phaseBusy: false,
     });
   } catch (error) {
     showToast(component, `フェーズ情報を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+async function updatePhaseChecklist(component: StandaloneComponent, checklist: PhaseChecklistItem[]) {
+  const idea = selectedIdeaForPhase(component);
+  if (!idea) return;
+  component.setState({ phaseBusy: true });
+  try {
+    await api.updatePhaseChecklist(String(idea.id), checklist);
+    await loadIdeaPhase(component);
+  } catch (error) {
+    component.setState({ phaseBusy: false });
+    showToast(component, `フェーズチェックリストの保存に失敗しました: ${toErrorMessage(error)}`);
   }
 }
 

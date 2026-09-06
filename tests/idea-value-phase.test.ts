@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  defaultPhaseChecklist,
   defaultPhaseForStage,
   ideaToValuePhaseCount,
   ideaValuePhaseLabel,
   ideaValuePhases,
+  phaseDeliverableTemplates,
+  phaseNextActionHint,
+  phaseNextActionHints,
 } from "../src/lib/shared";
 
 describe("20フェーズ Idea-to-Value（migration 010）", () => {
@@ -47,5 +51,35 @@ describe("20フェーズ Idea-to-Value（migration 010）", () => {
     assert.equal(ideaValuePhaseLabel(21), "フェーズ21");
     assert.equal(ideaValuePhaseLabel(null), "未設定");
     assert.equal(ideaValuePhaseLabel(undefined), "未設定");
+  });
+});
+
+describe("フェーズ別「次の必要Action」・必須成果物チェックリスト（docs/29 §2.9残・migration 020）", () => {
+  it("defines a next-action hint and a non-empty deliverable template for every phase", () => {
+    for (const phase of ideaValuePhases) {
+      assert.ok(phaseNextActionHints[phase.no]?.length, `no next-action hint for phase ${phase.no}`);
+      assert.ok(
+        (phaseDeliverableTemplates[phase.no] ?? []).length > 0,
+        `no deliverable template for phase ${phase.no}`,
+      );
+    }
+  });
+
+  it("phaseNextActionHint returns empty string for null/undefined/unknown phases", () => {
+    assert.equal(phaseNextActionHint(1).length > 0, true);
+    assert.equal(phaseNextActionHint(null), "");
+    assert.equal(phaseNextActionHint(undefined), "");
+    assert.equal(phaseNextActionHint(999), "");
+  });
+
+  it("defaultPhaseChecklist seeds every template item as not done", () => {
+    const checklist = defaultPhaseChecklist(7);
+    assert.deepEqual(checklist, phaseDeliverableTemplates[7].map((item) => ({ item, done: false })));
+    assert.ok(checklist.every((item) => item.done === false));
+  });
+
+  it("defaultPhaseChecklist returns an empty array for null/undefined phase", () => {
+    assert.deepEqual(defaultPhaseChecklist(null), []);
+    assert.deepEqual(defaultPhaseChecklist(undefined), []);
   });
 });

@@ -846,6 +846,21 @@ a:hover { text-decoration: underline; }
                     <sc-if value="{{ phaseView.phaseNote }}" hint-placeholder-val="{{ false }}">
                       <div style="font-size:11.5px;color:#8A97A8;">メモ: {{ phaseView.phaseNote }}</div>
                     </sc-if>
+                    <sc-if value="{{ phaseView.nextActionHint }}" hint-placeholder-val="{{ false }}">
+                      <div style="background:#EEF0FB;border-radius:6px;padding:8px 10px;font-size:11.5px;color:#3B2F91;">💡 次の必要Action: {{ phaseView.nextActionHint }}</div>
+                    </sc-if>
+                    <sc-if value="{{ phaseView.hasChecklist }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;flex-direction:column;gap:4px;">
+                        <div style="font-size:11.5px;font-weight:600;color:#5A6678;">必須成果物チェックリスト（{{ phaseView.checklistDoneCount }}/{{ phaseView.checklistTotalCount }}）</div>
+                        <sc-for list="{{ phaseView.checklistRows }}" as="ci" hint-placeholder-count="2">
+                          <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;{{ ci.rowStyle }}">
+                            <input type="checkbox" checked="{{ ci.done }}" onChange="{{ ci.onToggle }}" disabled="{{ phaseBusy }}"></input>
+                            {{ ci.item }}
+                          </label>
+                        </sc-for>
+                        <button onClick="{{ savePhaseChecklist }}" disabled="{{ phaseBusy }}" style="align-self:flex-start;cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:4px 11px;border-radius:6px;font-size:11px;font-weight:600;">💾 チェックリストを保存</button>
+                      </div>
+                    </sc-if>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                       <button onClick="{{ advanceIdeaPhase }}" disabled="{{ phaseBusy }}" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;">次のフェーズへ進める</button>
                       <input value="{{ phaseNoteDraft }}" onChange="{{ onPhaseNoteDraftChange }}" placeholder="進捗メモ（任意）" style="flex:1;min-width:120px;font-size:11.5px;padding:5px 9px;border:1px solid #E3E8EF;border-radius:6px;background:#fff;color:#1A2433;outline:none;"></input>
@@ -3070,24 +3085,75 @@ class Component extends DCLogic {
     production_candidate: 15, production: 17,
   }[stage] ?? null);
 
+  // フェーズ別「次の必要Action」・必須成果物テンプレート（docs/29 §2.9残・
+  // migration 020）。worker側 shared.ts の phaseNextActionHints /
+  // phaseDeliverableTemplates と同じ内容をモック用に再現する。
+  phaseNextActionHints20 = {
+    1: '困りごと・改善アイデアの内容を整理し、AI壁打ちで課題を明確化する。',
+    2: '現状の業務フロー・ボトルネック・関係者を整理し、真因を明確化する。',
+    3: 'AI構造化結果をレビューし、企画候補として登録できる粒度に整える。',
+    4: '案件担当・Authorityを割り当て、企画候補として正式に登録する。',
+    5: '案件ID（DX-YYYY-NNNN）が発番されていることを確認し、関係者へ共有する。',
+    6: 'MVP案・概算工数・リスク・KPI候補を整理し、Gate1申請の準備をする。',
+    7: 'Gate1（企画審査）の必要Authority全員から承認を得る。',
+    8: '要件定義書（機能/非機能/データ/セキュリティ要件）を作成する。',
+    9: 'Gate2（要件承認）の必要Authority全員から承認を得る。',
+    10: '開発体制・スケジュール・環境を確定し、開発案件として着手する。',
+    11: 'MVPの実装を進め、PoC仮説・成功基準をPoC/UAT管理カードへ記録する。',
+    12: '単体・結合・回帰テストを実施し、不具合を解消する。',
+    13: 'UATフィードバックを収集し、Go/No-Go判定のうえGate3（MVP評価）の承認を得る。',
+    14: 'Staging環境で本番相当の動作確認を行う。',
+    15: '業務受入試験（UAT）を実施し、Gate4の承認を得る。',
+    16: '本番リリース計画・ロールバック手順を確認し、Gate5（本番承認）の承認を得る。',
+    17: '本番環境へデプロイし、デプロイ後スモークテストを実施する。',
+    18: '監視・ログ・アラート・セキュリティ運用（DevSecOps）を整備する。',
+    19: 'KPI/ROIの実績を記録し、Baselineとの比較で効果を測定する。',
+    20: '得られた知見をナレッジ管理へ登録し、継続/改善/停止を判断する。',
+  };
+  phaseDeliverableTemplates20 = {
+    1: ['困りごと入力内容', 'AI壁打ち質問への回答'],
+    2: ['現状業務フロー図（簡易）', '関係者一覧'],
+    3: ['AI構造化結果のレビュー結果'],
+    4: ['企画候補登録内容', '担当Authorityの割当'],
+    5: ['案件ID（DX-YYYY-NNNN）'],
+    6: ['MVP案', '概算工数/費用レンジ', 'リスク候補', 'KPI候補'],
+    7: ['Gate1申請資料', 'Gate1全Authority承認'],
+    8: ['要件定義書', '非機能要件', 'セキュリティ要件'],
+    9: ['Gate2申請資料', 'Gate2全Authority承認'],
+    10: ['開発体制', '開発スケジュール'],
+    11: ['PoC仮説・成功基準', 'MVPスコープ(In/Out)'],
+    12: ['テスト結果（単体/結合/回帰）'],
+    13: ['UATフィードバック集計', 'Gate3申請資料（自動生成可）', 'Gate3全Authority承認'],
+    14: ['Staging動作確認結果'],
+    15: ['業務受入試験(UAT)結果', 'Gate4全Authority承認'],
+    16: ['本番リリース計画', 'ロールバック手順', 'Gate5全Authority承認'],
+    17: ['デプロイ結果', 'デプロイ後スモークテスト結果'],
+    18: ['監視/ログ/アラート設定', 'セキュリティ運用手順'],
+    19: ['KPI/ROI実績', 'Baseline比較結果'],
+    20: ['ナレッジ登録内容', '継続/改善/停止判定'],
+  };
+  defaultPhaseChecklistMock = (phaseNo) => (this.phaseDeliverableTemplates20[phaseNo] || []).map((item) => ({ item, done: false }));
+
   loadIdeaPhase = async () => {
     // モック: 選択中アイデアのstageからフェーズを導出して表示（進める操作は状態更新）。
     const id = this.state.selectedIdeaId;
     if (id == null) return;
     const idea = this.state.ideas.find((i) => i.id === id);
     const current = (idea && idea.phaseNo) || (idea ? this.phaseStageFromLegacyStage(idea.stage) : null) || 1;
-    this.setState({
+    this.setState((s) => ({
       phaseData: {
         ideaId: String(id),
         phaseNo: current,
         phaseLabel: this.phaseLabels20[current - 1] || `フェーズ${current}`,
         phaseNote: idea ? idea.phaseNote : undefined,
+        nextActionHint: this.phaseNextActionHints20[current] || '',
+        checklist: (s.phaseData && s.phaseData.phaseNo === current && s.phaseData.checklist) || this.defaultPhaseChecklistMock(current),
         phases: this.phaseLabels20.map((label, i) => {
           const no = i + 1;
           return { no, label, stage: '', state: no < current ? 'done' : no === current ? 'current' : 'todo' };
         }),
       },
-    });
+    }));
   };
 
   advanceIdeaPhase = async () => {
@@ -3104,6 +3170,8 @@ class Component extends DCLogic {
         ...s.phaseData,
         phaseNo: next,
         phaseLabel: this.phaseLabels20[next - 1] || `フェーズ${next}`,
+        nextActionHint: this.phaseNextActionHints20[next] || '',
+        checklist: this.defaultPhaseChecklistMock(next),
         phases: this.phaseLabels20.map((label, i) => {
           const no = i + 1;
           return { no, label, stage: '', state: no < next ? 'done' : no === next ? 'current' : 'todo' };
@@ -3116,6 +3184,33 @@ class Component extends DCLogic {
 
   updatePhaseNoteDraft = (e) => {
     this.setState({ phaseNoteDraft: e.target.value });
+  };
+
+  togglePhaseChecklistItem = (idx) => () => {
+    this.setState((s) => ({
+      phaseData: s.phaseData && {
+        ...s.phaseData,
+        checklist: (s.phaseData.checklist || []).map((it, i) => (i === idx ? { ...it, done: !it.done } : it)),
+      },
+    }));
+  };
+
+  savePhaseChecklist = async () => {
+    const id = this.state.selectedIdeaId;
+    const data = this.state.phaseData;
+    if (id == null || !data) return;
+    const checklist = data.checklist || [];
+    this.setState({ phaseBusy: true });
+    if (this.__savePhaseChecklistBridge) {
+      try {
+        await this.__savePhaseChecklistBridge(String(id), checklist);
+        this.setState({ phaseBusy: false, toast: { message: 'フェーズチェックリストを保存しました。' } });
+      } catch (e) {
+        this.setState({ phaseBusy: false, toast: { message: `保存に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ phaseBusy: false, toast: { message: 'フェーズチェックリストを保存しました（モック表示。本番はAPI経由）。' } });
   };
 
   // ---- RAG 類似・重複候補（Issue #13）----
@@ -3963,8 +4058,9 @@ class Component extends DCLogic {
     const gateReasonInvalid = !s.gateDraft.reason.trim();
     const gateDecisionStyle = (fg, bg) => 'display:inline-flex;align-items:center;gap:4px;cursor:pointer;border:1px solid ' + fg + ';background:' + fg + ';color:#fff;padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:600;';
 
-    // ---- 20フェーズ view-model（migration 010）----
+    // ---- 20フェーズ view-model（migration 010・チェックリストはmigration 020）----
     const rawPhase = selectedIdeaRaw ? s.phaseData : null;
+    const phaseChecklistItems = (rawPhase && rawPhase.checklist) || [];
     const phaseView = rawPhase
       ? {
           ...rawPhase,
@@ -3974,6 +4070,14 @@ class Component extends DCLogic {
             isDone: p.state === 'done',
             isCurrent: p.state === 'current',
             isNotCurrent: p.state !== 'current',
+          })),
+          hasChecklist: phaseChecklistItems.length > 0,
+          checklistDoneCount: phaseChecklistItems.filter((it) => it.done).length,
+          checklistTotalCount: phaseChecklistItems.length,
+          checklistRows: phaseChecklistItems.map((it, idx) => ({
+            ...it,
+            rowStyle: it.done ? 'text-decoration:line-through;color:#8A97A8;' : 'color:#1A2433;',
+            onToggle: this.togglePhaseChecklistItem(idx),
           })),
         }
       : null;
@@ -4630,6 +4734,7 @@ class Component extends DCLogic {
       onPhaseNoteDraftChange: this.updatePhaseNoteDraft,
       loadIdeaPhase: this.loadIdeaPhase,
       advanceIdeaPhase: this.advanceIdeaPhase,
+      savePhaseChecklist: this.savePhaseChecklist,
       ideaValuePhaseCount20: 20,
 
       // RAG 類似・重複候補（Issue #13）

@@ -67,10 +67,12 @@ import {
   evaluateGateSoD,
   canChangeClassification,
   isIdeaVisibleTo,
+  defaultPhaseChecklist,
   defaultPhaseForStage,
   ideaStages,
   ideaValuePhaseLabel,
   ideaValuePhases,
+  phaseNextActionHint,
   informationClassifications,
   issueInputSchema,
   kpiOutcomes,
@@ -2561,7 +2563,7 @@ app.get("/api/ideas/:id/phase", async (c) => {
   await getUser(c.req.raw, c.env);
   const db = getDb(c.env);
   const id = c.req.param("id");
-  const idea = await db`select id, stage, phase_no, phase_note from ideas where id = ${id} limit 1`;
+  const idea = await db`select id, stage, phase_no, phase_note, phase_checklist from ideas where id = ${id} limit 1`;
   if (!idea[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
   const history = await db`
     select id, from_phase, to_phase, reason, changed_by, created_at
@@ -2576,11 +2578,15 @@ app.get("/api/ideas/:id/phase", async (c) => {
     stage: p.stage,
     state: p.no < current ? "done" : p.no === current ? "current" : "todo",
   }));
+  const existingChecklist = uatChecklistFromJson(idea[0].phase_checklist);
   return c.json({
     ideaId: id,
     phaseNo: current,
     phaseLabel: ideaValuePhaseLabel(current),
     phaseNote: idea[0].phase_note ? String(idea[0].phase_note) : undefined,
+    nextActionHint: phaseNextActionHint(current),
+    // 未着手（履歴なし）の場合はテンプレートをその場で提示する（DBへは未保存）。
+    checklist: existingChecklist.length > 0 ? existingChecklist : defaultPhaseChecklist(current),
     history: history.map((h) => ({
       id: String(h.id),
       fromPhase: h.from_phase != null ? Number(h.from_phase) : undefined,
@@ -2592,6 +2598,53 @@ app.get("/api/ideas/:id/phase", async (c) => {
     phases: phaseRows,
   });
 });
+
+// フェーズ別必須成果物チェックリストの更新（docs/29 §2.9残・migration 020）。
+// 提出者本人または管理者のみ更新できる（フェーズ更新権限と同じ）。
+app.put(
+  "/api/ideas/:id/phase/checklist",
+  zValidator(
+    "json",
+    z.object({
+      checklist: z.array(z.object({ item: z.string().max(300), done: z.boolean() })).max(50),
+    }),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const body = c.req.valid("json");
+    const rows = await db`select id, created_by, stage, phase_no from ideas where id = ${id} limit 1`;
+    if (!rows[0]) throw new ApiError("NOT_FOUND", "Idea not found.", 404);
+    const isAdmin = (await resolveRoles(c.env, user)).includes("admin");
+    const isOwner = String(rows[0].created_by).toLowerCase() === user.toLowerCase();
+    if (!isAdmin && !isOwner) {
+      throw new ApiError("FORBIDDEN", "フェーズチェックリストの更新は提出者本人または管理者のみ可能です。", 403);
+    }
+    // クライアントが古いフェーズのテンプレートを保持したまま送信してくる可能性があるため、
+    // 項目名はサーバー側の現フェーズテンプレートから再構成し、doneフラグのみクライアント値を採用する。
+    const current = Number(rows[0].phase_no ?? defaultPhaseForStage(String(rows[0].stage) as IdeaStage) ?? 1);
+    const template = defaultPhaseChecklist(current);
+    if (body.checklist.length !== template.length) {
+      throw new ApiError(
+        "PHASE_CHECKLIST_STALE",
+        "フェーズが更新されているため画面を再読み込みしてください。",
+        409,
+      );
+    }
+    const finalChecklist = template.map((t, idx) => ({ item: t.item, done: !!body.checklist[idx]?.done }));
+    await db`
+      update ideas
+      set phase_checklist = ${JSON.stringify(finalChecklist)}::jsonb, updated_at = now()
+      where id = ${id}
+    `;
+    await audit(c.env, user, "idea.phase.checklist_updated", "idea", id, {
+      checklistCount: finalChecklist.length,
+      doneCount: finalChecklist.filter((item) => item.done).length,
+    });
+    return c.json({ checklist: finalChecklist });
+  },
+);
 
 app.post(
   "/api/ideas/:id/phase",
@@ -2635,10 +2688,14 @@ app.post(
       }
     }
     const reason = (body.reason ?? "").trim() || (target > current ? "フェーズ前進" : "フェーズ後戻し（管理者）");
+    // フェーズが変わるたびに、新フェーズの既定チェックリスト（未着手）へ差し替える
+    // （docs/29 §2.9残）。旧フェーズの完了状況は idea_phase_history に残る。
+    const nextChecklist = defaultPhaseChecklist(target);
     await db`
       update ideas
       set phase_no = ${target},
           phase_note = coalesce(${body.note?.trim() || null}, phase_note),
+          phase_checklist = ${JSON.stringify(nextChecklist)}::jsonb,
           updated_at = now()
       where id = ${id}
     `;

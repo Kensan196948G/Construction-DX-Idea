@@ -37,6 +37,7 @@ import type {
   IdeaRepoListResult,
   IdeaStage,
   IdeaValuePhaseEntry,
+  PhaseChecklistItem,
   InformationClassification,
   IssueInput,
   IdeaKpi,
@@ -301,6 +302,11 @@ export const api = useMock
           `/api/ideas/${id}/phase`,
           { method: "POST", body: JSON.stringify(payload) },
         ),
+      updatePhaseChecklist: (id: string, checklist: PhaseChecklistItem[]) =>
+        request<{ checklist: PhaseChecklistItem[] }>(`/api/ideas/${id}/phase/checklist`, {
+          method: "PUT",
+          body: JSON.stringify({ checklist }),
+        }),
       inspectInput: (input: IssueInput) =>
         request<PrivacyFinding[]>("/api/privacy/inspect", {
           method: "POST",
