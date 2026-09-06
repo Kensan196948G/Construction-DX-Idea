@@ -1280,6 +1280,7 @@ a:hover { text-decoration: underline; }
               <sc-if value="{{ k.hasPromotionUrl }}" hint-placeholder-val="{{ false }}">
                 <div style="font-size:11.5px;color:#6B45B0;">🔗 昇格先: {{ k.promotionUrl }}</div>
               </sc-if>
+              <div style="font-size:11px;color:#8A97A8;">👤 Owner: {{ k.ownerText }}・⏳ 有効期限: {{ k.expiryText }}・🔁 再利用 {{ k.reuseCount }}回</div>
               <sc-if value="{{ k.canReview }}" hint-placeholder-val="{{ false }}">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button onClick="{{ k.onApprove }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #1F8255;background:#1F8255;color:#fff;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">承認</button>
@@ -1291,6 +1292,15 @@ a:hover { text-decoration: underline; }
                   <button onClick="{{ k.onPromote }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #6B45B0;background:#6B45B0;color:#fff;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">🚀 昇格（Notion等のURLを記録）</button>
                 </div>
               </sc-if>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button onClick="{{ k.onEditOwner }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #E3E8EF;background:#F7F9FC;color:#1A2433;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">👤 Owner設定</button>
+                <button onClick="{{ k.onEditExpiry }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #E3E8EF;background:#F7F9FC;color:#1A2433;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">⏳ 有効期限設定</button>
+                <button onClick="{{ k.onReuse }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #E3E8EF;background:#F7F9FC;color:#1A2433;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">🔁 再利用として記録</button>
+                <sc-if value="{{ k.canRetire }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ k.onSupersede }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #5A6678;background:#F7F9FC;color:#5A6678;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">🔗 統合（Superseded）</button>
+                  <button onClick="{{ k.onArchive }}" disabled="{{ knBusy }}" style="cursor:pointer;border:1px solid #8A97A8;background:#F7F9FC;color:#8A97A8;padding:5px 12px;border-radius:6px;font-size:11.5px;font-weight:600;">🗄️ アーカイブ</button>
+                </sc-if>
+              </div>
             </div>
           </sc-for>
           <sc-if value="{{ knBusy }}" hint-placeholder-val="{{ false }}">
@@ -2542,6 +2552,132 @@ class Component extends DCLogic {
         items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, status: 'promoted', promotionUrl: url.trim() } : k)),
       },
       toast: { message: '知識を昇格しました（モック表示）。' },
+    }));
+  };
+
+  // Knowledge Owner・有効期限・重複統合・アーカイブ・再利用回数（docs/29 §2.16残・
+  // migration 018）。実API接続時は App.tsx ブリッジが各 __xxxKnowledgeBridge を
+  // 差し替える。モック時はknowledgeDataをその場で更新する。
+  editKnowledgeOwner = async (id) => {
+    const owner = window.prompt('Knowledge Ownerのメールアドレスを入力してください。');
+    if (!owner || !owner.trim()) return;
+    if (this.__updateKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__updateKnowledgeBridge(String(id), { owner: owner.trim() });
+        this.setState({ toast: { message: 'Ownerを設定しました。' } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `Owner設定に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, owner: owner.trim() } : k)),
+      },
+      toast: { message: 'Ownerを設定しました（モック表示）。' },
+    }));
+  };
+
+  editKnowledgeExpiry = async (id) => {
+    const raw = window.prompt('有効期限を入力してください（YYYY-MM-DD。空欄でクリア）。');
+    if (raw === null) return;
+    const trimmed = raw.trim();
+    const expiresAt = trimmed ? new Date(`${trimmed}T00:00:00.000Z`).toISOString() : null;
+    if (trimmed && Number.isNaN(new Date(expiresAt).getTime())) {
+      this.setState({ toast: { message: '日付の形式が正しくありません（例: 2027-01-01）。' } });
+      return;
+    }
+    if (this.__updateKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__updateKnowledgeBridge(String(id), { expiresAt });
+        this.setState({ toast: { message: '有効期限を設定しました。' } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `有効期限の設定に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, expiresAt } : k)),
+      },
+      toast: { message: '有効期限を設定しました（モック表示）。' },
+    }));
+  };
+
+  supersedeKnowledgeRow = async (id) => {
+    const target = window.prompt('統合先のKnowledge IDを入力してください。');
+    if (!target || !target.trim()) return;
+    if (this.__supersedeKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__supersedeKnowledgeBridge(String(id), target.trim());
+        this.setState({ toast: { message: '統合済み（Superseded）にしました。' } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `統合に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, status: 'superseded', supersededBy: target.trim() } : k)),
+      },
+      toast: { message: '統合済み（Superseded）にしました（モック表示）。' },
+    }));
+  };
+
+  archiveKnowledgeRow = async (id) => {
+    if (!window.confirm('この知識をアーカイブしますか？')) return;
+    if (this.__archiveKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        await this.__archiveKnowledgeBridge(String(id));
+        this.setState({ toast: { message: 'アーカイブしました。' } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `アーカイブに失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => (k.id === id ? { ...k, status: 'archived' } : k)),
+      },
+      toast: { message: 'アーカイブしました（モック表示）。' },
+    }));
+  };
+
+  reuseKnowledgeRow = async (id) => {
+    if (this.__reuseKnowledgeBridge) {
+      this.setState({ knowledgeBusy: true });
+      try {
+        const updated = await this.__reuseKnowledgeBridge(String(id));
+        this.setState({ toast: { message: `再利用として記録しました（累計${updated.reuseCount}回）。` } });
+        await this.loadKnowledge();
+      } catch (e) {
+        this.setState({ knowledgeBusy: false, toast: { message: `再利用記録に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    let nextCount = 0;
+    this.setState((s) => ({
+      knowledgeData: s.knowledgeData && {
+        ...s.knowledgeData,
+        items: s.knowledgeData.items.map((k) => {
+          if (k.id !== id) return k;
+          nextCount = (k.reuseCount || 0) + 1;
+          return { ...k, reuseCount: nextCount };
+        }),
+      },
+      toast: { message: `再利用として記録しました（モック表示・累計${nextCount}回）。` },
     }));
   };
 
@@ -3924,6 +4060,8 @@ class Component extends DCLogic {
       { key: 'approved', label: '承認済' },
       { key: 'rejected', label: '却下' },
       { key: 'promoted', label: '昇格済' },
+      { key: 'superseded', label: '統合済' },
+      { key: 'archived', label: 'アーカイブ済' },
     ].map((chip) => ({
       ...chip,
       active: chip.key === knStatusFilter,
@@ -3944,9 +4082,12 @@ class Component extends DCLogic {
       approved: { label: '承認済', fg: '#1F8255', bg: '#E4F3EC' },
       rejected: { label: '却下', fg: '#C5392F', bg: '#FCE9E7' },
       promoted: { label: '昇格済', fg: '#6B45B0', bg: '#F1EBFA' },
+      superseded: { label: '統合済', fg: '#5A6678', bg: '#EEF1F5' },
+      archived: { label: 'アーカイブ済', fg: '#8A97A8', bg: '#F2F4F8' },
     };
     const knRows = knItems.map((k) => {
       const statusMeta = knStatusMeta[k.status] || knStatusMeta.candidate;
+      const isRetired = k.status === 'superseded' || k.status === 'archived';
       return {
         ...k,
         categoryLabel: knCategoryLabels[k.category] || k.category,
@@ -3958,10 +4099,21 @@ class Component extends DCLogic {
         hasPromotionUrl: !!k.promotionUrl,
         canReview: k.status === 'candidate',
         canPromote: k.status === 'approved',
+        canRetire: !isRetired,
+        hasOwner: !!k.owner,
+        ownerText: k.owner || '未設定',
+        hasExpiry: !!k.expiresAt,
+        expiryText: k.expiresAt ? String(k.expiresAt).slice(0, 10) : '未設定',
+        reuseCount: k.reuseCount || 0,
         // dc-runtime は引数付き呼び出し式を解決できないため、操作はクロージャで渡す。
         onApprove: () => this.reviewKnowledge(k.id, 'approve'),
         onReject: () => this.reviewKnowledge(k.id, 'reject'),
         onPromote: () => this.promoteKnowledge(k.id),
+        onEditOwner: () => this.editKnowledgeOwner(k.id),
+        onEditExpiry: () => this.editKnowledgeExpiry(k.id),
+        onSupersede: () => this.supersedeKnowledgeRow(k.id),
+        onArchive: () => this.archiveKnowledgeRow(k.id),
+        onReuse: () => this.reuseKnowledgeRow(k.id),
       };
     });
     const knCategoryOptions = Object.keys(knCategoryLabels).map((key) => ({ value: key, label: knCategoryLabels[key] }));

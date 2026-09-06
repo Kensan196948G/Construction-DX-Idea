@@ -28,6 +28,7 @@ import type {
   IdeaStage,
   InformationClassification,
   IssueInput,
+  KnowledgeCandidate,
   KpiOutcome,
   PocPlan,
   PocPlanInput,
@@ -116,10 +117,14 @@ type StandaloneComponent = {
   loadRepoOverview?: () => Promise<void>;
   syncRepoEvidence?: () => Promise<void>;
   loadKnowledge?: (statusFilter?: string) => Promise<void>;
-  submitKnowledgeForm?: () => Promise<void>;
-  extractKnowledgeCandidates?: () => Promise<void>;
+  submitKnowledge?: () => Promise<void>;
+  extractKnowledge?: () => Promise<void>;
   reviewKnowledge?: (id: string, action: "approve" | "reject") => Promise<void>;
   promoteKnowledge?: (id: string, url: string) => Promise<void>;
+  __updateKnowledgeBridge?: (id: string, input: { owner?: string; expiresAt?: string | null }) => Promise<KnowledgeCandidate>;
+  __supersedeKnowledgeBridge?: (id: string, supersededBy: string) => Promise<KnowledgeCandidate>;
+  __archiveKnowledgeBridge?: (id: string) => Promise<KnowledgeCandidate>;
+  __reuseKnowledgeBridge?: (id: string) => Promise<KnowledgeCandidate>;
   loadIdeaPhase?: () => Promise<void>;
   advanceIdeaPhase?: () => Promise<void>;
   loadSimilarIdeas?: () => Promise<void>;
@@ -278,8 +283,8 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.loadRepoOverview = () => loadRepoOverviewThroughApi(component);
   component.syncRepoEvidence = () => syncRepoEvidenceThroughApi(component);
   component.loadKnowledge = (statusFilter) => loadKnowledgeThroughApi(component, statusFilter);
-  component.submitKnowledgeForm = () => submitKnowledgeThroughApi(component);
-  component.extractKnowledgeCandidates = () => extractKnowledgeThroughApi(component);
+  component.submitKnowledge = () => submitKnowledgeThroughApi(component);
+  component.extractKnowledge = () => extractKnowledgeThroughApi(component);
   component.reviewKnowledge = (id, action) => reviewKnowledgeThroughApi(component, id, action);
   // url省略時は昇格先URLをプロンプトで受け取る（モックと同じUX）。
   component.promoteKnowledge = (id, url) =>
@@ -288,6 +293,10 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
       id,
       url ?? window.prompt("昇格先（Notion等）のURLを入力してください。") ?? "",
     );
+  component.__updateKnowledgeBridge = (id, input) => api.updateKnowledge(id, input);
+  component.__supersedeKnowledgeBridge = (id, supersededBy) => api.supersedeKnowledge(id, supersededBy);
+  component.__archiveKnowledgeBridge = (id) => api.archiveKnowledge(id);
+  component.__reuseKnowledgeBridge = (id) => api.reuseKnowledge(id);
   component.loadIdeaPhase = () => loadIdeaPhase(component);
   component.advanceIdeaPhase = () => advanceIdeaPhase(component);
   component.loadSimilarIdeas = () => loadSimilarIdeas(component);
@@ -1452,6 +1461,10 @@ async function loadKnowledgeThroughApi(component: StandaloneComponent, statusFil
           qualityScore: k.qualityScore,
           submittedBy: k.submittedBy,
           promotionUrl: k.promotionUrl,
+          owner: k.owner,
+          expiresAt: k.expiresAt,
+          supersededBy: k.supersededBy,
+          reuseCount: k.reuseCount,
         })),
         statusFilter: filter,
       },

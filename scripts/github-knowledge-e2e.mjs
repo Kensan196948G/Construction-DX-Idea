@@ -216,6 +216,32 @@ try {
   const promoted = await api(base, "GET", "/api/knowledge?status=promoted");
   results.push(["promoted list", promoted.status, `has=${(promoted.json?.items ?? []).some((k) => k.id === manual.json?.id)}`]);
 
+  // 10) ライフサイクル拡張（Owner・有効期限・重複統合・アーカイブ・再利用回数。migration 018）
+  const successor = await api(base, "POST", "/api/knowledge", {
+    title: `[E2E] 手動知識 後継 ${Date.now()}`,
+    category: "best_practice",
+    body: "統合先として使うE2E用の候補です。",
+  });
+  const toSupersede = await api(base, "POST", "/api/knowledge", {
+    title: `[E2E] 手動知識 旧版 ${Date.now()}`,
+    category: "best_practice",
+    body: "統合されて消える側のE2E用の候補です。",
+  });
+  const patched = await api(base, "PATCH", `/api/knowledge/${manual.json?.id}`, {
+    owner: "kb-owner@example.com",
+    expiresAt: "2027-01-01T00:00:00.000Z",
+  });
+  results.push(["knowledge owner/expiry patch", patched.status, patched.json?.owner ?? "", patched.json?.expiresAt ?? ""]);
+  const supersede = await api(base, "POST", `/api/knowledge/${toSupersede.json?.id}/supersede`, {
+    supersededBy: successor.json?.id,
+  });
+  results.push(["knowledge supersede", supersede.status, supersede.json?.status ?? "", supersede.json?.supersededBy ?? ""]);
+  const archive = await api(base, "POST", `/api/knowledge/${successor.json?.id}/archive`);
+  results.push(["knowledge archive", archive.status, archive.json?.status ?? ""]);
+  const reuse1 = await api(base, "POST", `/api/knowledge/${manual.json?.id}/reuse`);
+  const reuse2 = await api(base, "POST", `/api/knowledge/${manual.json?.id}/reuse`);
+  results.push(["knowledge reuse x2", reuse1.status, reuse2.status, `count=${reuse2.json?.reuseCount}`]);
+
   for (const r of results) console.log(r.join(" | "));
 
   const pass =
@@ -237,7 +263,13 @@ try {
     !!commentCandidate && commentCandidate?.category === "problem_solution" &&
     manual.status === 201 && review.status === 200 && review.json?.status === "approved" &&
     promote.status === 200 && promote.json?.status === "promoted" &&
-    promoted.json?.items?.some((k) => k.id === manual.json?.id) === true;
+    promoted.json?.items?.some((k) => k.id === manual.json?.id) === true &&
+    patched.status === 200 && patched.json?.owner === "kb-owner@example.com" &&
+    patched.json?.expiresAt === "2027-01-01T00:00:00.000Z" &&
+    supersede.status === 200 && supersede.json?.status === "superseded" &&
+    supersede.json?.supersededBy === successor.json?.id &&
+    archive.status === 200 && archive.json?.status === "archived" &&
+    reuse1.status === 200 && reuse2.status === 200 && reuse2.json?.reuseCount === 2;
 
   console.log(pass ? "E2E RESULT: PASS" : "E2E RESULT: FAIL");
   process.exitCode = pass ? 0 : 1;

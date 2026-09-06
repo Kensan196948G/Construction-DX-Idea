@@ -58,6 +58,7 @@ import {
   buildGate3Brief,
   buildStructuredQueryText,
   classifyKnowledgeSource,
+  computeKnowledgeQualityScore,
   computeStructureConfidence,
   defaultGateApprovalRows,
   defaultPhaseForStage,
@@ -888,19 +889,24 @@ export const mockApi = {
     body?: string;
     sourceIdeaId?: string;
   }): Promise<KnowledgeCandidate> {
+    const body = input.body ?? "";
     const row: KnowledgeCandidate = {
       id: `kn-${knowledgeItems.length + 1}`,
       sourceType: "manual",
       sourceIdeaId: input.sourceIdeaId ?? null,
       category: input.category,
       title: input.title,
-      body: input.body ?? "",
+      body,
       status: "candidate",
-      qualityScore: 3,
+      qualityScore: computeKnowledgeQualityScore(body, input.category),
       submittedBy: "demo.user@example.com",
       reviewedBy: null,
       reviewedAt: null,
       promotionUrl: null,
+      owner: null,
+      expiresAt: null,
+      supersededBy: null,
+      reuseCount: 0,
       createdAt: now(),
       updatedAt: now(),
     };
@@ -925,11 +931,15 @@ export const mockApi = {
         title,
         body: text,
         status: "candidate",
-        qualityScore: 3,
+        qualityScore: computeKnowledgeQualityScore(text, classified.category),
         submittedBy: "system:extract",
         reviewedBy: null,
         reviewedAt: null,
         promotionUrl: null,
+        owner: null,
+        expiresAt: null,
+        supersededBy: null,
+        reuseCount: 0,
         createdAt: now(),
         updatedAt: now(),
       });
@@ -957,6 +967,44 @@ export const mockApi = {
     if (!row) throw new Error("Knowledge not found");
     row.status = "promoted";
     row.promotionUrl = url;
+    row.updatedAt = now();
+    return row;
+  },
+
+  async updateKnowledge(
+    id: string,
+    input: { owner?: string; expiresAt?: string | null },
+  ): Promise<KnowledgeCandidate> {
+    const row = knowledgeItems.find((k) => k.id === id);
+    if (!row) throw new Error("Knowledge not found");
+    if (input.owner !== undefined) row.owner = input.owner;
+    if (input.expiresAt !== undefined) row.expiresAt = input.expiresAt;
+    row.updatedAt = now();
+    return row;
+  },
+
+  async supersedeKnowledge(id: string, supersededBy: string): Promise<KnowledgeCandidate> {
+    const row = knowledgeItems.find((k) => k.id === id);
+    if (!row) throw new Error("Knowledge not found");
+    if (!knowledgeItems.some((k) => k.id === supersededBy)) throw new Error("Successor not found");
+    row.status = "superseded";
+    row.supersededBy = supersededBy;
+    row.updatedAt = now();
+    return row;
+  },
+
+  async archiveKnowledge(id: string): Promise<KnowledgeCandidate> {
+    const row = knowledgeItems.find((k) => k.id === id);
+    if (!row) throw new Error("Knowledge not found");
+    row.status = "archived";
+    row.updatedAt = now();
+    return row;
+  },
+
+  async reuseKnowledge(id: string): Promise<KnowledgeCandidate> {
+    const row = knowledgeItems.find((k) => k.id === id);
+    if (!row) throw new Error("Knowledge not found");
+    row.reuseCount += 1;
     row.updatedAt = now();
     return row;
   },

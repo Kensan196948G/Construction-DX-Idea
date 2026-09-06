@@ -197,12 +197,15 @@
 - 【P2】Mention・期限/遅延通知・KPIレビュー通知・Monthly Portfolio Digest
 - 【P1】Outlook/Gmail 通知・通知 Preference（即時/日次/週次・抑制）
 
-### 2.16 Knowledge Management（元#326〜346）※第1弾は実装済み（migration 016・2026-09-05）
+### 2.16 Knowledge Management（元#326〜346）※第1弾は実装済み（migration 016・2026-09-05）、
+### ライフサイクル拡張も実装済み（migration 018・2026-09-06）
 
 - 【実装済】Knowledge Candidate 自動抽出（Gate判定理由/コメント/効果測定レビュー。決定論的キーワード規則。手動登録も可）
 - 【実装済】Review Queue・Human Approval・昇格URL記録（知識管理画面「📚 知識管理」）
-- 【P1】Notion 実API昇格連携（現在はURL記録）
-- 【P2】Knowledge Owner・有効期限・Superseded/Archived・重複統合・品質Score自動評価・再利用回数
+- 【P1】Notion 実API昇格連携（現在はURL記録。NOTION_TOKEN等の新規Secret登録がユーザー操作待ちのため未着手）
+- 【実装済】Knowledge Owner・有効期限・Superseded（重複統合）・Archived・再利用回数・品質Score自動評価
+  （`computeKnowledgeQualityScore`: 本文の長さ＋カテゴリの構造的価値から決定論的に1〜5を算出。
+  `PATCH /api/knowledge/:id`・`POST /api/knowledge/:id/supersede`・`/archive`・`/reuse`）
 
 ### 2.17 セキュリティ・情報区分・公開制御（元#377〜400・Issue #12 と一部重複）
 
