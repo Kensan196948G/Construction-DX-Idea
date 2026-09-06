@@ -47,6 +47,10 @@ import {
   type PocPlan,
   type RagCitation,
   type RagSearchHit,
+  type SavedFilter,
+  type SavedFilterInput,
+  type SavedFilterListType,
+  type SavedFilterParams,
   type StructuredIdea,
   type UatChecklistItem,
   type UatFeedbackEntry,
@@ -82,6 +86,8 @@ import {
   ragMinSimilarity,
   ragOverallVerdict,
   ragSimilarityLevel,
+  savedFilterInputSchema,
+  savedFilterListTypes,
   structuredIdeaSchema,
   uatFeedbackTypes,
   userRoles,
@@ -438,6 +444,112 @@ app.get("/api/ideas", async (c) => {
       rows.map(async (row) => redactIdeaForUser(mapIdeaRow(row), user, c.env)),
     ),
   );
+});
+
+// Saved Filter / My View（docs/29 §2.23残P2・migration 021）: 困りごと一覧・
+// アイデア一覧のステージ絞り込み＋キーワード検索を、ユーザーごとに名前を付けて
+// 保存する。本人専用（他ユーザーからは見えない）。
+function mapSavedFilterRow(row: Record<string, unknown>): SavedFilter {
+  return {
+    id: String(row.id),
+    listType: row.list_type as SavedFilterListType,
+    name: String(row.name),
+    params: (row.params ?? {}) as SavedFilterParams,
+    createdAt: toIsoString(row.created_at),
+    updatedAt: toIsoString(row.updated_at),
+  };
+}
+
+app.get("/api/saved-filters", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const listTypeQuery = c.req.query("listType") ?? "";
+  const hasListType = (savedFilterListTypes as readonly string[]).includes(listTypeQuery);
+  const rows = hasListType
+    ? await db`
+        select * from saved_filters
+        where owner_email = ${user} and list_type = ${listTypeQuery}
+        order by created_at desc
+      `
+    : await db`
+        select * from saved_filters where owner_email = ${user} order by created_at desc
+      `;
+  return c.json({ items: rows.map(mapSavedFilterRow) });
+});
+
+app.post(
+  "/api/saved-filters",
+  zValidator("json", savedFilterInputSchema),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const input = c.req.valid("json") as SavedFilterInput;
+    const rows = await db`
+      insert into saved_filters (owner_email, list_type, name, params)
+      values (${user}, ${input.listType}, ${input.name}, ${JSON.stringify(input.params)}::jsonb)
+      returning *
+    `;
+    const item = mapSavedFilterRow(rows[0]);
+    await audit(c.env, user, "saved_filter.created", "saved_filter", item.id, {
+      listType: item.listType,
+      name: item.name,
+    });
+    return c.json(item, 201);
+  },
+);
+
+app.patch(
+  "/api/saved-filters/:id",
+  zValidator(
+    "json",
+    z.object({
+      name: z.string().trim().min(1).max(100).optional(),
+      params: z.object({
+        stage: z.string().max(50).optional(),
+        q: z.string().max(200).optional(),
+      }).optional(),
+    }).strict(),
+  ),
+  async (c) => {
+    const user = await getUser(c.req.raw, c.env);
+    const db = getDb(c.env);
+    const id = c.req.param("id");
+    const patch = c.req.valid("json");
+    const locked = await db`select * from saved_filters where id = ${id} for update`;
+    if (!locked[0]) throw new ApiError("NOT_FOUND", "Saved filter not found.", 404);
+    if (String(locked[0].owner_email).toLowerCase() !== user.toLowerCase()) {
+      throw new ApiError("FORBIDDEN", "他ユーザーの保存済みフィルタは変更できません。", 403);
+    }
+    const hasParamsPatch = Object.prototype.hasOwnProperty.call(patch, "params");
+    const rows = await db`
+      update saved_filters
+      set
+        name = coalesce(${patch.name ?? null}, name),
+        params = case when ${hasParamsPatch} then ${JSON.stringify(patch.params ?? {})}::jsonb else params end,
+        updated_at = now()
+      where id = ${id}
+      returning *
+    `;
+    const item = mapSavedFilterRow(rows[0]);
+    await audit(c.env, user, "saved_filter.updated", "saved_filter", item.id, {
+      changed: Object.keys(patch),
+    });
+    return c.json(item);
+  },
+);
+
+app.delete("/api/saved-filters/:id", async (c) => {
+  const user = await getUser(c.req.raw, c.env);
+  const db = getDb(c.env);
+  const id = c.req.param("id");
+  const locked = await db`select * from saved_filters where id = ${id} for update`;
+  if (!locked[0]) throw new ApiError("NOT_FOUND", "Saved filter not found.", 404);
+  if (String(locked[0].owner_email).toLowerCase() !== user.toLowerCase()) {
+    throw new ApiError("FORBIDDEN", "他ユーザーの保存済みフィルタは削除できません。", 403);
+  }
+  await db`delete from saved_filters where id = ${id}`;
+  await audit(c.env, user, "saved_filter.deleted", "saved_filter", id, {});
+  return c.json({ ok: true });
 });
 
 // DX案件ポートフォリオ（docs/29 §2.5・migration 013）:

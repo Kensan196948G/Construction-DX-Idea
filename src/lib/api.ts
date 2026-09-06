@@ -51,6 +51,10 @@ import type {
   PrivacyFinding,
   RagSearchResult,
   SaveIdeaResult,
+  SavedFilter,
+  SavedFilterInput,
+  SavedFilterListType,
+  SavedFilterParams,
   StructuredIdea,
   UatChecklistInput,
   UatFeedbackEntry,
@@ -135,6 +139,23 @@ export const api = useMock
         const suffix = query.toString() ? `?${query.toString()}` : "";
         return request<Idea[]>(`/api/ideas${suffix}`);
       },
+      // Saved Filter / My View（docs/29 §2.23残P2・migration 021）。
+      listSavedFilters: (listType?: SavedFilterListType) =>
+        request<{ items: SavedFilter[] }>(
+          `/api/saved-filters${listType ? `?listType=${listType}` : ""}`,
+        ),
+      createSavedFilter: (input: SavedFilterInput) =>
+        request<SavedFilter>("/api/saved-filters", {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      updateSavedFilter: (id: string, patch: { name?: string; params?: SavedFilterParams }) =>
+        request<SavedFilter>(`/api/saved-filters/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+      deleteSavedFilter: (id: string) =>
+        request<{ ok: boolean }>(`/api/saved-filters/${id}`, { method: "DELETE" }),
       getIdea: (id: string) => request<Idea>(`/api/ideas/${id}`),
       updateIdea: (id: string, patch: Partial<StructuredIdea>) =>
         request<Idea>(`/api/ideas/${id}`, {

@@ -444,9 +444,21 @@ a:hover { text-decoration: underline; }
           </sc-for>
           <div style="flex:1;"></div>
           <input value="{{ searchQueryIssue }}" onChange="{{ onSearchIssueChange }}" placeholder="タイトル・分類で検索" style="max-width:220px;font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;"></input>
+          <button onClick="{{ saveCurrentFilterIssue }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #6B45B0;background:#fff;color:#6B45B0;padding:8px 12px;border-radius:8px;font-size:12.5px;font-weight:600;">💾 フィルタ保存</button>
           <button onClick="{{ exportCsv }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ CSV出力</button>
           <button onClick="{{ exportExcel }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ Excel出力</button>
         </div>
+        <sc-if value="{{ savedFilterChipsIssue.length }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 14px;">
+            <span style="font-size:11px;color:#8A97A8;">📁 My View:</span>
+            <sc-for list="{{ savedFilterChipsIssue }}" as="sf" hint-placeholder-count="3">
+              <span onClick="{{ sf.onApply }}" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid #E3E8EF;background:#F7F9FC;color:#1A2433;padding:4px 5px 4px 10px;border-radius:14px;font-size:11.5px;">
+                {{ sf.label }}
+                <span onClick="{{ sf.onDelete }}" style="color:#8A97A8;padding:0 5px;">✕</span>
+              </span>
+            </sc-for>
+          </div>
+        </sc-if>
         <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead>
@@ -484,9 +496,21 @@ a:hover { text-decoration: underline; }
           </sc-for>
           <div style="flex:1;"></div>
           <input value="{{ searchQueryIdea }}" onChange="{{ onSearchIdeaChange }}" placeholder="タイトル・分類で検索" style="max-width:220px;font-size:13px;padding:8px 11px;border:1px solid #E3E8EF;border-radius:8px;background:#fff;color:#1A2433;outline:none;"></input>
+          <button onClick="{{ saveCurrentFilterIdea }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #6B45B0;background:#fff;color:#6B45B0;padding:8px 12px;border-radius:8px;font-size:12.5px;font-weight:600;">💾 フィルタ保存</button>
           <button onClick="{{ exportCsv }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #E08A2B;background:#E08A2B;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ CSV出力</button>
           <button onClick="{{ exportExcel }}" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #2E5AAC;background:#2E5AAC;color:#fff;padding:8px 14px;border-radius:8px;font-size:12.5px;font-weight:600;">⬇ Excel出力</button>
         </div>
+        <sc-if value="{{ savedFilterChipsIdea.length }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 14px;">
+            <span style="font-size:11px;color:#8A97A8;">📁 My View:</span>
+            <sc-for list="{{ savedFilterChipsIdea }}" as="sf" hint-placeholder-count="3">
+              <span onClick="{{ sf.onApply }}" style="display:inline-flex;align-items:center;gap:5px;cursor:pointer;border:1px solid #E3E8EF;background:#F7F9FC;color:#1A2433;padding:4px 5px 4px 10px;border-radius:14px;font-size:11.5px;">
+                {{ sf.label }}
+                <span onClick="{{ sf.onDelete }}" style="color:#8A97A8;padding:0 5px;">✕</span>
+              </span>
+            </sc-for>
+          </div>
+        </sc-if>
         <div style="background:#fff;border:1px solid #E3E8EF;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.04);">
           <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
             <thead>
@@ -1819,6 +1843,10 @@ class Component extends DCLogic {
     filterStageIdea: 'all',
     searchQueryIssue: '',
     searchQueryIdea: '',
+    // Saved Filter / My View（docs/29 §2.23残P2）: 一覧画面ごとの保存済みフィルタ。
+    savedFiltersIssue: [],
+    savedFiltersIdea: [],
+    savedFiltersBusy: false,
     intakeForm: {
       type: 'issue',
       department: '土木工事部', submitterName: '山田太郎', email: '',
@@ -1935,6 +1963,8 @@ class Component extends DCLogic {
     if (view === 'detail' && this.loadKpi) void this.loadKpi();
     if (view === 'adminSettings') void this.loadUsageGovernance();
     if (view === 'healthDashboard') void this.loadHealthDashboard();
+    if (view === 'list') void this.loadSavedFilters('issue');
+    if (view === 'listIdea') void this.loadSavedFilters('idea');
   };
   goToIntake = () => this.goTo('intake');
   selectIdea = (id) => {
@@ -1973,6 +2003,67 @@ class Component extends DCLogic {
   };
   setFilterStageIssue = (stage) => this.setState({ filterStageIssue: stage });
   setFilterStageIdea = (stage) => this.setState({ filterStageIdea: stage });
+
+  // ---- Saved Filter / My View（docs/29 §2.23残P2）----
+  // 実API接続時は App.tsx ブリッジが loadSavedFilters/saveSavedFilter/deleteSavedFilter を差し替える。
+  loadSavedFilters = async (listType) => {
+    const key = listType === 'issue' ? 'savedFiltersIssue' : 'savedFiltersIdea';
+    if (this.__loadSavedFiltersBridge) {
+      this.setState({ savedFiltersBusy: true });
+      try {
+        const items = await this.__loadSavedFiltersBridge(listType);
+        this.setState({ [key]: items, savedFiltersBusy: false });
+      } catch (e) {
+        this.setState({ savedFiltersBusy: false, toast: { message: `保存済みフィルタの取得に失敗しました: ${String(e)}` } });
+      }
+    }
+    // モック: 状態はメモリ内配列（savedFiltersIssue/Idea）にそのまま保持されるため何もしない。
+  };
+
+  saveCurrentFilter = async (listType) => {
+    const name = typeof window !== 'undefined' ? window.prompt('このフィルタの名前を入力してください', '') : null;
+    if (!name || !name.trim()) return;
+    const params = listType === 'issue'
+      ? { stage: this.state.filterStageIssue, q: this.state.searchQueryIssue }
+      : { stage: this.state.filterStageIdea, q: this.state.searchQueryIdea };
+    if (this.__saveSavedFilterBridge) {
+      try {
+        await this.__saveSavedFilterBridge(listType, name.trim(), params);
+        await this.loadSavedFilters(listType);
+        this.setState({ toast: { message: 'フィルタを保存しました。' } });
+      } catch (e) {
+        this.setState({ toast: { message: `フィルタの保存に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    const key = listType === 'issue' ? 'savedFiltersIssue' : 'savedFiltersIdea';
+    const nowIso = new Date().toISOString();
+    const item = { id: `sf-${Date.now()}`, listType, name: name.trim(), params, createdAt: nowIso, updatedAt: nowIso };
+    this.setState({ [key]: [item, ...(this.state[key] || [])] });
+  };
+
+  applySavedFilter = (listType, filter) => {
+    if (listType === 'issue') {
+      this.setState({ filterStageIssue: filter.params.stage || 'all', searchQueryIssue: filter.params.q || '' });
+    } else {
+      this.setState({ filterStageIdea: filter.params.stage || 'all', searchQueryIdea: filter.params.q || '' });
+    }
+  };
+
+  removeSavedFilter = async (listType, id) => {
+    if (typeof window !== 'undefined' && !window.confirm('このフィルタを削除しますか？')) return;
+    const key = listType === 'issue' ? 'savedFiltersIssue' : 'savedFiltersIdea';
+    if (this.__deleteSavedFilterBridge) {
+      try {
+        await this.__deleteSavedFilterBridge(id);
+        await this.loadSavedFilters(listType);
+      } catch (e) {
+        this.setState({ toast: { message: `フィルタの削除に失敗しました: ${String(e)}` } });
+      }
+      return;
+    }
+    this.setState({ [key]: (this.state[key] || []).filter((f) => f.id !== id) });
+  };
 
   updateIntake = (key) => (e) => {
     const v = e.target.value;
@@ -3957,6 +4048,18 @@ class Component extends DCLogic {
     const stageFilterChipsIssue = this.buildStageFilterChips(issues, s.filterStageIssue, this.setFilterStageIssue);
     const stageFilterChipsIdea = this.buildStageFilterChips(ideasOnly, s.filterStageIdea, this.setFilterStageIdea);
 
+    // ---- Saved Filter / My View view-model（docs/29 §2.23残P2）----
+    const buildSavedFilterChips = (listType) => (s[listType === 'issue' ? 'savedFiltersIssue' : 'savedFiltersIdea'] || []).map((f) => ({
+      id: f.id,
+      label: f.name,
+      onApply: () => this.applySavedFilter(listType, f),
+      onDelete: (e) => { if (e && e.stopPropagation) e.stopPropagation(); void this.removeSavedFilter(listType, f.id); },
+    }));
+    const savedFilterChipsIssue = buildSavedFilterChips('issue');
+    const savedFilterChipsIdea = buildSavedFilterChips('idea');
+    const saveCurrentFilterIssue = () => this.saveCurrentFilter('issue');
+    const saveCurrentFilterIdea = () => this.saveCurrentFilter('idea');
+
     const qIssue = s.searchQueryIssue.trim().toLowerCase();
     const filteredIssues = issues.filter((i) => {
       if (s.filterStageIssue !== 'all' && i.stage !== s.filterStageIssue) return false;
@@ -4774,6 +4877,8 @@ class Component extends DCLogic {
       onSearchIssueChange: (e) => this.setState({ searchQueryIssue: e.target.value }),
       onSearchIdeaChange: (e) => this.setState({ searchQueryIdea: e.target.value }),
       filteredIssues, filteredIdeasOnly,
+      savedFilterChipsIssue, savedFilterChipsIdea,
+      saveCurrentFilterIssue, saveCurrentFilterIdea,
 
       selectedIdeaView, noSelectedIdea, backToList: this.backToList,
       advanceSelected: selectedIdeaView && selectedIdeaView.canAdvance ? () => this.advanceStage(selectedIdeaView.id) : () => {},

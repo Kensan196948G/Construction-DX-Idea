@@ -25,6 +25,9 @@ import type {
   GateOverviewResult,
   GateReminderRunResult,
   BlockerListResult,
+  SavedFilter,
+  SavedFilterListType,
+  SavedFilterParams,
   HealthDashboard,
   Idea,
   IdeaKpi,
@@ -88,6 +91,13 @@ type StandaloneComponent = {
   __loadGateOverviewBridge?: () => Promise<GateOverviewResult>;
   __runGateRemindersBridge?: () => Promise<GateReminderRunResult>;
   __loadBlockersBridge?: () => Promise<BlockerListResult>;
+  __loadSavedFiltersBridge?: (listType: SavedFilterListType) => Promise<SavedFilter[]>;
+  __saveSavedFilterBridge?: (
+    listType: SavedFilterListType,
+    name: string,
+    params: SavedFilterParams,
+  ) => Promise<SavedFilter>;
+  __deleteSavedFilterBridge?: (id: string) => Promise<void>;
   __recordKpiBridge?: (
     id: string,
     input: {
@@ -119,6 +129,9 @@ type StandaloneComponent = {
   loadGateOverview?: () => Promise<void>;
   runGateReminders?: () => Promise<void>;
   loadBlockers?: () => Promise<void>;
+  loadSavedFilters?: (listType: SavedFilterListType) => Promise<void>;
+  saveCurrentFilter?: (listType: SavedFilterListType) => Promise<void>;
+  removeSavedFilter?: (listType: SavedFilterListType, id: string) => Promise<void>;
   loadReposForSelected?: () => Promise<void>;
   linkRepo?: () => Promise<void>;
   unlinkRepo?: (linkId: string) => Promise<void>;
@@ -268,6 +281,13 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
   component.__loadGateOverviewBridge = () => api.getGateOverview();
   component.__runGateRemindersBridge = () => api.runGateReminders();
   component.__loadBlockersBridge = () => api.getBlockers();
+  // Saved Filter / My View（docs/29 §2.23残P2）。
+  component.__loadSavedFiltersBridge = async (listType) => (await api.listSavedFilters(listType)).items;
+  component.__saveSavedFilterBridge = (listType, name, params) =>
+    api.createSavedFilter({ listType, name, params });
+  component.__deleteSavedFilterBridge = async (id) => {
+    await api.deleteSavedFilter(id);
+  };
   component.submitComment = () => {
     void submitCommentThroughApi(component);
   };
@@ -382,6 +402,12 @@ function bindStandaloneWorkflowBridge(frame: HTMLIFrameElement | null) {
     }
     if (view === "userManagement" && hasRole(component, "system_admin")) {
       void loadUsers(component);
+    }
+    if (view === "list") {
+      void loadSavedFiltersThroughBridge(component, "issue");
+    }
+    if (view === "listIdea") {
+      void loadSavedFiltersThroughBridge(component, "idea");
     }
   };
 
@@ -1350,6 +1376,21 @@ async function loadBlockersThroughBridge(component: StandaloneComponent) {
   } catch (error) {
     component.setState({ blockerBusy: false });
     showToast(component, `Blocker一覧を取得できませんでした: ${toErrorMessage(error)}`);
+  }
+}
+
+// Saved Filter / My View（docs/29 §2.23残P2）: 一覧画面ごとの保存済みフィルタ取得。
+async function loadSavedFiltersThroughBridge(component: StandaloneComponent, listType: SavedFilterListType) {
+  const bridge = component.__loadSavedFiltersBridge;
+  if (!bridge) return;
+  const stateKey = listType === "issue" ? "savedFiltersIssue" : "savedFiltersIdea";
+  component.setState({ savedFiltersBusy: true });
+  try {
+    const items = await bridge(listType);
+    component.setState({ [stateKey]: items, savedFiltersBusy: false });
+  } catch (error) {
+    component.setState({ savedFiltersBusy: false });
+    showToast(component, `保存済みフィルタを取得できませんでした: ${toErrorMessage(error)}`);
   }
 }
 

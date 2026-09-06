@@ -8,6 +8,7 @@ import {
   gateRequiredAuthority,
   issueInputSchema,
   normalizeApiBaseUrl,
+  savedFilterInputSchema,
   structuredIdeaSchema,
 } from "../src/lib/shared";
 
@@ -195,6 +196,48 @@ describe("normalizeApiBaseUrl", () => {
     assert.equal(
       normalizeApiBaseUrl("https://example.net/api/v2"),
       "https://example.net/api/v2",
+    );
+  });
+});
+
+describe("Saved Filter / My View（docs/29 §2.23残P2）: savedFilterInputSchema", () => {
+  it("accepts a valid issue-list filter with stage and q", () => {
+    const parsed = savedFilterInputSchema.parse({
+      listType: "issue",
+      name: "至急対応",
+      params: { stage: "submitted", q: "写真" },
+    });
+    assert.equal(parsed.listType, "issue");
+    assert.equal(parsed.name, "至急対応");
+    assert.deepEqual(parsed.params, { stage: "submitted", q: "写真" });
+  });
+
+  it("accepts params with neither stage nor q (empty filter)", () => {
+    const parsed = savedFilterInputSchema.parse({ listType: "idea", name: "全件", params: {} });
+    assert.deepEqual(parsed.params, {});
+  });
+
+  it("rejects an empty name", () => {
+    assert.throws(() =>
+      savedFilterInputSchema.parse({ listType: "idea", name: "", params: {} }),
+    );
+  });
+
+  it("rejects a name made only of whitespace", () => {
+    assert.throws(() =>
+      savedFilterInputSchema.parse({ listType: "idea", name: "   ", params: {} }),
+    );
+  });
+
+  it("rejects an unknown listType", () => {
+    assert.throws(() =>
+      savedFilterInputSchema.parse({ listType: "gate", name: "x", params: {} }),
+    );
+  });
+
+  it("rejects a name longer than 100 characters", () => {
+    assert.throws(() =>
+      savedFilterInputSchema.parse({ listType: "idea", name: "あ".repeat(101), params: {} }),
     );
   });
 });
