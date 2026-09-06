@@ -2959,7 +2959,11 @@ class Component extends DCLogic {
 
   updateReviewField = (key) => (e) => {
     const v = e.target.value;
-    this.setState((s) => ({ reviewDraft: { ...s.reviewDraft, [key]: v } }));
+    this.setState((s) => {
+      const draft = { ...s.reviewDraft, [key]: v };
+      draft.aiMeta = this.computeAiStructureMeta(draft);
+      return { reviewDraft: draft };
+    });
   };
 
   pushAudit = (action, detail) => {
