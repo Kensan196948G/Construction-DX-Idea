@@ -984,6 +984,7 @@ export const mockApi = {
   },
 
   async supersedeKnowledge(id: string, supersededBy: string): Promise<KnowledgeCandidate> {
+    if (id === supersededBy) throw new Error("統合先には自分自身以外のKnowledgeを指定してください。");
     const row = knowledgeItems.find((k) => k.id === id);
     if (!row) throw new Error("Knowledge not found");
     if (!knowledgeItems.some((k) => k.id === supersededBy)) throw new Error("Successor not found");

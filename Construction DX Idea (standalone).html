@@ -2585,11 +2585,12 @@ class Component extends DCLogic {
     const raw = window.prompt('有効期限を入力してください（YYYY-MM-DD。空欄でクリア）。');
     if (raw === null) return;
     const trimmed = raw.trim();
-    const expiresAt = trimmed ? new Date(`${trimmed}T00:00:00.000Z`).toISOString() : null;
-    if (trimmed && Number.isNaN(new Date(expiresAt).getTime())) {
+    const parsed = trimmed ? new Date(`${trimmed}T00:00:00.000Z`) : null;
+    if (trimmed && Number.isNaN(parsed.getTime())) {
       this.setState({ toast: { message: '日付の形式が正しくありません（例: 2027-01-01）。' } });
       return;
     }
+    const expiresAt = parsed ? parsed.toISOString() : null;
     if (this.__updateKnowledgeBridge) {
       this.setState({ knowledgeBusy: true });
       try {
