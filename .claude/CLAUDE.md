@@ -81,7 +81,7 @@ gh pr list --state open
 **人間の最終決断が必要な境界:**
 - 本番公開、外部公開URLの切替、課金が発生する操作、秘密情報の登録・削除は自動実行しない
 - データ削除、履歴改変、force push、main 直pushは人間の明示承認を待つ
-- PR merge は `.claude/commands/safe-auto-merge.md`（`/safe-auto-merge` コマンド）に従う。default branch 宛は必ず人間の選択式、default branch 以外は CI・review・mergeability・危険ファイル gate 全通過時のみ自動 merge 可
+- （PR merge は人間判断の対象外）PR merge は `.claude/commands/safe-auto-merge.md`（`/safe-auto-merge` コマンド）に従う。PR は `gh pr merge --auto --squash` で自動マージを予約する。マージの条件は Required Checks の全成功と merge conflict がないことだけとし、人間の Y/N・選択・Approve を待たない（main/default branch 宛も同じ）。`--admin` による迂回は禁止する。Release・本番デプロイ・秘密情報の変更・不可逆な削除は、コードのマージとは別に Human Gate とする。（正本: 中央ポリシー `GITHUB_POLICY.md` v2）
 - 全プロジェクトへの Supervisor 適用は計画表示後、人間の選択で実行する
 - CTO は判断材料、手順、リスク、推奨案を提示し、選択後の実作業は自律継続する
 

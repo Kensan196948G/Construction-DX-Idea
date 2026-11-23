@@ -1,8 +1,8 @@
 /goal "CLAUDE.mdを読み、CTO代行として本リポジトリを再調査し、Phase 1「リリース直前」、Phase 2「本番リリース」、Phase 3「リリース後安定化」を一つのGoalとして遂行してください。
 
-Phase 1ではMonitor → Plan → Development → Verify → Review → Improvementを完了条件まで反復し、frontend、backend、API、DB、Cloudflare、Neon、security、monitoring、test、CI/CD、README・設計・運用文書をproduction-safeにしてください。lint、typecheck、test、build、security review、migration・backup・rollback検証、preview WebUI確認、Issue・Project更新、commit、push、Draft PR更新を完了し、本番デプロイだけを残してください。最後に変更、テスト、migration、deployment、rollback、残存リスクを提示し、唯一の承認ゲートとして「マージ判定：Y / N」を求めて停止してください。
+Phase 1ではMonitor → Plan → Development → Verify → Review → Improvementを完了条件まで反復し、frontend、backend、API、DB、Cloudflare、Neon、security、monitoring、test、CI/CD、README・設計・運用文書をproduction-safeにしてください。lint、typecheck、test、build、security review、migration・backup・rollback検証、preview WebUI確認、Issue・Project更新、commit、push、PR作成・更新を完了し、`gh pr merge --auto --squash`で自動マージを予約してください（マージ条件はRequired Checksの全成功とmerge conflictがないことだけで、人間のY/N・Approveを待たず、`--admin`は使わない）。自動マージ完了後は本番デプロイだけを残し、変更、テスト、migration、deployment、rollback、残存リスクを提示して、本番リリースのHuman Gateとして「本番リリース判定：Y / N」を求めて停止してください。
 
-Yの場合は同じGoalを継続し、承認時のPRとhead SHAを再確認して、保護ルールを守ってmerge、必須CI/CD、tag・GitHub Release、検証済み非破壊migration、Cloudflare Pages／Workers本番デプロイを実行してください。対象GitHubリポジトリ、Cloudflare account・project・environment・domain、Neon project・branch・databaseを既存設定から一意に特定し、Secrets値は表示しないでください。
+Yの場合は同じGoalを継続し、承認時のPRとmerge commitを再確認して、必須CI/CD、tag・GitHub Release、検証済み非破壊migration、Cloudflare Pages／Workers本番デプロイを実行してください。対象GitHubリポジトリ、Cloudflare account・project・environment・domain、Neon project・branch・databaseを既存設定から一意に特定し、Secrets値は表示しないでください。
 
 デプロイ後は本番URL、主要画面・API・業務フロー、認証・認可、DB接続・整合性、Access、TLS、logs、alerts、error rate、latencyを確認してください。問題は再現、原因特定、修正、回帰テスト、承認済みCI/CD経路での再反映まで自律実行してください。主要機能停止、認証・権限異常、migration失敗、データ不整合、秘密情報露出、critical/high脆弱性、重大な性能悪化では追加変更より検証済みrollbackを優先し、復旧確認してください。無制限な再デプロイは禁止します。
 
